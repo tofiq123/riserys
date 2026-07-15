@@ -3,3 +3,13 @@ node_modules/
 build/
 .env
 *.log
+.superpowers/
+.flutter-plugins
+.flutter-plugins-dependencies
+android/.gradle/
+android/local.properties
+android/key.properties
+*.g.dart
+!lib/data/native/alarm_api.g.dart
+ios/Pods/
+ios/.symlinks/
