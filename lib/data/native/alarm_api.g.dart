@@ -423,10 +423,15 @@ class AlarmHostApi {
     ;
   }
 
-  /// The alarm id currently ringing, consumed exactly once. Covers cold start:
-  /// the ringing activity can launch the Flutter engine from scratch.
-  Future<int?> consumeFiredAlarmId() async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.consumeFiredAlarmId$pigeonVar_messageChannelSuffix';
+  /// The alarm id currently ringing, or null if nothing is ringing.
+  ///
+  /// Safe to call repeatedly — this peeks, it does not clear state. The id
+  /// stays valid for the whole ring so [stopRinging] can verify it is
+  /// stopping the alarm it was asked to stop. Needed at cold start: the
+  /// ringing activity can launch the Flutter engine from scratch, in which
+  /// case no onAlarmFired callback ever arrives.
+  Future<int?> getRingingAlarmId() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.getRingingAlarmId$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,

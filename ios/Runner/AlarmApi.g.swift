@@ -339,9 +339,14 @@ protocol AlarmHostApi {
   func openExactAlarmSettings() throws
   func openBatterySettings() throws
   func openFullScreenIntentSettings() throws
-  /// The alarm id currently ringing, consumed exactly once. Covers cold start:
-  /// the ringing activity can launch the Flutter engine from scratch.
-  func consumeFiredAlarmId() throws -> Int64?
+  /// The alarm id currently ringing, or null if nothing is ringing.
+  ///
+  /// Safe to call repeatedly — this peeks, it does not clear state. The id
+  /// stays valid for the whole ring so [stopRinging] can verify it is
+  /// stopping the alarm it was asked to stop. Needed at cold start: the
+  /// ringing activity can launch the Flutter engine from scratch, in which
+  /// case no onAlarmFired callback ever arrives.
+  func getRingingAlarmId() throws -> Int64?
   func stopRinging(alarmId: Int64) throws
 }
 
@@ -465,20 +470,25 @@ class AlarmHostApiSetup {
     } else {
       openFullScreenIntentSettingsChannel.setMessageHandler(nil)
     }
-    /// The alarm id currently ringing, consumed exactly once. Covers cold start:
-    /// the ringing activity can launch the Flutter engine from scratch.
-    let consumeFiredAlarmIdChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.consumeFiredAlarmId\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    /// The alarm id currently ringing, or null if nothing is ringing.
+    ///
+    /// Safe to call repeatedly — this peeks, it does not clear state. The id
+    /// stays valid for the whole ring so [stopRinging] can verify it is
+    /// stopping the alarm it was asked to stop. Needed at cold start: the
+    /// ringing activity can launch the Flutter engine from scratch, in which
+    /// case no onAlarmFired callback ever arrives.
+    let getRingingAlarmIdChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.getRingingAlarmId\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
-      consumeFiredAlarmIdChannel.setMessageHandler { _, reply in
+      getRingingAlarmIdChannel.setMessageHandler { _, reply in
         do {
-          let result = try api.consumeFiredAlarmId()
+          let result = try api.getRingingAlarmId()
           reply(wrapResult(result))
         } catch {
           reply(wrapError(error))
         }
       }
     } else {
-      consumeFiredAlarmIdChannel.setMessageHandler(nil)
+      getRingingAlarmIdChannel.setMessageHandler(nil)
     }
     let stopRingingChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.stopRinging\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

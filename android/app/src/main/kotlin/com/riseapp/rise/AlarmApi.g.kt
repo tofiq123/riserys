@@ -351,10 +351,15 @@ interface AlarmHostApi {
   fun openBatterySettings()
   fun openFullScreenIntentSettings()
   /**
-   * The alarm id currently ringing, consumed exactly once. Covers cold start:
-   * the ringing activity can launch the Flutter engine from scratch.
+   * The alarm id currently ringing, or null if nothing is ringing.
+   *
+   * Safe to call repeatedly — this peeks, it does not clear state. The id
+   * stays valid for the whole ring so [stopRinging] can verify it is
+   * stopping the alarm it was asked to stop. Needed at cold start: the
+   * ringing activity can launch the Flutter engine from scratch, in which
+   * case no onAlarmFired callback ever arrives.
    */
-  fun consumeFiredAlarmId(): Long?
+  fun getRingingAlarmId(): Long?
   fun stopRinging(alarmId: Long)
 
   companion object {
@@ -498,11 +503,11 @@ interface AlarmHostApi {
         }
       }
       run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.consumeFiredAlarmId$separatedMessageChannelSuffix", codec)
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.getRingingAlarmId$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { _, reply ->
             val wrapped: List<Any?> = try {
-              listOf(api.consumeFiredAlarmId())
+              listOf(api.getRingingAlarmId())
             } catch (exception: Throwable) {
               AlarmApiPigeonUtils.wrapError(exception)
             }

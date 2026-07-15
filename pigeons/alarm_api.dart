@@ -64,9 +64,14 @@ abstract class AlarmHostApi {
   void openBatterySettings();
   void openFullScreenIntentSettings();
 
-  /// The alarm id currently ringing, consumed exactly once. Covers cold start:
-  /// the ringing activity can launch the Flutter engine from scratch.
-  int? consumeFiredAlarmId();
+  /// The alarm id currently ringing, or null if nothing is ringing.
+  ///
+  /// Safe to call repeatedly — this peeks, it does not clear state. The id
+  /// stays valid for the whole ring so [stopRinging] can verify it is
+  /// stopping the alarm it was asked to stop. Needed at cold start: the
+  /// ringing activity can launch the Flutter engine from scratch, in which
+  /// case no onAlarmFired callback ever arrives.
+  int? getRingingAlarmId();
 
   void stopRinging(int alarmId);
 }

@@ -89,13 +89,20 @@ class AlarmHostApiImpl(private val context: Context) : AlarmHostApi {
         }
     }
 
-    override fun consumeFiredAlarmId(): Long? {
+    // Peeks at the currently ringing alarm; does not clear state. See the
+    // Pigeon doc comment on getRingingAlarmId for why this must stay a peek.
+    override fun getRingingAlarmId(): Long? {
         val id = AlarmService.ringingAlarmId ?: return null
         return id.toLong()
     }
 
     override fun stopRinging(alarmId: Long) {
-        AlarmService.stop(context)
+        // Stop only if this is still the alarm that's ringing. A second alarm can
+        // take over the service between Dart deciding to dismiss and this call
+        // landing; stopping unconditionally would silence the wrong one.
+        if (AlarmService.ringingAlarmId?.toLong() == alarmId) {
+            AlarmService.stop(context)
+        }
     }
 
     /**
