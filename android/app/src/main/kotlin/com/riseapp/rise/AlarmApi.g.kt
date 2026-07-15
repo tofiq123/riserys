@@ -361,6 +361,12 @@ interface AlarmHostApi {
    */
   fun getRingingAlarmId(): Long?
   fun stopRinging(alarmId: Long)
+  /**
+   * Signals that a headless reconcile (boot, app update, clock change) has
+   * finished, so the platform can tear down the engine that ran it.
+   * Harmless to call from a normal app engine, where it is a no-op.
+   */
+  fun reconcileFinished()
 
   companion object {
     /** The codec used by AlarmHostApi. */
@@ -525,6 +531,22 @@ interface AlarmHostApi {
             val alarmIdArg = args[0] as Long
             val wrapped: List<Any?> = try {
               api.stopRinging(alarmIdArg)
+              listOf(null)
+            } catch (exception: Throwable) {
+              AlarmApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.reconcileFinished$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              api.reconcileFinished()
               listOf(null)
             } catch (exception: Throwable) {
               AlarmApiPigeonUtils.wrapError(exception)

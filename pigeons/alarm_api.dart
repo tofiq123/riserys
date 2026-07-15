@@ -74,6 +74,11 @@ abstract class AlarmHostApi {
   int? getRingingAlarmId();
 
   void stopRinging(int alarmId);
+
+  /// Signals that a headless reconcile (boot, app update, clock change) has
+  /// finished, so the platform can tear down the engine that ran it.
+  /// Harmless to call from a normal app engine, where it is a no-op.
+  void reconcileFinished();
 }
 
 @FlutterApi()

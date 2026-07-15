@@ -105,6 +105,14 @@ class AlarmHostApiImpl(private val context: Context) : AlarmHostApi {
         }
     }
 
+    // A headless reconcile engine (BootReceiver) calls this once its Dart
+    // entrypoint is done, so we can tear it down instead of leaking it until
+    // the OS kills the process. On a normal app engine (MainActivity,
+    // RingActivity) this is a no-op: those engines were never retained.
+    override fun reconcileFinished() {
+        FlutterEngineHolder.releaseAll()
+    }
+
     /**
      * Pigeon alarm ids are Long, but the Intent extra AlarmService reads
      * (EXTRA_ALARM_ID) is an Int. A bare `.toInt()` truncates silently on

@@ -348,6 +348,10 @@ protocol AlarmHostApi {
   /// case no onAlarmFired callback ever arrives.
   func getRingingAlarmId() throws -> Int64?
   func stopRinging(alarmId: Int64) throws
+  /// Signals that a headless reconcile (boot, app update, clock change) has
+  /// finished, so the platform can tear down the engine that ran it.
+  /// Harmless to call from a normal app engine, where it is a no-op.
+  func reconcileFinished() throws
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -504,6 +508,22 @@ class AlarmHostApiSetup {
       }
     } else {
       stopRingingChannel.setMessageHandler(nil)
+    }
+    /// Signals that a headless reconcile (boot, app update, clock change) has
+    /// finished, so the platform can tear down the engine that ran it.
+    /// Harmless to call from a normal app engine, where it is a no-op.
+    let reconcileFinishedChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.reconcileFinished\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reconcileFinishedChannel.setMessageHandler { _, reply in
+        do {
+          try api.reconcileFinished()
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reconcileFinishedChannel.setMessageHandler(nil)
     }
   }
 }

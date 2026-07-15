@@ -466,6 +466,27 @@ class AlarmHostApi {
     )
     ;
   }
+
+  /// Signals that a headless reconcile (boot, app update, clock change) has
+  /// finished, so the platform can tear down the engine that ran it.
+  /// Harmless to call from a normal app engine, where it is a no-op.
+  Future<void> reconcileFinished() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.reconcileFinished$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
 }
 
 abstract class AlarmFlutterApi {
