@@ -73,7 +73,12 @@ void main() {
   });
 
   test('does not ring anything when recoverMissed finds no missed alarm', () async {
-    await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));
+    // Several hours ahead of "now" so this can never land inside the 30-minute
+    // missed window, regardless of the wall-clock time the suite runs at.
+    final now = tz.TZDateTime.now(tz.getLocation('America/New_York'));
+    final farFuture = now.add(const Duration(hours: 6));
+    await repo.upsert(
+        Alarm(id: 0, hour: farFuture.hour, minute: farFuture.minute));
     await AlarmSyncService.instance.reconcileNow(recoverMissed: true);
     expect(platform.ringNowCalls, isEmpty);
   });
@@ -83,12 +88,17 @@ void main() {
     // rolls it to tomorrow, so recovery must come from the dedicated path.
     final now = tz.TZDateTime.now(tz.getLocation('America/New_York'));
     final justPassed = now.subtract(const Duration(minutes: 1));
-    await repo.upsert(
+    final upserted = await repo.upsert(
         Alarm(id: 0, hour: justPassed.hour, minute: justPassed.minute));
 
     await AlarmSyncService.instance.reconcileNow(recoverMissed: true);
 
-    // Tomorrow's occurrence is still armed — recovery must not clobber it.
+    // Recovery must go through ringNow with the missed alarm...
+    expect(platform.ringNowCalls, hasLength(1));
+    expect(platform.ringNowCalls.single.alarmId, upserted.id);
+
+    // ...and tomorrow's occurrence is still armed via reconcile — recovery
+    // must not clobber the rest of the armed set.
     expect(platform.reconcileCalls.single, hasLength(1));
   });
 
