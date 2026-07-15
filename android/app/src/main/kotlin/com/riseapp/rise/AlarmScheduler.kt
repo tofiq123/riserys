@@ -62,6 +62,18 @@ object AlarmScheduler {
 
     /** Replaces the entire scheduled set. Idempotent by construction. */
     fun reconcile(context: Context, alarms: List<NativeAlarm>) {
+        // Validate every id before touching OS state: cancelAll() wipes
+        // SharedPreferences up front, and the loop below only persists ids
+        // to KEY_IDS after each is armed with the OS. If toRequestCode()
+        // threw partway through the loop, every alarm already armed in this
+        // call would be live with AlarmManager but missing from KEY_IDS —
+        // cancelAll() reads only KEY_IDS, so it could never find or cancel
+        // them again. Failing here, before cancelAll() runs, keeps
+        // reconcile() atomic: either every alarm is validated and the whole
+        // replace proceeds, or nothing is touched. Do not move or remove
+        // this pre-pass.
+        alarms.forEach { it.id.toRequestCode() }
+
         cancelAll(context)
 
         val am = alarmManager(context)
