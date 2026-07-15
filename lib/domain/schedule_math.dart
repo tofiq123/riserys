@@ -81,3 +81,36 @@ tz.TZDateTime? nextOccurrence({
 
   return null;
 }
+
+/// The most recent instant [alarm] should have fired at or before [before], or
+/// null if there is none within the search horizon.
+///
+/// Mirrors [nextOccurrence] walking backwards. Used only for missed-alarm
+/// recovery: once an alarm has fired, its next occurrence has already rolled
+/// forward, so the firing we may have missed is in the past.
+tz.TZDateTime? previousOccurrence({
+  required Alarm alarm,
+  required tz.TZDateTime before,
+  required tz.Location location,
+}) {
+  if (!alarm.enabled) return null;
+
+  final startDate = DateTime.utc(before.year, before.month, before.day);
+
+  for (var offset = 0; offset <= _searchHorizonDays; offset++) {
+    final date = startDate.subtract(Duration(days: offset));
+
+    if (!alarm.isOneShot) {
+      final index = weekdayToIndex(
+          DateTime.utc(date.year, date.month, date.day).weekday);
+      if (!alarm.days.contains(index)) continue;
+    }
+
+    final candidate = resolveWallTime(
+        location, date.year, date.month, date.day, alarm.hour, alarm.minute);
+
+    if (!candidate.isAfter(before)) return candidate;
+  }
+
+  return null;
+}

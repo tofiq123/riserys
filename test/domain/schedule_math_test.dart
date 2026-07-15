@@ -159,4 +159,28 @@ void main() {
       expect(t.minute, 0);
     });
   });
+
+  group('previousOccurrence', () {
+    test('finds the firing earlier today', () {
+      const alarm = Alarm(id: 1, hour: 6, minute: 30);
+      final before = tz.TZDateTime(ny, 2026, 7, 15, 7, 0);
+      expect(previousOccurrence(alarm: alarm, before: before, location: ny),
+          tz.TZDateTime(ny, 2026, 7, 15, 6, 30));
+    });
+
+    test('falls back to yesterday when today has not reached the time', () {
+      const alarm = Alarm(id: 1, hour: 6, minute: 30);
+      final before = tz.TZDateTime(ny, 2026, 7, 15, 5, 0);
+      expect(previousOccurrence(alarm: alarm, before: before, location: ny),
+          tz.TZDateTime(ny, 2026, 7, 14, 6, 30));
+    });
+
+    test('respects repeat days walking backwards', () {
+      // 2026-07-20 is a Monday; the previous weekday firing is Friday 07-17.
+      const alarm = Alarm(id: 1, hour: 6, minute: 30, days: {1, 2, 3, 4, 5});
+      final before = tz.TZDateTime(ny, 2026, 7, 20, 5, 0);
+      expect(previousOccurrence(alarm: alarm, before: before, location: ny),
+          tz.TZDateTime(ny, 2026, 7, 17, 6, 30));
+    });
+  });
 }
