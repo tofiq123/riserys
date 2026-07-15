@@ -13,3 +13,5 @@ android/key.properties
 !lib/data/native/alarm_api.g.dart
 ios/Pods/
 ios/.symlinks/
+.idea/
+*.iml
