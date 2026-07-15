@@ -1,30 +1,22 @@
-// This is a basic Flutter widget test.
+// Basic smoke test for the throwaway ringing screen (lib/ui/dev_ring_page.dart).
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// The stock template's counter test no longer applies: main.dart's real home
+// screen (DevHomePage) depends on native platform channels and a configured
+// AlarmSyncService, neither of which a plain widget test provides. DevRingPage
+// has no such dependency in its build method, so it is what this smoke test
+// exercises instead.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:rise/main.dart';
+import 'package:rise/ui/dev_ring_page.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('DevRingPage shows the ringing alarm id and a dismiss button',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const MaterialApp(home: DevRingPage(alarmId: 7)));
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Alarm 7 is ringing'), findsOneWidget);
+    expect(find.text('Dismiss'), findsOneWidget);
   });
 }
