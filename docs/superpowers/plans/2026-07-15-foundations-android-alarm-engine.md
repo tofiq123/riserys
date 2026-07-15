@@ -1182,7 +1182,7 @@ Defines the entire Dart↔Kotlin contract in one file and generates both sides. 
 - Produces (all consumed by Tasks 7–11):
   - `class NativeAlarm { int id; int fireAtEpochMs; String label; String soundAsset; bool vibrate; }`
   - `class AlarmPermissions { bool notifications; bool exactAlarm; bool fullScreenIntent; bool batteryUnrestricted; }`
-  - `@HostApi() abstract class AlarmHostApi` — `void reconcile(List<NativeAlarm> alarms)`, `void ringNow(NativeAlarm alarm)`, `void cancelAll()`, `AlarmPermissions getPermissions()`, `void requestNotificationPermission()`, `void openExactAlarmSettings()`, `void openBatterySettings()`, `void openFullScreenIntentSettings()`, `int? consumeFiredAlarmId()`, `void stopRinging(int alarmId)`
+  - `@HostApi() abstract class AlarmHostApi` — `void reconcile(List<NativeAlarm> alarms)`, `void ringNow(NativeAlarm alarm)`, `void cancelAll()`, `AlarmPermissions getPermissions()`, `void requestNotificationPermission()`, `void openExactAlarmSettings()`, `void openBatterySettings()`, `void openFullScreenIntentSettings()`, `int? getRingingAlarmId()`, `void stopRinging(int alarmId)`
   - `@FlutterApi() abstract class AlarmFlutterApi` — `void onAlarmFired(int alarmId)`
 
 - [ ] **Step 1: Write the Pigeon definition**
@@ -1256,9 +1256,14 @@ abstract class AlarmHostApi {
   void openBatterySettings();
   void openFullScreenIntentSettings();
 
-  /// The alarm id currently ringing, consumed exactly once. Covers cold start:
-  /// the ringing activity can launch the Flutter engine from scratch.
-  int? consumeFiredAlarmId();
+  /// The alarm id currently ringing, or null if nothing is ringing.
+  ///
+  /// Safe to call repeatedly — this peeks, it does not clear state. The id
+  /// stays valid for the whole ring so [stopRinging] can verify it is
+  /// stopping the alarm it was asked to stop. Needed at cold start: the
+  /// ringing activity can launch the Flutter engine from scratch, in which
+  /// case no onAlarmFired callback ever arrives.
+  int? getRingingAlarmId();
 
   void stopRinging(int alarmId);
 }
@@ -2130,13 +2135,18 @@ class AlarmHostApiImpl(private val context: Context) : AlarmHostApi {
         }
     }
 
-    override fun consumeFiredAlarmId(): Long? {
+    override fun getRingingAlarmId(): Long? {
         val id = AlarmService.ringingAlarmId ?: return null
         return id.toLong()
     }
 
     override fun stopRinging(alarmId: Long) {
-        AlarmService.stop(context)
+        // Stop only if this is still the alarm that's ringing. A second alarm
+        // can take over the service between Dart deciding to dismiss and this
+        // call landing; stopping unconditionally would silence the wrong one.
+        if (AlarmService.ringingAlarmId?.toLong() == alarmId) {
+            AlarmService.stop(context)
+        }
     }
 }
 ```
@@ -2816,7 +2826,7 @@ class _RiseAppState extends State<RiseApp> {
   /// Cold start: RingActivity launched the engine from scratch, so no
   /// onAlarmFired callback ever arrives — ask the platform what is ringing.
   Future<void> _checkColdStartRing() async {
-    final id = await AlarmHostApi().consumeFiredAlarmId();
+    final id = await AlarmHostApi().getRingingAlarmId();
     if (id != null) _showRing(id);
   }
 
