@@ -82,11 +82,17 @@ void main() {
     });
 
     test('is idempotent: diffing identical lists produces an empty plan', () {
-      final same = [
+      // desired and current are independently constructed but have identical field values.
+      // This exercises ScheduledOccurrence.== to verify value-based equality, not identity.
+      final desired = [
         occ(1, DateTime.utc(2026, 7, 15, 10, 30)),
         occ(2, DateTime.utc(2026, 7, 15, 11, 0)),
       ];
-      final plan = diffSchedule(desired: same, current: same);
+      final current = [
+        occ(1, DateTime.utc(2026, 7, 15, 10, 30)),
+        occ(2, DateTime.utc(2026, 7, 15, 11, 0)),
+      ];
+      final plan = diffSchedule(desired: desired, current: current);
       expect(plan.isEmpty, isTrue);
     });
 
@@ -137,6 +143,22 @@ void main() {
       );
       expect(plan.toSchedule.map((o) => o.alarmId).toSet(), {1, 3});
       expect(plan.toCancel, [2]);
+    });
+  });
+
+  group('ScheduledOccurrence', () {
+    test('two independently constructed occurrences with identical fields are == and hash equally', () {
+      final a = occ(1, DateTime.utc(2026, 7, 15, 10, 30));
+      final b = occ(1, DateTime.utc(2026, 7, 15, 10, 30));
+
+      // Verify they are different object instances
+      expect(identical(a, b), isFalse);
+
+      // Verify value-based equality
+      expect(a == b, isTrue);
+
+      // Verify equal objects have equal hash codes (contract required for set/map use)
+      expect(a.hashCode == b.hashCode, isTrue);
     });
   });
 }
