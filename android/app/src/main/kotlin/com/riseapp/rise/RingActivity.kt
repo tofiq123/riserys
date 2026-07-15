@@ -4,6 +4,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
 
 /**
  * Hosts the Flutter ringing UI over the lock screen. showWhenLocked and
@@ -32,5 +33,13 @@ class RingActivity : FlutterActivity() {
     override fun getInitialRoute(): String {
         val id = intent.getIntExtra(AlarmScheduler.EXTRA_ALARM_ID, -1)
         return "/ring/$id"
+    }
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        AlarmHostApi.setUp(
+            flutterEngine.dartExecutor.binaryMessenger,
+            AlarmHostApiImpl(applicationContext)
+        )
     }
 }
