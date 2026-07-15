@@ -7,7 +7,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
-import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Build
 import android.os.Handler
@@ -48,6 +47,16 @@ class AlarmService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Tear down any previously ringing alarm's resources first. Without
+        // this, a second onStartCommand on a still-live service (e.g. another
+        // alarm firing while one is already ringing) would overwrite `player`
+        // and `wakeLock` with new instances, orphaning the old MediaPlayer —
+        // which loops forever with no reference left to stop it — and
+        // leaking the old WakeLock until its 10-minute timeout. This is not
+        // deletable as "redundant": on the very first start there is nothing
+        // held yet, and releaseResources() is safe to call in that case.
+        releaseResources()
+
         val id = intent?.getIntExtra(AlarmScheduler.EXTRA_ALARM_ID, -1) ?: -1
         val label = intent?.getStringExtra(AlarmScheduler.EXTRA_LABEL) ?: "Alarm"
         val vibrate = intent?.getBooleanExtra(AlarmScheduler.EXTRA_VIBRATE, true) ?: true
@@ -61,9 +70,13 @@ class AlarmService : Service() {
         startAudio()
         if (vibrate) startVibration()
 
-        // START_STICKY: if the system kills us under memory pressure while an
-        // alarm is ringing, come back.
-        return START_STICKY
+        // START_REDELIVER_INTENT: if the system kills us under memory
+        // pressure while an alarm is ringing, come back with the *same*
+        // Intent we were last started with, so the restarted service still
+        // knows which alarm (id/label/vibrate) it's ringing. START_STICKY
+        // would restart us with a null Intent instead, losing that identity
+        // and falling back to the id=-1 sentinel throughout the pipeline.
+        return START_REDELIVER_INTENT
     }
 
     private fun createChannel() {
@@ -166,14 +179,23 @@ class AlarmService : Service() {
         vibrator().vibrate(VibrationEffect.createWaveform(timings, amplitudes, 1))
     }
 
-    override fun onDestroy() {
-        Log.i(TAG, "stopping alarm ${ringingAlarmId}")
+    /**
+     * Tears down everything a ringing alarm holds: pending handler callbacks,
+     * the MediaPlayer, vibration, and the wake lock. Safe to call when none
+     * of these are currently held (e.g. the first onStartCommand call).
+     */
+    private fun releaseResources() {
         handler.removeCallbacksAndMessages(null)
         player?.run { if (isPlaying) stop(); release() }
         player = null
         vibrator().cancel()
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+    }
+
+    override fun onDestroy() {
+        Log.i(TAG, "stopping alarm ${ringingAlarmId}")
+        releaseResources()
         ringingAlarmId = null
         super.onDestroy()
     }
