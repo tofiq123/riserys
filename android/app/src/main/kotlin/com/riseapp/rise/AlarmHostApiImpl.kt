@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.FlutterEngine
 
 /**
@@ -28,14 +27,11 @@ class AlarmHostApiImpl(
     }
 
     override fun ringNow(alarm: NativeAlarm) {
-        // Starts the ringing service directly, leaving the scheduled set alone.
-        val service = Intent(context, AlarmService::class.java).apply {
-            putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarm.id.toIntAlarmId())
-            putExtra(AlarmScheduler.EXTRA_LABEL, alarm.label)
-            putExtra(AlarmScheduler.EXTRA_SOUND, alarm.soundAsset)
-            putExtra(AlarmScheduler.EXTRA_VIBRATE, alarm.vibrate)
-        }
-        ContextCompat.startForegroundService(context, service)
+        // Arms an immediate setAlarmClock instead of starting the foreground
+        // service directly: recovery runs in the headless boot engine, and
+        // starting an FGS from that background context is blocked on Android
+        // 14+/OEMs. See AlarmScheduler.ringNow for the full rationale.
+        AlarmScheduler.ringNow(context, alarm)
     }
 
     override fun cancelAll() {
