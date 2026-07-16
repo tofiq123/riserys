@@ -1,0 +1,9 @@
+# Podfile for Rise iOS app
+# Generated for Flutter iOS build configuration
+
+platform :ios, '16.0'
+
+# Flutter-generated pod helper methods.
+post_install do |installer|
+  flutter_post_install(installer) if defined?(flutter_post_install)
+end
