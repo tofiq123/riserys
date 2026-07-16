@@ -21,6 +21,9 @@ List<ScheduledOccurrence> desiredOccurrences({
       label: alarm.label,
       soundAsset: alarm.soundAsset,
       vibrate: alarm.vibrate,
+      hour: alarm.hour,
+      minute: alarm.minute,
+      weekdays: alarm.days,
     ));
   }
 

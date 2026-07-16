@@ -185,6 +185,12 @@ struct NativeAlarm: Hashable {
   var label: String
   var soundAsset: String
   var vibrate: Bool
+  /// Recurrence pattern, for platforms that own recurrence natively (iOS
+  /// AlarmKit / UNCalendar). [weekdays] uses 0=Sun…6=Sat; empty = one-shot.
+  /// Android ignores these and schedules the single [fireAtEpochMs] instant.
+  var hour: Int64
+  var minute: Int64
+  var weekdays: [Int64]
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -194,13 +200,19 @@ struct NativeAlarm: Hashable {
     let label = pigeonVar_list[2] as! String
     let soundAsset = pigeonVar_list[3] as! String
     let vibrate = pigeonVar_list[4] as! Bool
+    let hour = pigeonVar_list[5] as! Int64
+    let minute = pigeonVar_list[6] as! Int64
+    let weekdays = pigeonVar_list[7] as! [Int64]
 
     return NativeAlarm(
       id: id,
       fireAtEpochMs: fireAtEpochMs,
       label: label,
       soundAsset: soundAsset,
-      vibrate: vibrate
+      vibrate: vibrate,
+      hour: hour,
+      minute: minute,
+      weekdays: weekdays
     )
   }
   func toList() -> [Any?] {
@@ -210,13 +222,16 @@ struct NativeAlarm: Hashable {
       label,
       soundAsset,
       vibrate,
+      hour,
+      minute,
+      weekdays,
     ]
   }
   static func == (lhs: NativeAlarm, rhs: NativeAlarm) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return deepEqualsAlarmApi(lhs.id, rhs.id) && deepEqualsAlarmApi(lhs.fireAtEpochMs, rhs.fireAtEpochMs) && deepEqualsAlarmApi(lhs.label, rhs.label) && deepEqualsAlarmApi(lhs.soundAsset, rhs.soundAsset) && deepEqualsAlarmApi(lhs.vibrate, rhs.vibrate)
+    return deepEqualsAlarmApi(lhs.id, rhs.id) && deepEqualsAlarmApi(lhs.fireAtEpochMs, rhs.fireAtEpochMs) && deepEqualsAlarmApi(lhs.label, rhs.label) && deepEqualsAlarmApi(lhs.soundAsset, rhs.soundAsset) && deepEqualsAlarmApi(lhs.vibrate, rhs.vibrate) && deepEqualsAlarmApi(lhs.hour, rhs.hour) && deepEqualsAlarmApi(lhs.minute, rhs.minute) && deepEqualsAlarmApi(lhs.weekdays, rhs.weekdays)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -226,6 +241,9 @@ struct NativeAlarm: Hashable {
     deepHashAlarmApi(value: label, hasher: &hasher)
     deepHashAlarmApi(value: soundAsset, hasher: &hasher)
     deepHashAlarmApi(value: vibrate, hasher: &hasher)
+    deepHashAlarmApi(value: hour, hasher: &hasher)
+    deepHashAlarmApi(value: minute, hasher: &hasher)
+    deepHashAlarmApi(value: weekdays, hasher: &hasher)
   }
 }
 
@@ -278,6 +296,104 @@ struct AlarmPermissions: Hashable {
   }
 }
 
+/// What a platform's alarm engine can do. iOS 16–25 has no system-alarm API,
+/// so the sync service falls back to a notification burst there.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct PlatformCapabilities: Hashable {
+  /// True when the platform can schedule true system alarms (Android
+  /// AlarmManager always; iOS only on 26+ via AlarmKit). False on iOS 16–25,
+  /// where [AlarmHostApi.reconcileNotifications] is used instead.
+  var supportsSystemAlarms: Bool
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> PlatformCapabilities? {
+    let supportsSystemAlarms = pigeonVar_list[0] as! Bool
+
+    return PlatformCapabilities(
+      supportsSystemAlarms: supportsSystemAlarms
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      supportsSystemAlarms
+    ]
+  }
+  static func == (lhs: PlatformCapabilities, rhs: PlatformCapabilities) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return deepEqualsAlarmApi(lhs.supportsSystemAlarms, rhs.supportsSystemAlarms)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("PlatformCapabilities")
+    deepHashAlarmApi(value: supportsSystemAlarms, hasher: &hasher)
+  }
+}
+
+/// One scheduled local notification in the iOS 16–25 fallback burst. The Dart
+/// budget allocator produces these; only the iOS notification engine consumes
+/// them. Android reports [PlatformCapabilities.supportsSystemAlarms] true and
+/// never receives these.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct NotificationRequest: Hashable {
+  var alarmId: Int64
+  var fireAtEpochMs: Int64
+  var label: String
+  var sound: String
+  var burstIndex: Int64
+  var burstTotal: Int64
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> NotificationRequest? {
+    let alarmId = pigeonVar_list[0] as! Int64
+    let fireAtEpochMs = pigeonVar_list[1] as! Int64
+    let label = pigeonVar_list[2] as! String
+    let sound = pigeonVar_list[3] as! String
+    let burstIndex = pigeonVar_list[4] as! Int64
+    let burstTotal = pigeonVar_list[5] as! Int64
+
+    return NotificationRequest(
+      alarmId: alarmId,
+      fireAtEpochMs: fireAtEpochMs,
+      label: label,
+      sound: sound,
+      burstIndex: burstIndex,
+      burstTotal: burstTotal
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      alarmId,
+      fireAtEpochMs,
+      label,
+      sound,
+      burstIndex,
+      burstTotal,
+    ]
+  }
+  static func == (lhs: NotificationRequest, rhs: NotificationRequest) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return deepEqualsAlarmApi(lhs.alarmId, rhs.alarmId) && deepEqualsAlarmApi(lhs.fireAtEpochMs, rhs.fireAtEpochMs) && deepEqualsAlarmApi(lhs.label, rhs.label) && deepEqualsAlarmApi(lhs.sound, rhs.sound) && deepEqualsAlarmApi(lhs.burstIndex, rhs.burstIndex) && deepEqualsAlarmApi(lhs.burstTotal, rhs.burstTotal)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("NotificationRequest")
+    deepHashAlarmApi(value: alarmId, hasher: &hasher)
+    deepHashAlarmApi(value: fireAtEpochMs, hasher: &hasher)
+    deepHashAlarmApi(value: label, hasher: &hasher)
+    deepHashAlarmApi(value: sound, hasher: &hasher)
+    deepHashAlarmApi(value: burstIndex, hasher: &hasher)
+    deepHashAlarmApi(value: burstTotal, hasher: &hasher)
+  }
+}
+
 private class AlarmApiPigeonCodecReader: FlutterStandardReader {
   override func readValue(ofType type: UInt8) -> Any? {
     switch type {
@@ -285,6 +401,10 @@ private class AlarmApiPigeonCodecReader: FlutterStandardReader {
       return NativeAlarm.fromList(self.readValue() as! [Any?])
     case 130:
       return AlarmPermissions.fromList(self.readValue() as! [Any?])
+    case 131:
+      return PlatformCapabilities.fromList(self.readValue() as! [Any?])
+    case 132:
+      return NotificationRequest.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
     }
@@ -298,6 +418,12 @@ private class AlarmApiPigeonCodecWriter: FlutterStandardWriter {
       super.writeValue(value.toList())
     } else if let value = value as? AlarmPermissions {
       super.writeByte(130)
+      super.writeValue(value.toList())
+    } else if let value = value as? PlatformCapabilities {
+      super.writeByte(131)
+      super.writeValue(value.toList())
+    } else if let value = value as? NotificationRequest {
+      super.writeByte(132)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -352,6 +478,12 @@ protocol AlarmHostApi {
   /// finished, so the platform can tear down the engine that ran it.
   /// Harmless to call from a normal app engine, where it is a no-op.
   func reconcileFinished() throws
+  /// What this platform's alarm engine supports. Queried by the sync service
+  /// to choose between system alarms and the notification-burst fallback.
+  func capabilities() throws -> PlatformCapabilities
+  /// Replaces the platform's entire scheduled notification set (the iOS 16–25
+  /// fallback). A full replace, like [reconcile]. No-op on Android.
+  func reconcileNotifications(requests: [NotificationRequest]) throws
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -528,6 +660,38 @@ class AlarmHostApiSetup {
       }
     } else {
       reconcileFinishedChannel.setMessageHandler(nil)
+    }
+    /// What this platform's alarm engine supports. Queried by the sync service
+    /// to choose between system alarms and the notification-burst fallback.
+    let capabilitiesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.capabilities\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      capabilitiesChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.capabilities()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      capabilitiesChannel.setMessageHandler(nil)
+    }
+    /// Replaces the platform's entire scheduled notification set (the iOS 16–25
+    /// fallback). A full replace, like [reconcile]. No-op on Android.
+    let reconcileNotificationsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.reconcileNotifications\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reconcileNotificationsChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let requestsArg = args[0] as! [NotificationRequest]
+        do {
+          try api.reconcileNotifications(requests: requestsArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reconcileNotificationsChannel.setMessageHandler(nil)
     }
   }
 }

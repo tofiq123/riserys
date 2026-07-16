@@ -5,13 +5,31 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:rise/data/alarm_sync_service.dart';
 import 'package:rise/data/local/alarm_repository.dart';
 import 'package:rise/data/local/database.dart';
+import 'package:rise/data/native/alarm_api.g.dart' as pigeon;
 import 'package:rise/domain/alarm.dart';
+import 'package:rise/domain/notification_request.dart';
 import 'package:rise/domain/scheduled_occurrence.dart';
+
+/// Captures what `PigeonAlarmPlatform` sends across the Pigeon channel,
+/// without ever touching a real platform channel. Only [reconcile] is
+/// exercised by the tests below, so every other member just needs to exist
+/// to satisfy `extends` — none of them should ever be called.
+class FakeAlarmHostApi extends pigeon.AlarmHostApi {
+  final List<List<pigeon.NativeAlarm>> reconcileCalls = [];
+
+  @override
+  Future<void> reconcile(List<pigeon.NativeAlarm> alarms) async =>
+      reconcileCalls.add(alarms);
+}
 
 /// Records what the service would have sent to the platform.
 class FakeAlarmPlatform implements AlarmPlatform {
+  FakeAlarmPlatform({this.systemAlarms = true});
+
+  bool systemAlarms;
   final List<List<ScheduledOccurrence>> reconcileCalls = [];
   final List<ScheduledOccurrence> ringNowCalls = [];
+  final List<List<NotificationRequest>> notificationCalls = [];
 
   @override
   Future<void> reconcile(List<ScheduledOccurrence> occurrences) async =>
@@ -20,6 +38,13 @@ class FakeAlarmPlatform implements AlarmPlatform {
   @override
   Future<void> ringNow(ScheduledOccurrence occurrence) async =>
       ringNowCalls.add(occurrence);
+
+  @override
+  Future<bool> supportsSystemAlarms() async => systemAlarms;
+
+  @override
+  Future<void> reconcileNotifications(List<NotificationRequest> requests) async =>
+      notificationCalls.add(requests);
 }
 
 void main() {
@@ -41,6 +66,37 @@ void main() {
   });
 
   tearDown(() async => db.close());
+
+  test('system-alarm platform uses reconcile, not notifications', () async {
+    platform = FakeAlarmPlatform(systemAlarms: true);
+    AlarmSyncService.configure(AlarmSyncService(
+      repository: repo,
+      platform: platform,
+      location: tz.getLocation('America/New_York'),
+    ));
+    await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));
+    await AlarmSyncService.instance.reconcileNow();
+
+    expect(platform.reconcileCalls, hasLength(1));
+    expect(platform.notificationCalls, isEmpty);
+  });
+
+  test('fallback platform uses a notification burst, not reconcile', () async {
+    platform = FakeAlarmPlatform(systemAlarms: false);
+    AlarmSyncService.configure(AlarmSyncService(
+      repository: repo,
+      platform: platform,
+      location: tz.getLocation('America/New_York'),
+    ));
+    await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));
+    await AlarmSyncService.instance.reconcileNow();
+
+    expect(platform.notificationCalls, hasLength(1));
+    // A single alarm gets a full 16-notification burst.
+    expect(platform.notificationCalls.single, hasLength(16));
+    expect(platform.reconcileCalls, isEmpty,
+        reason: 'the fallback platform must not arm system alarms');
+  });
 
   test('sends nothing to the platform when there are no alarms', () async {
     await AlarmSyncService.instance.reconcileNow();
@@ -159,5 +215,65 @@ void main() {
     final plan = await AlarmSyncService.instance.currentPlan();
     expect(plan, hasLength(2));
     expect(plan.first.fireAt.isBefore(plan.last.fireAt), isTrue);
+  });
+
+  test(
+      'PigeonAlarmPlatform.reconcile maps ScheduledOccurrence recurrence onto '
+      'NativeAlarm, with weekdays sorted — a refactor that drops the sort or '
+      'flips a weekday must fail here, not just in a doc comment', () async {
+    final fakeApi = FakeAlarmHostApi();
+    final pigeonPlatform = PigeonAlarmPlatform(fakeApi);
+
+    final occurrence = ScheduledOccurrence(
+      alarmId: 1,
+      fireAt: DateTime.utc(2026, 7, 19, 10, 30),
+      label: 'Run',
+      soundAsset: 'sounds/default_alarm.mp3',
+      vibrate: true,
+      hour: 6,
+      minute: 30,
+      // Deliberately unsorted (Saturday=6 before Sunday=0) so the assertion
+      // below only passes if PigeonAlarmPlatform actually sorts.
+      weekdays: const {6, 0},
+    );
+
+    await pigeonPlatform.reconcile([occurrence]);
+
+    expect(fakeApi.reconcileCalls, hasLength(1));
+    final sent = fakeApi.reconcileCalls.single.single;
+    expect(sent.hour, 6);
+    expect(sent.minute, 30);
+    expect(sent.weekdays, [0, 6]);
+  });
+
+  test(
+      'fallback (iOS) platform: reconcileNow(recoverMissed: true) sends the '
+      'scheduled set via notifications AND rings the missed occurrence via '
+      'ringNow — the fallback branch and recovery path must not conflict',
+      () async {
+    platform = FakeAlarmPlatform(systemAlarms: false);
+    AlarmSyncService.configure(AlarmSyncService(
+      repository: repo,
+      platform: platform,
+      location: tz.getLocation('America/New_York'),
+    ));
+
+    // A one-shot alarm one minute in the past is "missed": nextOccurrence
+    // rolls it to tomorrow, so recovery must come from the dedicated path.
+    final now = tz.TZDateTime.now(tz.getLocation('America/New_York'));
+    final justPassed = now.subtract(const Duration(minutes: 1));
+    final upserted = await repo.upsert(
+        Alarm(id: 0, hour: justPassed.hour, minute: justPassed.minute));
+
+    await AlarmSyncService.instance.reconcileNow(recoverMissed: true);
+
+    // The scheduled set goes through notifications, not reconcile...
+    expect(platform.notificationCalls, hasLength(1));
+    expect(platform.reconcileCalls, isEmpty,
+        reason: 'the fallback platform must not arm system alarms');
+
+    // ...and the missed occurrence still rings via ringNow.
+    expect(platform.ringNowCalls, hasLength(1));
+    expect(platform.ringNowCalls.single.alarmId, upserted.id);
   });
 }
