@@ -28,6 +28,13 @@ String _countdown(Duration d) {
   return 'in ${m}m ${s.toString().padLeft(2, '0')}s';
 }
 
+/// (hour12, isAm) for a 0–23 hour. 0→12am, 12→12pm.
+({int hour12, bool isAm}) _to12h(int hour24) {
+  final isAm = hour24 < 12;
+  final h = hour24 % 12;
+  return (hour12: h == 0 ? 12 : h, isAm: isAm);
+}
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({
     super.key,
@@ -75,7 +82,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           _header(),
           const SizedBox(height: 18),
-          _hero(alarms, next),
+          _hero(next),
           const SizedBox(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -118,7 +125,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _hero(List<Alarm> alarms, ScheduledOccurrence? next) {
+  Widget _hero(ScheduledOccurrence? next) {
     if (next == null) {
       return RiseCard(
         child: Padding(
@@ -136,20 +143,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    Alarm? alarm;
-    for (final a in alarms) {
-      if (a.id == next.alarmId) {
-        alarm = a;
-        break;
-      }
-    }
-    final hour12 = alarm?.hour12 ?? 0;
-    final minute = alarm?.minute ?? 0;
-    final ampm = (alarm?.isAm ?? true) ? 'AM' : 'PM';
+    final t = _to12h(next.hour);
+    final hour12 = t.hour12;
+    final minute = next.minute;
+    final ampm = t.isAm ? 'AM' : 'PM';
     final remaining = next.fireAt.toLocal().difference(DateTime.now());
 
     return RiseCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(RiseSpacing.screen),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

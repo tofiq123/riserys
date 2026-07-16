@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/domain/alarm.dart';
+import 'package:rise/domain/scheduled_occurrence.dart';
 import 'package:rise/ui/components/rise_switch.dart';
 import 'package:rise/ui/screens/home_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
@@ -80,5 +81,31 @@ void main() {
     await t.pumpWidget(_host(alarms: const [], mutations: _RecordingMutations()));
     await t.pump();
     expect(find.textContaining('No alarms'), findsOneWidget);
+  });
+
+  testWidgets('hero shows the occurrence time even when its alarm is not in the list', (t) async {
+    final occ = ScheduledOccurrence(
+      alarmId: 999, // deliberately absent from the alarms list
+      fireAt: DateTime.now().toUtc().add(const Duration(hours: 2)),
+      label: 'Gym',
+      soundAsset: '',
+      vibrate: true,
+      hour: 14,
+      minute: 5,
+    );
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        alarmsProvider.overrideWith((ref) => Stream.value(const <Alarm>[])),
+        nextOccurrenceProvider.overrideWith((ref) async => occ),
+        alarmMutationsProvider.overrideWithValue(_RecordingMutations()),
+      ],
+      child: MaterialApp(
+        home: HomeScreen(onNew: () {}, onEdit: (_) {}, onPreview: () {}),
+      ),
+    ));
+    await t.pump(); // resolve the FutureProvider
+    await t.pump();
+    expect(find.text('2:05'), findsOneWidget); // 14:05 → 2:05 PM
+    expect(find.text('PM'), findsOneWidget);
   });
 }
