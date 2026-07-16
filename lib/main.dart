@@ -83,9 +83,17 @@ class _RiseAppState extends State<RiseApp> {
 
   /// Cold start: RingActivity launched the engine from scratch, so no
   /// onAlarmFired callback ever arrives — ask the platform what is ringing.
+  /// This is the only path to DevRingPage (and its Dismiss button) on that
+  /// cold start, so a thrown PlatformException here must not go unhandled:
+  /// left unguarded, it would abort before _showRing ever runs and the
+  /// ringing alarm would render no way to stop it.
   Future<void> _checkColdStartRing() async {
-    final id = await AlarmHostApi().getRingingAlarmId();
-    if (id != null) _showRing(id);
+    try {
+      final id = await AlarmHostApi().getRingingAlarmId();
+      if (id != null) _showRing(id);
+    } catch (e) {
+      debugPrint('Rise: could not check for a cold-start ringing alarm: $e');
+    }
   }
 
   void _showRing(int alarmId) {

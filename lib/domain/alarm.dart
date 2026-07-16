@@ -102,13 +102,14 @@ class Alarm {
       label,
       soundAsset,
       vibrate,
-      // Normalized to UTC, not the raw DateTime: Dart's DateTime.== (and
-      // hence its default hashCode) treats a UTC and a local DateTime
-      // representing the exact same instant as unequal. The database round
-      // trip hands back a local-flavored DateTime (drift's default
-      // unix-seconds storage), while values set in memory are UTC — without
-      // this, an alarm freshly loaded from the database would not equal an
-      // otherwise-identical one built in code, and would hash differently.
+      // Normalized to UTC, not the raw DateTime: Dart's DateTime.== treats a
+      // UTC and a local DateTime representing the exact same instant as
+      // unequal, even though DateTime.hashCode (derived only from the epoch
+      // microsecond value) would already agree for the two. The database
+      // round trip hands back a local-flavored DateTime (drift's default
+      // unix-seconds storage), while values set in memory are UTC — the
+      // .toUtc() here just keeps hashCode consistent with the == above,
+      // which does need the normalization to treat the two as equal.
       lastDismissedAt?.toUtc());
 
   @override
