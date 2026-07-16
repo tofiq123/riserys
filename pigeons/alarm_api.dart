@@ -68,9 +68,13 @@ abstract class AlarmHostApi {
   ///
   /// Safe to call repeatedly — this peeks, it does not clear state. The id
   /// stays valid for the whole ring so [stopRinging] can verify it is
-  /// stopping the alarm it was asked to stop. Needed at cold start: the
-  /// ringing activity can launch the Flutter engine from scratch, in which
-  /// case no onAlarmFired callback ever arrives.
+  /// stopping the alarm it was asked to stop. This is the *only* way Dart
+  /// learns what is ringing — there is no push channel the other way — so
+  /// callers must poll it: at cold start (the ringing activity can launch
+  /// the Flutter engine from scratch) and again on every app resume (the
+  /// ringing activity is `singleInstance`, so a second alarm taking over an
+  /// already-running engine delivers onNewIntent natively with no signal
+  /// that reaches Dart on its own).
   int? getRingingAlarmId();
 
   void stopRinging(int alarmId);
@@ -79,10 +83,4 @@ abstract class AlarmHostApi {
   /// finished, so the platform can tear down the engine that ran it.
   /// Harmless to call from a normal app engine, where it is a no-op.
   void reconcileFinished();
-}
-
-@FlutterApi()
-abstract class AlarmFlutterApi {
-  /// Fired when an alarm starts ringing while the engine is already alive.
-  void onAlarmFired(int alarmId);
 }

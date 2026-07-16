@@ -55,10 +55,6 @@ private func wrapError(_ error: Any) -> [Any?] {
   ]
 }
 
-private func createConnectionError(withChannelName channelName: String) -> PigeonError {
-  return PigeonError(code: "channel-error", message: "Unable to establish connection on channel: '\(channelName)'.", details: "")
-}
-
 private func isNullish(_ value: Any?) -> Bool {
   return value is NSNull || value == nil
 }
@@ -343,9 +339,13 @@ protocol AlarmHostApi {
   ///
   /// Safe to call repeatedly — this peeks, it does not clear state. The id
   /// stays valid for the whole ring so [stopRinging] can verify it is
-  /// stopping the alarm it was asked to stop. Needed at cold start: the
-  /// ringing activity can launch the Flutter engine from scratch, in which
-  /// case no onAlarmFired callback ever arrives.
+  /// stopping the alarm it was asked to stop. This is the *only* way Dart
+  /// learns what is ringing — there is no push channel the other way — so
+  /// callers must poll it: at cold start (the ringing activity can launch
+  /// the Flutter engine from scratch) and again on every app resume (the
+  /// ringing activity is `singleInstance`, so a second alarm taking over an
+  /// already-running engine delivers onNewIntent natively with no signal
+  /// that reaches Dart on its own).
   func getRingingAlarmId() throws -> Int64?
   func stopRinging(alarmId: Int64) throws
   /// Signals that a headless reconcile (boot, app update, clock change) has
@@ -478,9 +478,13 @@ class AlarmHostApiSetup {
     ///
     /// Safe to call repeatedly — this peeks, it does not clear state. The id
     /// stays valid for the whole ring so [stopRinging] can verify it is
-    /// stopping the alarm it was asked to stop. Needed at cold start: the
-    /// ringing activity can launch the Flutter engine from scratch, in which
-    /// case no onAlarmFired callback ever arrives.
+    /// stopping the alarm it was asked to stop. This is the *only* way Dart
+    /// learns what is ringing — there is no push channel the other way — so
+    /// callers must poll it: at cold start (the ringing activity can launch
+    /// the Flutter engine from scratch) and again on every app resume (the
+    /// ringing activity is `singleInstance`, so a second alarm taking over an
+    /// already-running engine delivers onNewIntent natively with no signal
+    /// that reaches Dart on its own).
     let getRingingAlarmIdChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.getRingingAlarmId\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
       getRingingAlarmIdChannel.setMessageHandler { _, reply in
@@ -524,41 +528,6 @@ class AlarmHostApiSetup {
       }
     } else {
       reconcileFinishedChannel.setMessageHandler(nil)
-    }
-  }
-}
-/// Generated protocol from Pigeon that represents Flutter messages that can be called from Swift.
-protocol AlarmFlutterApiProtocol {
-  /// Fired when an alarm starts ringing while the engine is already alive.
-  func onAlarmFired(alarmId alarmIdArg: Int64, completion: @escaping (Result<Void, PigeonError>) -> Void)
-}
-class AlarmFlutterApi: AlarmFlutterApiProtocol {
-  private let binaryMessenger: FlutterBinaryMessenger
-  private let messageChannelSuffix: String
-  init(binaryMessenger: FlutterBinaryMessenger, messageChannelSuffix: String = "") {
-    self.binaryMessenger = binaryMessenger
-    self.messageChannelSuffix = messageChannelSuffix.count > 0 ? ".\(messageChannelSuffix)" : ""
-  }
-  var codec: AlarmApiPigeonCodec {
-    return AlarmApiPigeonCodec.shared
-  }
-  /// Fired when an alarm starts ringing while the engine is already alive.
-  func onAlarmFired(alarmId alarmIdArg: Int64, completion: @escaping (Result<Void, PigeonError>) -> Void) {
-    let channelName: String = "dev.flutter.pigeon.rise.AlarmFlutterApi.onAlarmFired\(messageChannelSuffix)"
-    let channel = FlutterBasicMessageChannel(name: channelName, binaryMessenger: binaryMessenger, codec: codec)
-    channel.sendMessage([alarmIdArg] as [Any?]) { response in
-      guard let listResponse = response as? [Any?] else {
-        completion(.failure(createConnectionError(withChannelName: channelName)))
-        return
-      }
-      if listResponse.count > 1 {
-        let code: String = listResponse[0] as! String
-        let message: String? = nilOrValue(listResponse[1])
-        let details: String? = nilOrValue(listResponse[2])
-        completion(.failure(PigeonError(code: code, message: message, details: details)))
-      } else {
-        completion(.success(()))
-      }
     }
   }
 }

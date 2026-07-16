@@ -70,36 +70,97 @@ class RiseApp extends StatefulWidget {
   State<RiseApp> createState() => _RiseAppState();
 }
 
-class _RiseAppState extends State<RiseApp> {
+class _RiseAppState extends State<RiseApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
+
+  // The alarm id currently shown on a pushed DevRingPage, or null if none is
+  // showing. Tracked so a re-check can tell "the same alarm is still
+  // ringing" (do nothing) apart from "a different alarm has taken over" (
+  // replace the page) apart from "nothing is ringing any more" (pop). Kept in
+  // sync with reality by the `.then` callback in _showRing below, which fires
+  // whenever the pushed route is popped for *any* reason — our own pop, the
+  // Dismiss button's own pop, or the user backing out — not just when this
+  // class does the popping.
+  int? _shownRingId;
 
   @override
   void initState() {
     super.initState();
-    // Engine already alive when an alarm fires.
-    AlarmFlutterApi.setUp(_FlutterApiImpl(onFired: _showRing));
+    WidgetsBinding.instance.addObserver(this);
     _checkColdStartRing();
   }
 
-  /// Cold start: RingActivity launched the engine from scratch, so no
-  /// onAlarmFired callback ever arrives — ask the platform what is ringing.
-  /// This is the only path to DevRingPage (and its Dismiss button) on that
-  /// cold start, so a thrown PlatformException here must not go unhandled:
-  /// left unguarded, it would abort before _showRing ever runs and the
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // RingActivity is android:launchMode="singleInstance": a second alarm
+    // firing while it is still showing does not recreate it, so initState
+    // above never runs again and would otherwise never learn about the new
+    // alarm. Resuming is the one signal available in both that case (the
+    // reused activity is brought back to the foreground, which always goes
+    // through onResume) and the general case of returning to the app while
+    // an alarm rings.
+    if (state == AppLifecycleState.resumed) _checkColdStartRing();
+  }
+
+  /// Cold start: RingActivity launched the engine from scratch, so nothing
+  /// else ever tells Dart an alarm is ringing — ask the platform directly.
+  /// Also re-run on every resume (see didChangeAppLifecycleState) to catch a
+  /// second alarm taking over an already-running engine. Either way, a
+  /// thrown PlatformException here must not go unhandled: left unguarded, it
+  /// would stop the ring screen from ever appearing or updating, and the
   /// ringing alarm would render no way to stop it.
   Future<void> _checkColdStartRing() async {
+    int? id;
     try {
-      final id = await AlarmHostApi().getRingingAlarmId();
-      if (id != null) _showRing(id);
+      id = await AlarmHostApi().getRingingAlarmId();
     } catch (e) {
-      debugPrint('Rise: could not check for a cold-start ringing alarm: $e');
+      debugPrint('Rise: could not check for a ringing alarm: $e');
+      return;
+    }
+    _reconcileRingScreen(id);
+  }
+
+  /// Makes the ring screen match what the platform says is ringing.
+  void _reconcileRingScreen(int? id) {
+    if (id == _shownRingId) return; // Already showing the right thing.
+
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+
+    if (id == null) {
+      // Nothing is ringing any more (e.g. the service died some other way).
+      // Don't leave a dead ring screen whose Dismiss button does nothing.
+      _shownRingId = null;
+      navigator.maybePop();
+      return;
+    }
+
+    if (_shownRingId == null) {
+      _showRing(id, replace: false);
+    } else {
+      // A different alarm has taken over the ring service: replace rather
+      // than stack a second ring page on top of the stale one.
+      _showRing(id, replace: true);
     }
   }
 
-  void _showRing(int alarmId) {
-    _navigatorKey.currentState?.push(MaterialPageRoute(
+  void _showRing(int alarmId, {required bool replace}) {
+    _shownRingId = alarmId;
+    final route = MaterialPageRoute<void>(
       builder: (_) => DevRingPage(alarmId: alarmId),
-    ));
+    );
+    final navigator = _navigatorKey.currentState!;
+    final future =
+        replace ? navigator.pushReplacement(route) : navigator.push(route);
+    future.then((_) {
+      if (_shownRingId == alarmId) _shownRingId = null;
+    });
   }
 
   @override
@@ -145,13 +206,4 @@ class _StartupFailedPage extends StatelessWidget {
       ),
     );
   }
-}
-
-class _FlutterApiImpl implements AlarmFlutterApi {
-  _FlutterApiImpl({required this.onFired});
-
-  final void Function(int alarmId) onFired;
-
-  @override
-  void onAlarmFired(int alarmId) => onFired(alarmId);
 }

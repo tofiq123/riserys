@@ -15,9 +15,6 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 private object AlarmApiPigeonUtils {
 
-  fun createConnectionError(channelName: String): FlutterError {
-    return FlutterError("channel-error",  "Unable to establish connection on channel: '$channelName'.", "")  }
-
   fun wrapResult(result: Any?): List<Any?> {
     return listOf(result)
   }
@@ -355,9 +352,13 @@ interface AlarmHostApi {
    *
    * Safe to call repeatedly — this peeks, it does not clear state. The id
    * stays valid for the whole ring so [stopRinging] can verify it is
-   * stopping the alarm it was asked to stop. Needed at cold start: the
-   * ringing activity can launch the Flutter engine from scratch, in which
-   * case no onAlarmFired callback ever arrives.
+   * stopping the alarm it was asked to stop. This is the *only* way Dart
+   * learns what is ringing — there is no push channel the other way — so
+   * callers must poll it: at cold start (the ringing activity can launch
+   * the Flutter engine from scratch) and again on every app resume (the
+   * ringing activity is `singleInstance`, so a second alarm taking over an
+   * already-running engine delivers onNewIntent natively with no signal
+   * that reaches Dart on its own).
    */
   fun getRingingAlarmId(): Long?
   fun stopRinging(alarmId: Long)
@@ -557,33 +558,6 @@ interface AlarmHostApi {
           channel.setMessageHandler(null)
         }
       }
-    }
-  }
-}
-/** Generated class from Pigeon that represents Flutter messages that can be called from Kotlin. */
-class AlarmFlutterApi(private val binaryMessenger: BinaryMessenger, private val messageChannelSuffix: String = "") {
-  companion object {
-    /** The codec used by AlarmFlutterApi. */
-    val codec: MessageCodec<Any?> by lazy {
-      AlarmApiPigeonCodec()
-    }
-  }
-  /** Fired when an alarm starts ringing while the engine is already alive. */
-  fun onAlarmFired(alarmIdArg: Long, callback: (Result<Unit>) -> Unit)
-{
-    val separatedMessageChannelSuffix = if (messageChannelSuffix.isNotEmpty()) ".$messageChannelSuffix" else ""
-    val channelName = "dev.flutter.pigeon.rise.AlarmFlutterApi.onAlarmFired$separatedMessageChannelSuffix"
-    val channel = BasicMessageChannel<Any?>(binaryMessenger, channelName, codec)
-    channel.send(listOf(alarmIdArg)) {
-      if (it is List<*>) {
-        if (it.size > 1) {
-          callback(Result.failure(FlutterError(it[0] as String, it[1] as String, it[2] as String?)))
-        } else {
-          callback(Result.success(Unit))
-        }
-      } else {
-        callback(Result.failure(AlarmApiPigeonUtils.createConnectionError(channelName)))
-      } 
     }
   }
 }
