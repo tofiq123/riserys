@@ -54,6 +54,15 @@ void main() {
       await t.pumpAndSettle();
       expect(woke, isFalse);
     });
+
+    testWidgets('fires mid-drag when the threshold is crossed, before release', (t) async {
+      var woke = false;
+      await t.pumpWidget(_wrap(SizedBox(width: 300, child: SlideToWake(onWake: () => woke = true))));
+      final g = await t.startGesture(t.getCenter(find.byType(SlideToWake)));
+      await g.moveBy(const Offset(300, 0)); // cross the threshold mid-drag
+      expect(woke, isTrue, reason: 'must fire during the drag, not on release');
+      await g.up();
+    });
   });
 
   group('ToastHost', () {
@@ -65,7 +74,9 @@ void main() {
       )));
       await t.pump();
       expect(find.text('Alarm set'), findsOneWidget);
-      await t.pump(const Duration(milliseconds: 2800));
+      await t.pump(const Duration(milliseconds: 1000));
+      expect(hidden, isFalse, reason: 'must not hide before ~2.7s');
+      await t.pump(const Duration(milliseconds: 1800));
       expect(hidden, isTrue);
     });
   });
