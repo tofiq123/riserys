@@ -9,8 +9,19 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import io.flutter.embedding.engine.FlutterEngine
 
-class AlarmHostApiImpl(private val context: Context) : AlarmHostApi {
+/**
+ * [engine] is the headless engine this instance was constructed for —
+ * BootReceiver passes its own engine so [reconcileFinished] can release
+ * exactly that one. MainActivity and RingActivity pass nothing: their engines
+ * are activity-owned (torn down by the Android framework, not by us), so
+ * [reconcileFinished] is a harmless no-op there.
+ */
+class AlarmHostApiImpl(
+    private val context: Context,
+    private val engine: FlutterEngine? = null,
+) : AlarmHostApi {
 
     override fun reconcile(alarms: List<NativeAlarm>) {
         AlarmScheduler.reconcile(context, alarms)
@@ -106,11 +117,11 @@ class AlarmHostApiImpl(private val context: Context) : AlarmHostApi {
     }
 
     // A headless reconcile engine (BootReceiver) calls this once its Dart
-    // entrypoint is done, so we can tear it down instead of leaking it until
-    // the OS kills the process. On a normal app engine (MainActivity,
-    // RingActivity) this is a no-op: those engines were never retained.
+    // entrypoint is done, so we can tear down just that engine instead of
+    // leaking it until the OS kills the process. On a normal app engine
+    // (MainActivity, RingActivity) `engine` is null, so this is a no-op.
     override fun reconcileFinished() {
-        FlutterEngineHolder.releaseAll()
+        engine?.let { FlutterEngineHolder.release(it) }
     }
 
     /**

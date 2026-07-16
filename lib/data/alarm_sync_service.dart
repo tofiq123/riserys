@@ -58,13 +58,27 @@ class AlarmSyncService {
     required AlarmRepository repository,
     required AlarmPlatform platform,
     required tz.Location location,
+    Future<void> Function()? refreshLocation,
   })  : _repository = repository,
         _platform = platform,
-        _location = location;
+        _location = location,
+        _refreshLocation = refreshLocation;
 
   final AlarmRepository _repository;
   final AlarmPlatform _platform;
-  final tz.Location _location;
+
+  // Not final: reconcileNow() re-reads tz.local after _refreshLocation(), so
+  // a live IANA zone change (rare — not an ordinary DST transition, which
+  // tz.Location already encodes) is picked up on the next reconcile rather
+  // than being stuck at whatever the device reported at construction time.
+  tz.Location _location;
+
+  // Null in tests: tests construct this service directly with an explicit
+  // [location] and want it to stay fixed for the life of the test, not get
+  // silently overwritten by whatever zone the test machine happens to be in.
+  // Production wires this to _setLocalLocationFromDevice via
+  // configureForApp().
+  final Future<void> Function()? _refreshLocation;
 
   /// Exposed so the UI reads alarms through the same instance the scheduler
   /// was built from — two repositories over two database handles would drift.
@@ -99,6 +113,10 @@ class AlarmSyncService {
       repository: AlarmRepository(db),
       platform: PigeonAlarmPlatform(),
       location: tz.local,
+      // Lets reconcileNow() re-resolve the device zone instead of trusting
+      // whatever was current at construction time — see the doc comment on
+      // AlarmSyncService._location for why that matters.
+      refreshLocation: _setLocalLocationFromDevice,
     ));
   }
 
@@ -110,19 +128,31 @@ class AlarmSyncService {
   /// caller might not, and a device can also report a zone name the bundled
   /// tz database doesn't recognize (stale platform data, an alias the
   /// database renamed, etc). Either way `tz.getLocation()` throws
-  /// `LocationNotFoundException` rather than crashing the process, so this
-  /// falls back to UTC — loudly, via debugPrint, since a silent fallback here
-  /// would silently recreate the exact bug this method exists to fix.
+  /// `LocationNotFoundException` rather than crashing the process.
+  ///
+  /// `getLocalTimezone()` itself can also fail — it is a MethodChannel call,
+  /// so a host-side wiring problem (a plugin not registered on whatever
+  /// engine is running this, a platform-side crash, etc) makes it throw
+  /// `MissingPluginException`/`PlatformException` instead of returning.
+  /// That failure is inside this try/catch too, for the same reason: a
+  /// plugin hiccup must degrade to a wrong-timezone alarm, never to no
+  /// alarms at all, since that is the exact failure this whole path exists
+  /// to prevent.
+  ///
+  /// Either way this falls back to UTC — loudly, via debugPrint, since a
+  /// silent fallback here would silently recreate the exact bug this method
+  /// exists to fix.
   static Future<void> _setLocalLocationFromDevice() async {
-    final info = await FlutterTimezone.getLocalTimezone();
+    String? identifier;
     try {
-      tz.setLocalLocation(tz.getLocation(info.identifier));
+      identifier = (await FlutterTimezone.getLocalTimezone()).identifier;
+      tz.setLocalLocation(tz.getLocation(identifier));
     } catch (e) {
+      final zone = identifier == null ? '' : ' "$identifier"';
       debugPrint(
-        'AlarmSyncService: could not resolve device timezone '
-        '"${info.identifier}" ($e). Falling back to UTC — alarms WILL be '
-        'armed at the wrong instant on any device outside UTC until this is '
-        'diagnosed and fixed.',
+        'AlarmSyncService: could not resolve device timezone$zone ($e). '
+        'Falling back to UTC — alarms WILL be armed at the wrong instant on '
+        'any device outside UTC until this is diagnosed and fixed.',
       );
       tz.setLocalLocation(tz.UTC);
     }
@@ -142,6 +172,19 @@ class AlarmSyncService {
   /// that came due within the last 30 minutes and was never dismissed rings
   /// immediately rather than being silently lost.
   Future<void> reconcileNow({bool recoverMissed = false}) async {
+    // Re-resolve the device zone before computing the plan: BootReceiver's
+    // headless engine runs this on every boot/app-update/clock-change, so an
+    // actual IANA zone change (not an ordinary DST transition — tz.Location
+    // already encodes those) is picked up here. Without this, a foreground
+    // engine that started before the zone change keeps using the stale
+    // _location for the rest of the process, and the next add/edit-triggered
+    // reconcile would silently overwrite the just-corrected schedule.
+    final refresh = _refreshLocation;
+    if (refresh != null) {
+      await refresh();
+      _location = tz.local;
+    }
+
     final plan = await currentPlan();
     await _platform.reconcile(plan);
 
