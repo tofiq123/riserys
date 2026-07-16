@@ -71,6 +71,25 @@ void main() {
       );
       expect(result.single.fireAt.isUtc, isTrue);
     });
+
+    test(
+        'breaks ties on alarmId when two alarms fire at the exact same '
+        'instant, so ordering is deterministic rather than an artifact of '
+        "List.sort's (unspecified, non-stable) tie handling", () {
+      final now = tz.TZDateTime(ny, 2026, 7, 15, 5, 0);
+      // Listed with the higher id first, on purpose: this only proves the
+      // tie-breaker exists if the output order does not just mirror input
+      // order.
+      final result = desiredOccurrences(
+        alarms: const [
+          Alarm(id: 3, hour: 6, minute: 30),
+          Alarm(id: 2, hour: 6, minute: 30),
+        ],
+        now: now,
+        location: ny,
+      );
+      expect(result.map((o) => o.alarmId), [2, 3]);
+    });
   });
 
   group('diffSchedule', () {

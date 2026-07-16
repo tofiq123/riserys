@@ -38,7 +38,13 @@ List<ScheduledOccurrence> desiredOccurrences({
     ));
   }
 
-  result.sort((a, b) => a.fireAt.compareTo(b.fireAt));
+  // Secondary key on alarmId: Dart's List.sort is not stable, so without a
+  // tie-breaker, two alarms firing at the exact same instant would order
+  // nondeterministically from one reconcile to the next.
+  result.sort((a, b) {
+    final byFireAt = a.fireAt.compareTo(b.fireAt);
+    return byFireAt != 0 ? byFireAt : a.alarmId.compareTo(b.alarmId);
+  });
   return result;
 }
 
