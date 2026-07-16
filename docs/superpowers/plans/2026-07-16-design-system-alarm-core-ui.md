@@ -3113,9 +3113,775 @@ git commit -m "feat(ui): add the ring screen with slide-to-wake and mission seam
 
 ---
 
-## Remaining tasks (Tasks 10–14 — screens; full code just before execution)
+### Task 10: Wake missions (Math / Hold / Tap / Memory) + host
 
-Tasks 1–9 above are complete. The remaining screens build on the same components/providers and get full code just before execution: **Task 10** the four missions + host (fills `RingScreen`'s `missionBuilder`), **Task 11** Onboarding, **Task 12** Profile/Settings, **Task 13** the tab-bar app shell, **Task 14** `main.dart` wiring (swap `DevRingPage`→`RingScreen`, `DevHomePage`→`AppShell`) + delete dev screens + device verification.
+**Files:**
+- Create: `lib/ui/missions/mission_frame.dart`
+- Create: `lib/ui/missions/math_mission.dart`
+- Create: `lib/ui/missions/hold_mission.dart`
+- Create: `lib/ui/missions/tap_mission.dart`
+- Create: `lib/ui/missions/memory_mission.dart`
+- Create: `lib/ui/missions/mission_host.dart`
+- Test: `test/ui/missions/missions_test.dart`
+
+**Interfaces:**
+- Consumes: components/tokens (`PrimaryButton`, `RiseColors`, `RiseRadii`, `RiseShadows`, `RiseText`); `Alarm`; `RingScreen`'s `MissionBuilder` shape and `alarmsProvider`/`SlideToWake` (for the integration test).
+- Produces:
+  - `MissionFrame({required String instruction, required Widget child})`.
+  - `MathMission`/`HoldMission`/`TapMission`/`MemoryMission` — each `StatefulWidget({required String diff, required VoidCallback onSolved, <injectable override>})`, calling `onSolved` exactly once on completion.
+  - Difficulty helpers `generateMathProblem`, `holdDurationFor`, `tapTargetFor`, `memoryLengthFor`, `generateSequence`.
+  - `Widget buildMission(BuildContext, Alarm, VoidCallback onSolved)` — structurally a `MissionBuilder`; dispatches on `alarm.mission`. Task 14 passes it to `RingScreen(missionBuilder: buildMission)`.
+
+> Each mission takes an injectable override (a fixed math problem, a tiny hold duration, a small tap target, a known memory sequence) so tests are deterministic and fast. `'none'` never reaches `buildMission` (RingScreen shows slide-to-wake for it); the host maps it to an empty box defensively.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/ui/missions/missions_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/ui/components/slide_to_wake.dart';
+import 'package:rise/ui/missions/hold_mission.dart';
+import 'package:rise/ui/missions/math_mission.dart';
+import 'package:rise/ui/missions/memory_mission.dart';
+import 'package:rise/ui/missions/mission_host.dart';
+import 'package:rise/ui/missions/tap_mission.dart';
+import 'package:rise/ui/screens/ring_screen.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+Widget _wrap(Widget child) =>
+    MaterialApp(home: Scaffold(body: Center(child: child)));
+
+void main() {
+  group('MathMission', () {
+    testWidgets('correct answer solves', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(MathMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        problem: (prompt: '2 + 3', answer: 5),
+      )));
+      await t.enterText(find.byType(TextField), '5');
+      await t.tap(find.text('Check'));
+      await t.pump();
+      expect(solved, isTrue);
+    });
+
+    testWidgets('wrong answer does not solve and shows a retry hint', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(MathMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        problem: (prompt: '2 + 3', answer: 5),
+      )));
+      await t.enterText(find.byType(TextField), '9');
+      await t.tap(find.text('Check'));
+      await t.pump();
+      expect(solved, isFalse);
+      expect(find.text('Try again'), findsOneWidget);
+    });
+  });
+
+  test('generateMathProblem answer is consistent with its operands', () {
+    for (final d in ['easy', 'medium', 'hard']) {
+      final p = generateMathProblem(d);
+      expect(p.answer, greaterThan(0));
+      expect(p.prompt, isNotEmpty);
+    }
+  });
+
+  group('HoldMission', () {
+    testWidgets('holding until the timer completes solves', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(HoldMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        holdDuration: const Duration(milliseconds: 100),
+      )));
+      final g = await t.startGesture(t.getCenter(find.text('HOLD')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 130));
+      expect(solved, isTrue);
+      await g.up();
+    });
+
+    testWidgets('releasing early does not solve', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(HoldMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        holdDuration: const Duration(milliseconds: 100),
+      )));
+      final g = await t.startGesture(t.getCenter(find.text('HOLD')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 40));
+      await g.up();
+      await t.pump(const Duration(milliseconds: 200));
+      expect(solved, isFalse);
+    });
+  });
+
+  testWidgets('TapMission: reaching the target solves', (t) async {
+    var solved = false;
+    await t.pumpWidget(_wrap(TapMission(
+      diff: 'easy',
+      onSolved: () => solved = true,
+      targetTaps: 3,
+    )));
+    await t.tap(find.text('3'));
+    await t.pump();
+    await t.tap(find.text('2'));
+    await t.pump();
+    await t.tap(find.text('1'));
+    await t.pump();
+    expect(solved, isTrue);
+  });
+
+  group('MemoryMission', () {
+    testWidgets('repeating the shown sequence solves', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(MemoryMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        sequence: const [0, 1, 2],
+      )));
+      await t.pump(); // start playback
+      await t.pump(const Duration(seconds: 2)); // playback done, input opens
+      await t.tap(find.byKey(const ValueKey('mem-pad-0')));
+      await t.tap(find.byKey(const ValueKey('mem-pad-1')));
+      await t.tap(find.byKey(const ValueKey('mem-pad-2')));
+      await t.pump();
+      expect(solved, isTrue);
+    });
+
+    testWidgets('a wrong tap does not solve', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(MemoryMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        sequence: const [0, 1, 2],
+      )));
+      await t.pump();
+      await t.pump(const Duration(seconds: 2));
+      await t.tap(find.byKey(const ValueKey('mem-pad-3'))); // wrong first pad
+      await t.pump();
+      expect(solved, isFalse);
+    });
+  });
+
+  group('buildMission host', () {
+    testWidgets('dispatches to the right mission widget', (t) async {
+      final cases = <String, Type>{
+        'math': MathMission,
+        'hold': HoldMission,
+        'tap': TapMission,
+        'memory': MemoryMission,
+      };
+      for (final entry in cases.entries) {
+        await t.pumpWidget(_wrap(Builder(
+          builder: (context) => buildMission(
+            context,
+            Alarm(id: 1, hour: 6, minute: 0, mission: entry.key),
+            () {},
+          ),
+        )));
+        await t.pump();
+        expect(find.byType(entry.value), findsOneWidget,
+            reason: 'mission ${entry.key}');
+      }
+    });
+
+    testWidgets('RingScreen with the host shows the mission for a missioned alarm',
+        (t) async {
+      await t.pumpWidget(ProviderScope(
+        overrides: [
+          alarmsProvider.overrideWith((ref) => Stream.value(
+              const [Alarm(id: 7, hour: 6, minute: 30, mission: 'tap')])),
+        ],
+        child: MaterialApp(
+          home: RingScreen(
+            alarmId: 7,
+            dismissAlarm: (_) async {},
+            missionBuilder: buildMission,
+          ),
+        ),
+      ));
+      await t.pump();
+      expect(find.byType(TapMission), findsOneWidget);
+      expect(find.byType(SlideToWake), findsNothing);
+    });
+  });
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+```bash
+flutter test test/ui/missions/missions_test.dart
+```
+Expected: FAIL — mission files not found.
+
+- [ ] **Step 3: Create the shared frame**
+
+Create `lib/ui/missions/mission_frame.dart`:
+
+```dart
+import 'package:flutter/widgets.dart';
+
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// Common presentation for a wake mission: a bold instruction above the
+/// interactive area.
+class MissionFrame extends StatelessWidget {
+  const MissionFrame({super.key, required this.instruction, required this.child});
+
+  final String instruction;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(instruction,
+            textAlign: TextAlign.center,
+            style: RiseText.body
+                .copyWith(color: RiseColors.textDim, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 16),
+        child,
+      ],
+    );
+  }
+}
+```
+
+- [ ] **Step 4: Create the Math mission**
+
+Create `lib/ui/missions/math_mission.dart`:
+
+```dart
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+
+import '../components/rise_buttons.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+import 'mission_frame.dart';
+
+typedef MathProblem = ({String prompt, int answer});
+
+/// A random arithmetic problem scaled by difficulty. Pass [rng] for
+/// determinism in tests.
+MathProblem generateMathProblem(String diff, [Random? rng]) {
+  final r = rng ?? Random();
+  switch (diff) {
+    case 'hard':
+      final a = 3 + r.nextInt(11); // 3..13
+      final b = 3 + r.nextInt(11);
+      return (prompt: '$a × $b', answer: a * b);
+    case 'medium':
+      final a = 10 + r.nextInt(40); // 10..49
+      final b = 10 + r.nextInt(40);
+      return (prompt: '$a + $b', answer: a + b);
+    default: // easy
+      final a = 2 + r.nextInt(18); // 2..19
+      final b = 2 + r.nextInt(18);
+      return (prompt: '$a + $b', answer: a + b);
+  }
+}
+
+class MathMission extends StatefulWidget {
+  const MathMission({
+    super.key,
+    required this.diff,
+    required this.onSolved,
+    this.problem, // injectable for tests
+  });
+
+  final String diff;
+  final VoidCallback onSolved;
+  final MathProblem? problem;
+
+  @override
+  State<MathMission> createState() => _MathMissionState();
+}
+
+class _MathMissionState extends State<MathMission> {
+  late MathProblem _p;
+  final _controller = TextEditingController();
+  bool _wrong = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _p = widget.problem ?? generateMathProblem(widget.diff);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (int.tryParse(_controller.text.trim()) == _p.answer) {
+      widget.onSolved();
+      return;
+    }
+    setState(() {
+      _wrong = true;
+      _controller.clear();
+      // A fresh problem (when not injected) so guessing can't brute-force it.
+      _p = widget.problem ?? generateMathProblem(widget.diff);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MissionFrame(
+      instruction: 'Solve to dismiss',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('${_p.prompt} = ?',
+              style: RiseText.mono(size: 40, weight: FontWeight.w500)),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: 160,
+            child: TextField(
+              controller: _controller,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              style: RiseText.mono(size: 24),
+              cursorColor: RiseColors.primary,
+              onSubmitted: (_) => _submit(),
+              decoration: InputDecoration(
+                hintText: '?',
+                filled: true,
+                fillColor: RiseColors.surface2,
+                errorText: _wrong ? 'Try again' : null,
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(RiseRadii.base),
+                  borderSide: BorderSide(
+                      color: _wrong ? RiseColors.danger : RiseColors.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(RiseRadii.base),
+                  borderSide: const BorderSide(color: RiseColors.primary),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          PrimaryButton(label: 'Check', onPressed: _submit),
+        ],
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 5: Create the Hold mission**
+
+Create `lib/ui/missions/hold_mission.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+import 'mission_frame.dart';
+
+Duration holdDurationFor(String diff) {
+  switch (diff) {
+    case 'hard':
+      return const Duration(seconds: 12);
+    case 'medium':
+      return const Duration(seconds: 8);
+    default:
+      return const Duration(seconds: 5);
+  }
+}
+
+class HoldMission extends StatefulWidget {
+  const HoldMission({
+    super.key,
+    required this.diff,
+    required this.onSolved,
+    this.holdDuration, // injectable for tests
+  });
+
+  final String diff;
+  final VoidCallback onSolved;
+  final Duration? holdDuration;
+
+  @override
+  State<HoldMission> createState() => _HoldMissionState();
+}
+
+class _HoldMissionState extends State<HoldMission>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: widget.holdDuration ?? holdDurationFor(widget.diff),
+    )..addStatusListener((s) {
+        if (s == AnimationStatus.completed) widget.onSolved();
+      });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _down() => _c.forward();
+  void _up() {
+    if (_c.status != AnimationStatus.completed) _c.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MissionFrame(
+      instruction: 'Hold the button until it fills',
+      child: GestureDetector(
+        onTapDown: (_) => _down(),
+        onTapUp: (_) => _up(),
+        onTapCancel: _up,
+        child: SizedBox(
+          width: 140,
+          height: 140,
+          child: AnimatedBuilder(
+            animation: _c,
+            builder: (context, _) => Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 140,
+                  height: 140,
+                  child: CircularProgressIndicator(
+                    value: _c.value,
+                    strokeWidth: 8,
+                    backgroundColor: RiseColors.surface2,
+                    valueColor:
+                        const AlwaysStoppedAnimation(RiseColors.primary),
+                  ),
+                ),
+                Container(
+                  width: 104,
+                  height: 104,
+                  decoration: const BoxDecoration(
+                      color: RiseColors.primary, shape: BoxShape.circle),
+                  alignment: Alignment.center,
+                  child: Text('HOLD',
+                      style: RiseText.mono(
+                          size: 16,
+                          weight: FontWeight.w700,
+                          color: RiseColors.primaryText)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 6: Create the Tap mission**
+
+Create `lib/ui/missions/tap_mission.dart`:
+
+```dart
+import 'package:flutter/widgets.dart';
+
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+import 'mission_frame.dart';
+
+int tapTargetFor(String diff) {
+  switch (diff) {
+    case 'hard':
+      return 50;
+    case 'medium':
+      return 30;
+    default:
+      return 15;
+  }
+}
+
+class TapMission extends StatefulWidget {
+  const TapMission({
+    super.key,
+    required this.diff,
+    required this.onSolved,
+    this.targetTaps, // injectable for tests
+  });
+
+  final String diff;
+  final VoidCallback onSolved;
+  final int? targetTaps;
+
+  @override
+  State<TapMission> createState() => _TapMissionState();
+}
+
+class _TapMissionState extends State<TapMission> {
+  int _count = 0;
+  late final int _target = widget.targetTaps ?? tapTargetFor(widget.diff);
+
+  void _tap() {
+    if (_count >= _target) return;
+    setState(() => _count++);
+    if (_count >= _target) widget.onSolved();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = _target - _count;
+    return MissionFrame(
+      instruction: 'Tap $remaining more time${remaining == 1 ? '' : 's'}',
+      child: GestureDetector(
+        onTap: _tap,
+        child: Container(
+          width: 150,
+          height: 150,
+          decoration: BoxDecoration(
+            color: RiseColors.primary,
+            borderRadius: BorderRadius.circular(RiseRadii.lg),
+            boxShadow: RiseShadows.primary,
+          ),
+          alignment: Alignment.center,
+          child: Text('$remaining',
+              style: RiseText.mono(
+                  size: 48,
+                  weight: FontWeight.w600,
+                  color: RiseColors.primaryText)),
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 7: Create the Memory mission**
+
+Create `lib/ui/missions/memory_mission.dart`:
+
+```dart
+import 'dart:async';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+
+import '../theme/tokens.dart';
+import 'mission_frame.dart';
+
+int memoryLengthFor(String diff) {
+  switch (diff) {
+    case 'hard':
+      return 5;
+    case 'medium':
+      return 4;
+    default:
+      return 3;
+  }
+}
+
+/// A random pad sequence (pads 0..3). Pass [rng] for determinism in tests.
+List<int> generateSequence(int length, [Random? rng]) {
+  final r = rng ?? Random();
+  return List.generate(length, (_) => r.nextInt(4));
+}
+
+class MemoryMission extends StatefulWidget {
+  const MemoryMission({
+    super.key,
+    required this.diff,
+    required this.onSolved,
+    this.sequence, // injectable for tests
+  });
+
+  final String diff;
+  final VoidCallback onSolved;
+  final List<int>? sequence;
+
+  @override
+  State<MemoryMission> createState() => _MemoryMissionState();
+}
+
+class _MemoryMissionState extends State<MemoryMission> {
+  late List<int> _seq;
+  int _flashIndex = -1; // lit pad during playback; -1 = none
+  int _inputPos = 0;
+  bool _accepting = false;
+  final _timers = <Timer>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _seq = widget.sequence ?? generateSequence(memoryLengthFor(widget.diff));
+    _play();
+  }
+
+  @override
+  void dispose() {
+    for (final t in _timers) {
+      t.cancel();
+    }
+    super.dispose();
+  }
+
+  void _play() {
+    _accepting = false;
+    _inputPos = 0;
+    const on = Duration(milliseconds: 420);
+    const gap = Duration(milliseconds: 180);
+    var t = Duration.zero;
+    for (var i = 0; i < _seq.length; i++) {
+      final lit = _seq[i];
+      _timers.add(Timer(t, () {
+        if (mounted) setState(() => _flashIndex = lit);
+      }));
+      t += on;
+      _timers.add(Timer(t, () {
+        if (mounted) setState(() => _flashIndex = -1);
+      }));
+      t += gap;
+    }
+    _timers.add(Timer(t, () {
+      if (mounted) setState(() => _accepting = true);
+    }));
+  }
+
+  void _replay() {
+    for (final t in _timers) {
+      t.cancel();
+    }
+    _timers.clear();
+    setState(() {
+      _flashIndex = -1;
+      _accepting = false;
+      _inputPos = 0;
+    });
+    _play();
+  }
+
+  void _tap(int pad) {
+    if (!_accepting) return;
+    if (pad == _seq[_inputPos]) {
+      _inputPos++;
+      if (_inputPos >= _seq.length) widget.onSolved();
+    } else {
+      _replay(); // wrong — show it again
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MissionFrame(
+      instruction: _accepting ? 'Repeat the sequence' : 'Watch carefully…',
+      child: SizedBox(
+        width: 200,
+        child: GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          children: [
+            for (var i = 0; i < 4; i++)
+              GestureDetector(
+                key: ValueKey('mem-pad-$i'),
+                onTap: () => _tap(i),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _flashIndex == i
+                        ? RiseColors.accent
+                        : RiseColors.surface2,
+                    borderRadius: BorderRadius.circular(RiseRadii.base),
+                    border: Border.all(color: RiseColors.border),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 8: Create the host**
+
+Create `lib/ui/missions/mission_host.dart`:
+
+```dart
+import 'package:flutter/widgets.dart';
+
+import '../../domain/alarm.dart';
+import 'hold_mission.dart';
+import 'math_mission.dart';
+import 'memory_mission.dart';
+import 'tap_mission.dart';
+
+/// Structurally a `MissionBuilder` (see `ring_screen.dart`): picks the mission
+/// widget for [alarm.mission]. `'none'` never reaches here — RingScreen shows
+/// slide-to-wake for it — so it maps to an empty box defensively.
+Widget buildMission(BuildContext context, Alarm alarm, VoidCallback onSolved) {
+  switch (alarm.mission) {
+    case 'math':
+      return MathMission(diff: alarm.missionDiff, onSolved: onSolved);
+    case 'hold':
+      return HoldMission(diff: alarm.missionDiff, onSolved: onSolved);
+    case 'tap':
+      return TapMission(diff: alarm.missionDiff, onSolved: onSolved);
+    case 'memory':
+      return MemoryMission(diff: alarm.missionDiff, onSolved: onSolved);
+    default:
+      return const SizedBox.shrink();
+  }
+}
+```
+
+- [ ] **Step 9: Run the missions test to verify it passes**
+
+```bash
+flutter test test/ui/missions/missions_test.dart
+```
+Expected: PASS — 10 tests green. (Uses `pump`, never `pumpAndSettle`.)
+
+- [ ] **Step 10: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add lib/ui/missions test/ui/missions
+git commit -m "feat(ui): add the four wake missions and the mission host"
+```
+
+---
+
+## Remaining tasks (Tasks 11–14 — screens; full code just before execution)
+
+Tasks 1–10 above are complete. The remaining screens build on the same components/providers and get full code just before execution: **Task 11** Onboarding, **Task 12** Profile/Settings, **Task 13** the tab-bar app shell (wires Home ↔ Create/Edit navigation and the ToastHost), **Task 14** `main.dart` wiring (swap `DevRingPage`→`RingScreen` with `missionBuilder: buildMission`, `DevHomePage`→`AppShell`) + delete dev screens + device verification.
 
 **Task 7 — Home screen.** Header (greeting + first name + streak pill, avatar), the next-alarm hero card (NEXT ALARM label, big mono time + AM/PM, "{label} · rings in Xh Ym" live countdown via a 1s ticker, animated bell, full-width Preview button that opens the ring screen), and the "Your alarms" list (rows: mono time + AM/PM, "{label} · {repeat}", `DayChips` compact, `RiseSwitch`; tap row → edit). The Crew·live strip is omitted this plan (empty region). Reads `alarmsProvider`; toggling a row calls the mutation. Widget-tested for rendering alarms and the toggle.
 
