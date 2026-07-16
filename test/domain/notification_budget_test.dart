@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/domain/notification_budget.dart';
-import 'package:rise/domain/notification_request.dart';
 import 'package:rise/domain/scheduled_occurrence.dart';
 
 void main() {
@@ -38,15 +37,10 @@ void main() {
         occurrences: [occ(1, 5), occ(2, 60), occ(3, 120), occ(4, 180), occ(5, 240)],
         now: now,
       );
-      expect(out.length, lessThanOrEqualTo(64));
       int countFor(int id) => out.where((n) => n.alarmId == id).length;
-      // Every alarm fires at least once; soonest is non-increasing.
-      for (final id in [1, 2, 3, 4, 5]) {
-        expect(countFor(id), greaterThanOrEqualTo(1), reason: 'alarm $id must fire');
-      }
-      expect(countFor(1), 16);
-      expect(countFor(1) >= countFor(2), isTrue);
-      expect(countFor(2) >= countFor(3), isTrue);
+      final counts = [1, 2, 3, 4, 5].map((id) => countFor(id)).toList();
+      expect(counts, [16, 16, 16, 15, 1], reason: 'floor-then-soonest-topup distribution');
+      expect(out.length, 64, reason: 'total uses the full budget');
     });
 
     test('never exceeds the cap even with many alarms', () {
