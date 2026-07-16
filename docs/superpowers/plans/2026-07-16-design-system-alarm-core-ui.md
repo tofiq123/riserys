@@ -4298,9 +4298,484 @@ git commit -m "feat(ui): add onboarding with permission requests"
 
 ---
 
-## Remaining tasks (Tasks 12–14 — screens; full code just before execution)
+### Task 12: Profile/Settings + local settings store
 
-Tasks 1–11 above are complete. The remaining screens build on the same components/providers and get full code just before execution: **Task 12** Profile/Settings (introduces a small local settings store — including the `onboardingComplete` flag the host reads on launch), **Task 13** the tab-bar app shell (wires Home ↔ Create/Edit navigation and the ToastHost), **Task 14** `main.dart` wiring (swap `DevRingPage`→`RingScreen` with `missionBuilder: buildMission`, `DevHomePage`→`AppShell`, gate Onboarding on the stored flag) + delete dev screens + device verification.
+**Files:**
+- Modify: `pubspec.yaml` (add `shared_preferences`)
+- Create: `lib/data/app_settings.dart`
+- Create: `lib/ui/state/settings_providers.dart`
+- Create: `lib/data/permission_gateway.dart` (moved out of `onboarding_screen.dart`)
+- Create: `lib/ui/components/permissions_section.dart`
+- Modify: `lib/ui/screens/onboarding_screen.dart` (use the shared gateway + section)
+- Modify: `test/ui/screens/onboarding_screen_test.dart` (import the moved gateway)
+- Create: `lib/ui/screens/profile_screen.dart`
+- Test: `test/data/app_settings_test.dart`
+- Test: `test/ui/screens/profile_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `AlarmPermissions`/`AlarmHostApi`; components/tokens; the onboarding screen (refactor).
+- Produces:
+  - `class AppSettings` — `static Future<AppSettings> load()`, `bool get onboardingComplete`, `Future<void> setOnboardingComplete(bool)`. SharedPreferences-backed app prefs (NOT alarm data).
+  - `appSettingsProvider` (`Provider<AppSettings>`, throws until overridden in main).
+  - `PermissionGateway` / `NativePermissionGateway` — moved to `lib/data/permission_gateway.dart` (was in `onboarding_screen.dart`).
+  - `PermissionsSection({required PermissionGateway gateway})` — the four reliability permissions with live status + Grant, shared by onboarding and Profile.
+  - `ProfileScreen({PermissionGateway permissions = const NativePermissionGateway()})` — guest card + reliability (permissions) + about.
+
+> DRY: the permission rows and refresh/grant logic that lived inline in `onboarding_screen.dart` move into `PermissionsSection`; the `PermissionGateway` type moves to the data layer (it wraps `AlarmHostApi`). Onboarding is refactored to use both — its user-visible strings are unchanged, so its existing tests still pass (one import line updates). `AppSettings` is deliberately separate from the alarm Drift DB: app preferences are not alarm data.
+
+- [ ] **Step 1: Add the dependency**
+
+```bash
+flutter pub add shared_preferences
+```
+Expected: `pubspec.yaml` gains `shared_preferences: ^2.x`; `flutter pub get` runs clean.
+
+- [ ] **Step 2: Write the failing settings-store test**
+
+Create `test/data/app_settings_test.dart`:
+
+```dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/app_settings.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('onboardingComplete defaults to false, round-trips, and persists', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.onboardingComplete, isFalse);
+
+    await s.setOnboardingComplete(true);
+    expect(s.onboardingComplete, isTrue);
+
+    // A freshly loaded instance sees the persisted value.
+    final s2 = await AppSettings.load();
+    expect(s2.onboardingComplete, isTrue);
+  });
+}
+```
+
+- [ ] **Step 3: Run it to verify it fails**
+
+```bash
+flutter test test/data/app_settings_test.dart
+```
+Expected: FAIL — `app_settings.dart` not found.
+
+- [ ] **Step 4: Write the settings store and provider**
+
+Create `lib/data/app_settings.dart`:
+
+```dart
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Small key-value store for app-level preferences. Deliberately separate from
+/// the alarm Drift database (the alarm source of truth) — these are app prefs,
+/// not alarm data. Backed by SharedPreferences.
+class AppSettings {
+  AppSettings(this._prefs);
+
+  final SharedPreferences _prefs;
+
+  static Future<AppSettings> load() async =>
+      AppSettings(await SharedPreferences.getInstance());
+
+  static const _kOnboardingComplete = 'onboardingComplete';
+
+  /// Whether the user has finished (or skipped) onboarding. The launcher reads
+  /// this to decide between Onboarding and the app shell.
+  bool get onboardingComplete => _prefs.getBool(_kOnboardingComplete) ?? false;
+
+  Future<void> setOnboardingComplete(bool value) =>
+      _prefs.setBool(_kOnboardingComplete, value);
+}
+```
+
+Create `lib/ui/state/settings_providers.dart`:
+
+```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../data/app_settings.dart';
+
+/// The app's settings store. main() overrides this with the instance loaded at
+/// startup; tests override it with an AppSettings over mock preferences.
+final appSettingsProvider = Provider<AppSettings>((ref) {
+  throw UnimplementedError('appSettingsProvider must be overridden in main()');
+});
+```
+
+- [ ] **Step 5: Run the settings test to verify it passes**
+
+```bash
+flutter test test/data/app_settings_test.dart
+```
+Expected: PASS.
+
+- [ ] **Step 6: Move the gateway to the data layer**
+
+Create `lib/data/permission_gateway.dart`:
+
+```dart
+import 'native/alarm_api.g.dart';
+
+/// Abstracts the native permission calls so UI is testable without the
+/// platform channel. Production uses [NativePermissionGateway].
+abstract interface class PermissionGateway {
+  Future<AlarmPermissions> status();
+  Future<void> requestNotifications();
+  Future<void> openExactAlarm();
+  Future<void> openFullScreenIntent();
+  Future<void> openBattery();
+}
+
+class NativePermissionGateway implements PermissionGateway {
+  const NativePermissionGateway();
+  @override
+  Future<AlarmPermissions> status() => AlarmHostApi().getPermissions();
+  @override
+  Future<void> requestNotifications() =>
+      AlarmHostApi().requestNotificationPermission();
+  @override
+  Future<void> openExactAlarm() => AlarmHostApi().openExactAlarmSettings();
+  @override
+  Future<void> openFullScreenIntent() =>
+      AlarmHostApi().openFullScreenIntentSettings();
+  @override
+  Future<void> openBattery() => AlarmHostApi().openBatterySettings();
+}
+```
+
+- [ ] **Step 7: Create the shared PermissionsSection**
+
+Create `lib/ui/components/permissions_section.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../../data/native/alarm_api.g.dart';
+import '../../data/permission_gateway.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+import 'rise_buttons.dart';
+import 'rise_card.dart';
+
+/// The four alarm-reliability permissions with live status and a Grant action.
+/// Loads on mount and refreshes on app-resume (e.g. after the user returns from
+/// a system settings screen). Shared by onboarding and Profile.
+class PermissionsSection extends StatefulWidget {
+  const PermissionsSection({super.key, required this.gateway});
+
+  final PermissionGateway gateway;
+
+  @override
+  State<PermissionsSection> createState() => _PermissionsSectionState();
+}
+
+class _PermissionsSectionState extends State<PermissionsSection>
+    with WidgetsBindingObserver {
+  AlarmPermissions? _perms;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final p = await widget.gateway.status();
+    if (mounted) setState(() => _perms = p);
+  }
+
+  Future<void> _grant(Future<void> Function() action) async {
+    await action();
+    await _refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = _perms;
+    if (p == null) {
+      return const Center(
+          child:
+              Padding(padding: EdgeInsets.all(20), child: Text('Checking…')));
+    }
+    return Column(
+      children: [
+        _row('Notifications', 'Show the alarm and let it ring.', p.notifications,
+            () => _grant(widget.gateway.requestNotifications)),
+        _row('Exact alarm', 'Fire at the exact minute.', p.exactAlarm,
+            () => _grant(widget.gateway.openExactAlarm)),
+        _row('Full-screen alarm', 'Show over the lock screen.',
+            p.fullScreenIntent,
+            () => _grant(widget.gateway.openFullScreenIntent)),
+        _row('Unrestricted battery', 'Don\'t let the system doze the alarm.',
+            p.batteryUnrestricted, () => _grant(widget.gateway.openBattery)),
+        const SizedBox(height: 4),
+        Center(child: GhostButton(label: 'Re-check', onPressed: _refresh)),
+      ],
+    );
+  }
+
+  Widget _row(String label, String why, bool granted, VoidCallback onGrant) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: RiseCard(
+        child: Row(
+          children: [
+            Icon(granted ? Icons.check_circle : Icons.circle_outlined,
+                color: granted ? RiseColors.positive : RiseColors.textFaint,
+                size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style:
+                          RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(why, style: RiseText.caption),
+                ],
+              ),
+            ),
+            if (!granted) SecondaryButton(label: 'Grant', onPressed: onGrant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 8: Refactor onboarding to use the shared gateway + section**
+
+In `lib/ui/screens/onboarding_screen.dart`:
+
+1. DELETE the `PermissionGateway` abstract class and the `NativePermissionGateway` class (they now live in `lib/data/permission_gateway.dart`).
+2. Add imports:
+```dart
+import '../../data/permission_gateway.dart';
+import '../components/permissions_section.dart';
+```
+(and remove the now-unused `import '../../data/native/alarm_api.g.dart';` if it is no longer referenced — after this refactor `AlarmPermissions` is no longer used in this file; keep only imports still used.)
+3. Change the state class declaration from `class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBindingObserver {` to `class _OnboardingScreenState extends State<OnboardingScreen> {`.
+4. DELETE these members (now owned by `PermissionsSection`): the `AlarmPermissions? _perms;` field; `didChangeAppLifecycleState`; `Future<void> _refresh()`; `Future<void> _grant(...)`; `Widget _permRow(...)`. Also delete the `WidgetsBinding.instance.addObserver(this);` line from `initState` and the `WidgetsBinding.instance.removeObserver(this);` line from `dispose`. Keep the `_controller` creation/disposal and the `_refresh()` call in `initState` becomes just gone (remove that call).
+5. Replace `_permissionsPage()` with:
+```dart
+  Widget _permissionsPage() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+          RiseSpacing.screen, 12, RiseSpacing.screen, 12),
+      children: [
+        Text('Ring through anything', style: RiseText.title),
+        const SizedBox(height: 8),
+        Text(
+            'Rise needs a few permissions to reach you on silent, locked, or dozing.',
+            style: RiseText.body.copyWith(color: RiseColors.textDim)),
+        const SizedBox(height: 18),
+        PermissionsSection(gateway: widget.permissions),
+      ],
+    );
+  }
+```
+Leave everything else in the file (the constructor, `onDone`/`permissions` fields, `_page`, `_lastPage`, `_next`, `_intro`, `_dots`, `build`) unchanged.
+
+In `test/ui/screens/onboarding_screen_test.dart`, add the import so the test's `_FakeGateway implements PermissionGateway` still resolves:
+```dart
+import 'package:rise/data/permission_gateway.dart';
+```
+(The rest of the onboarding test is unchanged — its string-based assertions still hold because `PermissionsSection` renders the same 'Grant'/'Notifications' text.)
+
+- [ ] **Step 9: Run the onboarding test to confirm it still passes**
+
+```bash
+flutter test test/ui/screens/onboarding_screen_test.dart
+```
+Expected: PASS — the same 5 tests, now exercising `PermissionsSection` through onboarding.
+
+- [ ] **Step 10: Write the failing Profile test**
+
+Create `test/ui/screens/profile_screen_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/native/alarm_api.g.dart';
+import 'package:rise/data/permission_gateway.dart';
+import 'package:rise/ui/screens/profile_screen.dart';
+
+class _FakeGateway implements PermissionGateway {
+  _FakeGateway(this._p);
+  final AlarmPermissions _p;
+  @override
+  Future<AlarmPermissions> status() async => _p;
+  @override
+  Future<void> requestNotifications() async {}
+  @override
+  Future<void> openExactAlarm() async {}
+  @override
+  Future<void> openFullScreenIntent() async {}
+  @override
+  Future<void> openBattery() async {}
+}
+
+void main() {
+  testWidgets('shows profile, reliability permissions, and about', (t) async {
+    await t.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ProfileScreen(
+          permissions: _FakeGateway(AlarmPermissions(
+              notifications: false,
+              exactAlarm: false,
+              fullScreenIntent: false,
+              batteryUnrestricted: false)),
+        ),
+      ),
+    ));
+    await t.pumpAndSettle();
+    expect(find.text('Profile'), findsOneWidget);
+    expect(find.text('Guest'), findsOneWidget);
+    expect(find.text('Grant'), findsNWidgets(4));
+    expect(find.text('1.0.0'), findsOneWidget);
+  });
+}
+```
+
+- [ ] **Step 11: Run it to verify it fails**
+
+```bash
+flutter test test/ui/screens/profile_screen_test.dart
+```
+Expected: FAIL — `profile_screen.dart` not found.
+
+- [ ] **Step 12: Write the Profile screen**
+
+Create `lib/ui/screens/profile_screen.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../../data/permission_gateway.dart';
+import '../components/permissions_section.dart';
+import '../components/rise_card.dart';
+import '../components/section_label.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+class ProfileScreen extends StatelessWidget {
+  const ProfileScreen(
+      {super.key, this.permissions = const NativePermissionGateway()});
+
+  final PermissionGateway permissions;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+            RiseSpacing.screen, 8, RiseSpacing.screen, 40),
+        children: [
+          Text('Profile', style: RiseText.display),
+          const SizedBox(height: 16),
+          RiseCard(
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: const BoxDecoration(
+                      color: RiseColors.accentSoft, shape: BoxShape.circle),
+                  child: const Icon(Icons.person_outline,
+                      color: RiseColors.accent, size: 26),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Guest',
+                          style: RiseText.body
+                              .copyWith(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                      Text('Sign in to sync your alarms and crew — coming soon',
+                          style: RiseText.caption),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          const SectionLabel('Reliability'),
+          const SizedBox(height: 6),
+          Text('Make sure Rise can always reach you.', style: RiseText.caption),
+          const SizedBox(height: 12),
+          PermissionsSection(gateway: permissions),
+          const SizedBox(height: 24),
+          const SectionLabel('About'),
+          const SizedBox(height: 12),
+          RiseCard(
+            child: Column(
+              children: [
+                _aboutRow('Version', '1.0.0'),
+                const Divider(height: 20, color: RiseColors.divider),
+                _aboutRow('Made for', 'waking up, 100%'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _aboutRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: RiseText.body.copyWith(color: RiseColors.textDim)),
+        Text(value, style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+}
+```
+
+- [ ] **Step 13: Run the Profile test, then the whole suite and analyze**
+
+```bash
+flutter test test/ui/screens/profile_screen_test.dart
+flutter test
+flutter analyze
+```
+Expected: Profile test green; whole suite green (onboarding still passes); `No issues found!`.
+
+- [ ] **Step 14: Commit**
+
+```bash
+git add pubspec.yaml pubspec.lock lib/data/app_settings.dart lib/ui/state/settings_providers.dart lib/data/permission_gateway.dart lib/ui/components/permissions_section.dart lib/ui/screens/onboarding_screen.dart test/ui/screens/onboarding_screen_test.dart lib/ui/screens/profile_screen.dart test/data/app_settings_test.dart test/ui/screens/profile_screen_test.dart
+git commit -m "feat(ui): add Profile, settings store, and shared permissions section"
+```
+
+---
+
+## Remaining tasks (Tasks 13–14 — full code just before execution)
+
+Tasks 1–12 above are complete. **Task 13** the tab-bar app shell (Home / Create-Edit navigation via `draftProvider`, Profile tab, Crew/Sleep tabs stubbed, ToastHost wiring). **Task 14** `main.dart` wiring (wrap in `ProviderScope`; override `alarmSyncServiceProvider` + `appSettingsProvider`; swap `DevRingPage`→`RingScreen` with `missionBuilder: buildMission`; swap `DevHomePage`→`AppShell`; gate `OnboardingScreen` on `appSettings.onboardingComplete`, setting it on completion) + delete the dev screens + on-device verification.
 
 **Task 7 — Home screen.** Header (greeting + first name + streak pill, avatar), the next-alarm hero card (NEXT ALARM label, big mono time + AM/PM, "{label} · rings in Xh Ym" live countdown via a 1s ticker, animated bell, full-width Preview button that opens the ring screen), and the "Your alarms" list (rows: mono time + AM/PM, "{label} · {repeat}", `DayChips` compact, `RiseSwitch`; tap row → edit). The Crew·live strip is omitted this plan (empty region). Reads `alarmsProvider`; toggling a row calls the mutation. Widget-tested for rendering alarms and the toggle.
 
