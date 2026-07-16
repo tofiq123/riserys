@@ -1,0 +1,176 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/ui/components/slide_to_wake.dart';
+import 'package:rise/ui/missions/hold_mission.dart';
+import 'package:rise/ui/missions/math_mission.dart';
+import 'package:rise/ui/missions/memory_mission.dart';
+import 'package:rise/ui/missions/mission_host.dart';
+import 'package:rise/ui/missions/tap_mission.dart';
+import 'package:rise/ui/screens/ring_screen.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+Widget _wrap(Widget child) =>
+    MaterialApp(home: Scaffold(body: Center(child: child)));
+
+void main() {
+  group('MathMission', () {
+    testWidgets('correct answer solves', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(MathMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        problem: (prompt: '2 + 3', answer: 5),
+      )));
+      await t.enterText(find.byType(TextField), '5');
+      await t.tap(find.text('Check'));
+      await t.pump();
+      expect(solved, isTrue);
+    });
+
+    testWidgets('wrong answer does not solve and shows a retry hint', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(MathMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        problem: (prompt: '2 + 3', answer: 5),
+      )));
+      await t.enterText(find.byType(TextField), '9');
+      await t.tap(find.text('Check'));
+      await t.pump();
+      expect(solved, isFalse);
+      expect(find.text('Try again'), findsOneWidget);
+    });
+  });
+
+  test('generateMathProblem answer is consistent with its operands', () {
+    for (final d in ['easy', 'medium', 'hard']) {
+      final p = generateMathProblem(d);
+      expect(p.answer, greaterThan(0));
+      expect(p.prompt, isNotEmpty);
+    }
+  });
+
+  group('HoldMission', () {
+    testWidgets('holding until the timer completes solves', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(HoldMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        holdDuration: const Duration(milliseconds: 100),
+      )));
+      final g = await t.startGesture(t.getCenter(find.text('HOLD')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 130));
+      expect(solved, isTrue);
+      await g.up();
+    });
+
+    testWidgets('releasing early does not solve', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(HoldMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        holdDuration: const Duration(milliseconds: 100),
+      )));
+      final g = await t.startGesture(t.getCenter(find.text('HOLD')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 40));
+      await g.up();
+      await t.pump(const Duration(milliseconds: 200));
+      expect(solved, isFalse);
+    });
+  });
+
+  testWidgets('TapMission: reaching the target solves', (t) async {
+    var solved = false;
+    await t.pumpWidget(_wrap(TapMission(
+      diff: 'easy',
+      onSolved: () => solved = true,
+      targetTaps: 3,
+    )));
+    await t.tap(find.text('3'));
+    await t.pump();
+    await t.tap(find.text('2'));
+    await t.pump();
+    await t.tap(find.text('1'));
+    await t.pump();
+    expect(solved, isTrue);
+  });
+
+  group('MemoryMission', () {
+    testWidgets('repeating the shown sequence solves', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(MemoryMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        sequence: const [0, 1, 2],
+      )));
+      await t.pump(); // start playback
+      await t.pump(const Duration(seconds: 2)); // playback done, input opens
+      await t.tap(find.byKey(const ValueKey('mem-pad-0')));
+      await t.tap(find.byKey(const ValueKey('mem-pad-1')));
+      await t.tap(find.byKey(const ValueKey('mem-pad-2')));
+      await t.pump();
+      expect(solved, isTrue);
+    });
+
+    testWidgets('a wrong tap does not solve', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(MemoryMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        sequence: const [0, 1, 2],
+      )));
+      await t.pump();
+      await t.pump(const Duration(seconds: 2));
+      await t.tap(find.byKey(const ValueKey('mem-pad-3'))); // wrong first pad
+      await t.pump();
+      expect(solved, isFalse);
+    });
+  });
+
+  group('buildMission host', () {
+    testWidgets('dispatches to the right mission widget', (t) async {
+      final cases = <String, Type>{
+        'math': MathMission,
+        'hold': HoldMission,
+        'tap': TapMission,
+        'memory': MemoryMission,
+      };
+      for (final entry in cases.entries) {
+        await t.pumpWidget(_wrap(Builder(
+          builder: (context) => buildMission(
+            context,
+            Alarm(id: 1, hour: 6, minute: 0, mission: entry.key),
+            () {},
+          ),
+        )));
+        await t.pump();
+        expect(find.byType(entry.value), findsOneWidget,
+            reason: 'mission ${entry.key}');
+      }
+    });
+
+    testWidgets('RingScreen with the host shows the mission for a missioned alarm',
+        (t) async {
+      await t.pumpWidget(ProviderScope(
+        overrides: [
+          alarmsProvider.overrideWith((ref) => Stream.value(
+              const [Alarm(id: 7, hour: 6, minute: 30, mission: 'tap')])),
+        ],
+        child: MaterialApp(
+          home: RingScreen(
+            alarmId: 7,
+            dismissAlarm: (_) async {},
+            missionBuilder: buildMission,
+          ),
+        ),
+      ));
+      await t.pump();
+      expect(find.byType(TapMission), findsOneWidget);
+      expect(find.byType(SlideToWake), findsNothing);
+    });
+  });
+}
