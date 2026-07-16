@@ -108,7 +108,19 @@ class AlarmSyncService {
     await _setLocalLocationFromDevice();
 
     final dir = await getApplicationDocumentsDirectory();
-    final db = RiseDatabase(NativeDatabase(File(p.join(dir.path, 'rise.sqlite'))));
+    final db = RiseDatabase(NativeDatabase(
+      File(p.join(dir.path, 'rise.sqlite')),
+      setup: (db) {
+        // Several engines (foreground, RingActivity, headless boot) open this
+        // file as separate isolates, running genuinely in parallel. Default
+        // journaling forbids concurrent reads and writes, and busy_timeout
+        // defaults to 0 — a read racing a write would throw SQLITE_BUSY
+        // instantly, feeding straight into the startup-throw path this same
+        // fix set guards against (see main()/reconcileEntrypoint()).
+        db.execute('pragma journal_mode = WAL;');
+        db.execute('pragma busy_timeout = 5000;');
+      },
+    ));
     configure(AlarmSyncService(
       repository: AlarmRepository(db),
       platform: PigeonAlarmPlatform(),
