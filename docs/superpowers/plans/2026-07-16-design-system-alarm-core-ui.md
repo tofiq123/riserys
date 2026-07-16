@@ -996,11 +996,517 @@ git commit -m "feat(ui): add switch, segmented control, day chips, sound chips"
 ```
 
 ---
-## Remaining tasks (specified; full code written in the next authoring pass)
+### Task 5: Interactions — TimeDial, SlideToWake, ToastHost
 
-The design-system foundation above (Tasks 1–4) is complete and independently executable. The rest of the plan is scoped below — each will get the same complete-code + TDD treatment. They are grouped so the plan can, if desired, be executed as two sub-projects (**3a: foundation** = Tasks 1–6; **3b: screens** = Tasks 7–14).
+**Files:**
+- Create: `lib/ui/components/time_dial.dart`, `lib/ui/components/slide_to_wake.dart`, `lib/ui/components/toast.dart`
+- Test: `test/ui/components/interactions_test.dart`
 
-**Task 5 — Interactions: TimeDial, SlideToWake, ToastHost.** The draggable `HH : MM` picker (chevrons + vertical pointer-drag ~7px/step, wraps, AM/PM segmented) and the slide-to-wake track (pointer capture, fill+knob track the drag, ≥97% triggers, snaps back below). `ToastHost` overlay auto-hiding ~2.7s. Widget-tested for drag stepping, wrap, and the 97% threshold.
+**Interfaces:**
+- Consumes: tokens, typography.
+- Produces:
+  - `typedef DialTime = ({int hour12, int minute, bool isAm});`
+  - `class TimeDial extends StatelessWidget` — `TimeDial({required DialTime value, required ValueChanged<DialTime> onChanged})`. Drag a number vertically (~7px/step, wraps) or tap chevrons; AM/PM buttons.
+  - `class SlideToWake extends StatefulWidget` — `SlideToWake({required VoidCallback onWake, String label = 'Slide to wake up'})`. Drag the knob; ≥97% fires `onWake` once; a shorter drag snaps back.
+  - `class RiseToast extends StatelessWidget` — `RiseToast(String message)`; the pill visual.
+  - `class ToastHost extends StatefulWidget` — `ToastHost({required String? message, required VoidCallback onHide, required Widget child})`; overlays `message` bottom-center and calls `onHide` ~2.7s later.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/ui/components/interactions_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/ui/components/slide_to_wake.dart';
+import 'package:rise/ui/components/time_dial.dart';
+import 'package:rise/ui/components/toast.dart';
+
+Widget _wrap(Widget child) => MaterialApp(home: Scaffold(body: Center(child: child)));
+
+void main() {
+  group('TimeDial', () {
+    testWidgets('dragging the hour up increments it by ~7px/step', (t) async {
+      DialTime v = (hour12: 6, minute: 30, isAm: true);
+      await t.pumpWidget(_wrap(StatefulBuilder(
+        builder: (c, s) => TimeDial(value: v, onChanged: (nv) => s(() => v = nv)),
+      )));
+      await t.drag(find.text('6'), const Offset(0, -21)); // 21px up = 3 steps
+      await t.pump();
+      expect(v.hour12, 9);
+    });
+
+    testWidgets('hour wraps 12 -> 1 when dragged past the top', (t) async {
+      DialTime v = (hour12: 11, minute: 0, isAm: true);
+      await t.pumpWidget(_wrap(StatefulBuilder(
+        builder: (c, s) => TimeDial(value: v, onChanged: (nv) => s(() => v = nv)),
+      )));
+      await t.drag(find.text('11'), const Offset(0, -21)); // +3 -> 11,12,1 -> 2
+      await t.pump();
+      expect(v.hour12, 2);
+    });
+
+    testWidgets('AM/PM toggle reports the change', (t) async {
+      DialTime v = (hour12: 6, minute: 30, isAm: true);
+      await t.pumpWidget(_wrap(StatefulBuilder(
+        builder: (c, s) => TimeDial(value: v, onChanged: (nv) => s(() => v = nv)),
+      )));
+      await t.tap(find.text('PM'));
+      await t.pump();
+      expect(v.isAm, isFalse);
+    });
+  });
+
+  group('SlideToWake', () {
+    testWidgets('sliding to the end fires onWake', (t) async {
+      var woke = false;
+      await t.pumpWidget(_wrap(SizedBox(width: 300, child: SlideToWake(onWake: () => woke = true))));
+      await t.drag(find.byType(SlideToWake), const Offset(300, 0));
+      expect(woke, isTrue);
+    });
+
+    testWidgets('a short slide snaps back and does not fire', (t) async {
+      var woke = false;
+      await t.pumpWidget(_wrap(SizedBox(width: 300, child: SlideToWake(onWake: () => woke = true))));
+      await t.drag(find.byType(SlideToWake), const Offset(40, 0));
+      await t.pumpAndSettle();
+      expect(woke, isFalse);
+    });
+  });
+
+  group('ToastHost', () {
+    testWidgets('shows the message then hides it after ~2.7s', (t) async {
+      var hidden = false;
+      await t.pumpWidget(_wrap(SizedBox(
+        width: 300, height: 300,
+        child: ToastHost(message: 'Alarm set', onHide: () => hidden = true, child: const SizedBox()),
+      )));
+      await t.pump();
+      expect(find.text('Alarm set'), findsOneWidget);
+      await t.pump(const Duration(milliseconds: 2800));
+      expect(hidden, isTrue);
+    });
+  });
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+flutter test test/ui/components/interactions_test.dart
+```
+Expected: FAIL — the three files not found.
+
+- [ ] **Step 3: Write TimeDial**
+
+Create `lib/ui/components/time_dial.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// The dial's current time: 12-hour clock plus AM/PM.
+typedef DialTime = ({int hour12, int minute, bool isAm});
+
+/// Big draggable HH:MM picker. Drag a number vertically (~7px per step) to
+/// change it, or use the chevrons; values wrap. AM/PM buttons on the right.
+class TimeDial extends StatelessWidget {
+  const TimeDial({super.key, required this.value, required this.onChanged});
+
+  final DialTime value;
+  final ValueChanged<DialTime> onChanged;
+
+  void _setHour(int h) => onChanged((hour12: h, minute: value.minute, isAm: value.isAm));
+  void _setMinute(int m) => onChanged((hour12: value.hour12, minute: m, isAm: value.isAm));
+  void _setAm(bool am) => onChanged((hour12: value.hour12, minute: value.minute, isAm: am));
+
+  static int _wrapHour(int start, int step) => ((start - 1 + step) % 12 + 12) % 12 + 1;
+  static int _wrapMinute(int start, int step) => ((start + step) % 60 + 60) % 60;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _DragNumber(
+          value: value.hour12,
+          format: (v) => '$v',
+          wrap: _wrapHour,
+          onChanged: _setHour,
+          onIncrement: () => _setHour(value.hour12 % 12 + 1),
+          onDecrement: () => _setHour(value.hour12 <= 1 ? 12 : value.hour12 - 1),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Text(':',
+              style: RiseText.mono(size: 58, weight: FontWeight.w500, color: RiseColors.textFaint)),
+        ),
+        _DragNumber(
+          value: value.minute,
+          format: (v) => v.toString().padLeft(2, '0'),
+          wrap: _wrapMinute,
+          onChanged: _setMinute,
+          onIncrement: () => _setMinute((value.minute + 1) % 60),
+          onDecrement: () => _setMinute((value.minute + 59) % 60),
+        ),
+        const SizedBox(width: 8),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _AmPmButton(label: 'AM', selected: value.isAm, onTap: () => _setAm(true)),
+            const SizedBox(height: 6),
+            _AmPmButton(label: 'PM', selected: !value.isAm, onTap: () => _setAm(false)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _DragNumber extends StatefulWidget {
+  const _DragNumber({
+    required this.value,
+    required this.format,
+    required this.wrap,
+    required this.onChanged,
+    required this.onIncrement,
+    required this.onDecrement,
+  });
+
+  final int value;
+  final String Function(int) format;
+  final int Function(int start, int step) wrap;
+  final ValueChanged<int> onChanged;
+  final VoidCallback onIncrement;
+  final VoidCallback onDecrement;
+
+  @override
+  State<_DragNumber> createState() => _DragNumberState();
+}
+
+class _DragNumberState extends State<_DragNumber> {
+  double _startY = 0;
+  int _startValue = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _chevron(true, widget.onIncrement),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onVerticalDragStart: (d) {
+            _startY = d.globalPosition.dy;
+            _startValue = widget.value;
+          },
+          onVerticalDragUpdate: (d) {
+            // Recompute from the drag start each move, like the prototype:
+            // dragging up (smaller y) increases the value, ~7px per step.
+            final step = ((_startY - d.globalPosition.dy) / 7).round();
+            widget.onChanged(widget.wrap(_startValue, step));
+          },
+          child: SizedBox(
+            width: 96,
+            child: Text(
+              widget.format(widget.value),
+              textAlign: TextAlign.center,
+              style: RiseText.mono(size: 66, weight: FontWeight.w500, color: RiseColors.text),
+            ),
+          ),
+        ),
+        _chevron(false, widget.onDecrement),
+      ],
+    );
+  }
+
+  Widget _chevron(bool up, VoidCallback onTap) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 44,
+          height: 34,
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: RiseColors.surface2,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: RiseColors.border),
+          ),
+          child: Icon(up ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+              size: 18, color: RiseColors.textDim),
+        ),
+      );
+}
+
+class _AmPmButton extends StatelessWidget {
+  const _AmPmButton({required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+          decoration: BoxDecoration(
+            color: selected ? RiseColors.primary : RiseColors.surface2,
+            borderRadius: BorderRadius.circular(11),
+            border: selected ? null : Border.all(color: RiseColors.border),
+          ),
+          child: Text(label,
+              style: RiseText.mono(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: selected ? RiseColors.primaryText : RiseColors.textDim)),
+        ),
+      );
+}
+```
+
+> `find.text('6')` in the test hits the hour number. `t.drag` sends the offset as pointer moves; because `onVerticalDragUpdate` recomputes from `_startY` on each move, the final value reflects the total offset — 21px up = round(21/7) = 3 steps. Material `Icons` is why this file imports `flutter/material.dart` (the other components import only `flutter/widgets.dart`).
+
+- [ ] **Step 4: Write SlideToWake**
+
+Create `lib/ui/components/slide_to_wake.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// Draggable "slide to wake up" track. The knob follows the drag; crossing 97%
+/// of the travel fires [onWake] once. A shorter drag snaps the knob back.
+class SlideToWake extends StatefulWidget {
+  const SlideToWake({super.key, required this.onWake, this.label = 'Slide to wake up'});
+
+  final VoidCallback onWake;
+  final String label;
+
+  @override
+  State<SlideToWake> createState() => _SlideToWakeState();
+}
+
+class _SlideToWakeState extends State<SlideToWake> {
+  static const double _trackHeight = 64;
+  static const double _knob = 56;
+
+  double _fraction = 0; // 0..1 of the available travel
+  bool _fired = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final travel = (constraints.maxWidth - _knob).clamp(1.0, double.infinity);
+        return GestureDetector(
+          onHorizontalDragUpdate: (d) {
+            if (_fired) return;
+            setState(() => _fraction = (_fraction + d.delta.dx / travel).clamp(0.0, 1.0));
+            if (_fraction >= 0.97) {
+              _fired = true;
+              widget.onWake();
+            }
+          },
+          onHorizontalDragEnd: (_) {
+            if (!_fired && _fraction < 0.97) setState(() => _fraction = 0);
+          },
+          child: Container(
+            height: _trackHeight,
+            decoration: BoxDecoration(
+              color: RiseColors.card,
+              borderRadius: BorderRadius.circular(RiseRadii.pill),
+              border: Border.all(color: RiseColors.border),
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: _knob + _fraction * travel,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: RiseColors.accentSoft,
+                      borderRadius: BorderRadius.circular(RiseRadii.pill),
+                    ),
+                  ),
+                ),
+                Center(
+                  child: Text(widget.label,
+                      style: RiseText.body.copyWith(
+                          fontWeight: FontWeight.w600, color: RiseColors.textFaint)),
+                ),
+                Positioned(
+                  left: 4 + _fraction * travel,
+                  top: 4,
+                  child: Container(
+                    width: _knob,
+                    height: _knob,
+                    decoration: BoxDecoration(
+                      color: RiseColors.primary,
+                      shape: BoxShape.circle,
+                      boxShadow: RiseShadows.primary,
+                    ),
+                    child: const Icon(Icons.arrow_forward, color: RiseColors.primaryText, size: 24),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+```
+
+- [ ] **Step 5: Write the toast**
+
+Create `lib/ui/components/toast.dart`:
+
+```dart
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
+
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// The dark pill toast visual.
+class RiseToast extends StatelessWidget {
+  const RiseToast(this.message, {super.key});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 11),
+      decoration: BoxDecoration(
+        color: RiseColors.primary,
+        borderRadius: BorderRadius.circular(RiseRadii.pill),
+        boxShadow: const [
+          BoxShadow(color: Color(0x47000000), offset: Offset(0, 8), blurRadius: 30),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(color: RiseColors.primaryText, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 9),
+          Text(message,
+              style: RiseText.body.copyWith(
+                  fontSize: 13.5, fontWeight: FontWeight.w600, color: RiseColors.primaryText)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Overlays [message] near the bottom of [child] and calls [onHide] ~2.7s after
+/// it appears. The parent clears its message state in [onHide].
+class ToastHost extends StatefulWidget {
+  const ToastHost({
+    super.key,
+    required this.message,
+    required this.onHide,
+    required this.child,
+  });
+
+  final String? message;
+  final VoidCallback onHide;
+  final Widget child;
+
+  @override
+  State<ToastHost> createState() => _ToastHostState();
+}
+
+class _ToastHostState extends State<ToastHost> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.message != null) _arm();
+  }
+
+  @override
+  void didUpdateWidget(ToastHost old) {
+    super.didUpdateWidget(old);
+    if (widget.message != null && widget.message != old.message) _arm();
+  }
+
+  void _arm() {
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 2700), () {
+      if (mounted) widget.onHide();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        widget.child,
+        if (widget.message != null)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 104,
+            child: Center(child: RiseToast(widget.message!)),
+          ),
+      ],
+    );
+  }
+}
+```
+
+- [ ] **Step 6: Run the test to verify it passes**
+
+```bash
+flutter test test/ui/components/interactions_test.dart
+```
+Expected: PASS — all groups green.
+
+> If the SlideToWake "end" test fails to fire: `t.drag` of the full width should push `_fraction` to 1.0 (≥0.97). If it snaps back instead, confirm `onWake` is called inside `onHorizontalDragUpdate` (not on end) so it fires the instant the threshold is crossed mid-drag.
+
+- [ ] **Step 7: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add lib/ui/components/time_dial.dart lib/ui/components/slide_to_wake.dart lib/ui/components/toast.dart test/ui/components/interactions_test.dart
+git commit -m "feat(ui): add draggable time dial, slide-to-wake, and toast"
+```
+
+---
+
+## Remaining tasks (Task 6 written below; 7–14 specified for the next authoring pass)
+
+Tasks 1–5 above are complete. Task 6 finishes the foundation; Tasks 7–14 (the screens) are scoped below and get full code just before execution.
 
 **Task 6 — State layer + Alarm mission fields + DB migration.** Add `mission` (`'none'|'math'|'hold'|'tap'|'memory'`) and `missionDiff` (`'easy'|'medium'|'hard'`) to the `Alarm` entity and the Drift `Alarms` table, with a **schemaVersion 1→2 migration** (`addColumn`) so existing installs upgrade rather than wipe. Riverpod (2.x) providers over the existing `AlarmRepository`/`AlarmSyncService`: `alarmsProvider` (`StreamProvider` over `watchAll`), `alarmMutationsProvider` (upsert/delete/toggle → each calls `AlarmSyncService.reconcileNow()`), `draftProvider` (create/edit form state), `toastProvider`. Unit-tested against an in-memory DB (like Plan 1 Task 5), including the migration.
 
