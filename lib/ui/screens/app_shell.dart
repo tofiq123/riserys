@@ -29,8 +29,9 @@ class _AppShellState extends ConsumerState<AppShell> {
   void _openEdit(Alarm a) => ref.read(draftProvider.notifier).startEdit(a);
 
   void _preview() {
+    final next = ref.read(nextOccurrenceProvider).value;
     final alarms = ref.read(alarmsProvider).value ?? const <Alarm>[];
-    final id = alarms.isEmpty ? 0 : alarms.first.id;
+    final id = next?.alarmId ?? (alarms.isEmpty ? 0 : alarms.first.id);
     final navigator = Navigator.of(context);
     navigator.push(MaterialPageRoute<void>(
       builder: (_) => RingScreen(

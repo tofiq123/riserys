@@ -140,11 +140,14 @@ class _RingScreenState extends ConsumerState<RingScreen>
     );
     if (!reduce) bell = ScaleTransition(scale: _pulse, child: bell);
 
-    final gate = (alarm != null &&
-            alarm.mission != 'none' &&
-            widget.missionBuilder != null)
-        ? widget.missionBuilder!(context, alarm, _dismiss)
-        : SlideToWake(key: ValueKey(_attempt), onWake: _dismiss);
+    final gate = KeyedSubtree(
+      key: ValueKey(_attempt),
+      child: (alarm != null &&
+              alarm.mission != 'none' &&
+              widget.missionBuilder != null)
+          ? widget.missionBuilder!(context, alarm, _dismiss)
+          : SlideToWake(onWake: _dismiss),
+    );
 
     return Scaffold(
       backgroundColor: RiseColors.appBg,

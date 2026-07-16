@@ -211,6 +211,18 @@ void main() {
       }
     });
 
+    testWidgets('buildMission falls back to slide-to-wake for an unknown key', (t) async {
+      await t.pumpWidget(_wrap(Builder(
+        builder: (context) => buildMission(
+          context,
+          const Alarm(id: 1, hour: 6, minute: 0, mission: 'photo'), // not a known key
+          () {},
+        ),
+      )));
+      await t.pump();
+      expect(find.byType(SlideToWake), findsOneWidget);
+    });
+
     testWidgets('RingScreen with the host shows the mission for a missioned alarm',
         (t) async {
       await t.pumpWidget(ProviderScope(

@@ -6,6 +6,26 @@ import 'package:rise/ui/components/slide_to_wake.dart';
 import 'package:rise/ui/screens/ring_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
 
+class _OnceMission extends StatefulWidget {
+  const _OnceMission(this.onSolved);
+  final VoidCallback onSolved;
+  @override
+  State<_OnceMission> createState() => _OnceMissionState();
+}
+
+class _OnceMissionState extends State<_OnceMission> {
+  bool _solved = false;
+  @override
+  Widget build(BuildContext context) => TextButton(
+        onPressed: () {
+          if (_solved) return;
+          _solved = true;
+          widget.onSolved();
+        },
+        child: const Text('SOLVE'),
+      );
+}
+
 Widget _host({
   required List<Alarm> alarms,
   required int alarmId,
@@ -92,5 +112,35 @@ void main() {
     await t.pump(const Duration(milliseconds: 20));
     expect(doneCalled, isFalse);
     expect(find.byType(RingScreen), findsOneWidget);
+  });
+
+  testWidgets('a missioned alarm stays solvable after a failed dismissal', (t) async {
+    var calls = 0;
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        alarmsProvider.overrideWith((ref) => Stream.value(
+            const [Alarm(id: 7, hour: 6, minute: 30, mission: 'math')])),
+      ],
+      child: MaterialApp(
+        home: RingScreen(
+          alarmId: 7,
+          dismissAlarm: (_) async {
+            calls++;
+            if (calls == 1) throw StateError('stop failed');
+          },
+          missionBuilder: (context, alarm, onSolved) => _OnceMission(onSolved),
+          onDismissed: () {},
+        ),
+      ),
+    ));
+    await t.pump();
+    await t.tap(find.text('SOLVE')); // first solve → dismiss throws → mission resets
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(calls, 1);
+    await t.tap(find.text('SOLVE')); // retry must be possible on the fresh mission
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(calls, 2);
   });
 }

@@ -36,6 +36,7 @@ class CreateEditScreen extends ConsumerStatefulWidget {
 
 class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
   late final TextEditingController _label;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -54,7 +55,14 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
   void _update(Alarm next) => ref.read(draftProvider.notifier).update(next);
 
   Future<void> _save(Alarm draft) async {
-    await ref.read(alarmMutationsProvider).save(draft);
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await ref.read(alarmMutationsProvider).save(draft);
+    } catch (e) {
+      if (mounted) setState(() => _busy = false);
+      return;
+    }
     if (!mounted) return;
     ref.read(toastProvider.notifier).state = 'Alarm saved';
     ref.read(draftProvider.notifier).clear();
@@ -62,7 +70,14 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
   }
 
   Future<void> _delete(int id) async {
-    await ref.read(alarmMutationsProvider).delete(id);
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await ref.read(alarmMutationsProvider).delete(id);
+    } catch (e) {
+      if (mounted) setState(() => _busy = false);
+      return;
+    }
     if (!mounted) return;
     ref.read(toastProvider.notifier).state = 'Alarm deleted';
     ref.read(draftProvider.notifier).clear();
@@ -172,12 +187,14 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          PrimaryButton(label: 'Save alarm', onPressed: () => _save(draft)),
+          PrimaryButton(
+              label: 'Save alarm',
+              onPressed: _busy ? null : () => _save(draft)),
           if (isEdit) ...[
             const SizedBox(height: 8),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => _delete(draft.id),
+              onTap: _busy ? null : () => _delete(draft.id),
               child: Container(
                 alignment: Alignment.center,
                 padding: const EdgeInsets.symmetric(vertical: 13),

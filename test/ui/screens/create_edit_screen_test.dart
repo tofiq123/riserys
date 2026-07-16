@@ -125,6 +125,18 @@ void main() {
     expect(doneCalled, isTrue);
   });
 
+  testWidgets('double-tapping Save persists a new alarm only once', (t) async {
+    final m = _RecordingMutations();
+    final c = _container(m);
+    c.read(draftProvider.notifier)
+        .startEdit(const Alarm(id: 0, hour: 6, minute: 30)); // new alarm (id 0)
+    await _pump(t, _host(c));
+    await t.tap(find.text('Save alarm'));
+    await t.tap(find.text('Save alarm')); // second tap during the first save's await
+    await t.pumpAndSettle();
+    expect(m.saved.length, 1);
+  });
+
   testWidgets('renders without crashing for an unknown mission key', (t) async {
     final c = _container(_RecordingMutations());
     c.read(draftProvider.notifier).startEdit(
