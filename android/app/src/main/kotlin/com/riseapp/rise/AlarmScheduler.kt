@@ -21,6 +21,12 @@ object AlarmScheduler {
     private const val PREFS = "rise_scheduled"
     private const val KEY_IDS = "ids"
 
+    // A dedicated request code for the "ring now" recovery PendingIntent, kept
+    // distinct from any alarm id's request code so arming an immediate ring
+    // never overwrites that alarm's own scheduled (future) PendingIntent.
+    // Alarm ids come from a local autoincrement and never approach this value.
+    private const val IMMEDIATE_REQUEST_CODE = Int.MAX_VALUE
+
     private fun alarmManager(context: Context): AlarmManager =
         context.getSystemService(AlarmManager::class.java)
 
@@ -58,6 +64,53 @@ object AlarmScheduler {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+    }
+
+    /**
+     * Rings [alarm] almost immediately by arming a one-shot setAlarmClock ~1.5s
+     * out, rather than starting the foreground service directly.
+     *
+     * Android 14+/OEMs block starting a foreground service from a background
+     * context. Missed-alarm recovery runs in the headless boot engine (a
+     * background context), so a direct startForegroundService there throws
+     * ForegroundServiceStartNotAllowedException and the alarm silently never
+     * rings — confirmed on a Samsung S24 (Android 16): recovery logged
+     * "Recovering missed alarm N" but nothing rang. Scheduling an alarm is NOT
+     * a foreground-service start and IS allowed from the background; the actual
+     * FGS start then happens when AlarmReceiver fires, which is exempted because
+     * it is triggered by an exact alarm — the same path a normal alarm takes.
+     *
+     * Uses [IMMEDIATE_REQUEST_CODE] so it never disturbs [alarm]'s own
+     * scheduled (future) PendingIntent. The real alarm id still rides in
+     * EXTRA_ALARM_ID, so AlarmService rings and stopRinging-identifies the
+     * correct alarm.
+     */
+    fun ringNow(context: Context, alarm: NativeAlarm) {
+        val realId = alarm.id.toRequestCode()
+        val fireIntent = Intent(context, AlarmReceiver::class.java).apply {
+            putExtra(EXTRA_ALARM_ID, realId)
+            putExtra(EXTRA_LABEL, alarm.label)
+            putExtra(EXTRA_SOUND, alarm.soundAsset)
+            putExtra(EXTRA_VIBRATE, alarm.vibrate)
+        }
+        val firePi = PendingIntent.getBroadcast(
+            context,
+            IMMEDIATE_REQUEST_CODE,
+            fireIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val showPi = PendingIntent.getActivity(
+            context,
+            IMMEDIATE_REQUEST_CODE,
+            Intent(context, RingActivity::class.java).putExtra(EXTRA_ALARM_ID, realId),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val at = System.currentTimeMillis() + 1500
+        alarmManager(context).setAlarmClock(
+            AlarmManager.AlarmClockInfo(at, showPi),
+            firePi
+        )
+        Log.i(TAG, "ringNow armed immediate alarm $realId at $at")
     }
 
     /** Replaces the entire scheduled set. Idempotent by construction. */
