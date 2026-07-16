@@ -1504,11 +1504,366 @@ git commit -m "feat(ui): add draggable time dial, slide-to-wake, and toast"
 
 ---
 
-## Remaining tasks (Task 6 written below; 7–14 specified for the next authoring pass)
+### Task 6: State layer + Alarm mission fields + DB migration
 
-Tasks 1–5 above are complete. Task 6 finishes the foundation; Tasks 7–14 (the screens) are scoped below and get full code just before execution.
+The one correctness-critical foundation task: it changes the database schema. Existing installs (the dev Samsung already has schemaVersion-1 data) must **upgrade**, not wipe — so this adds a real Drift 1→2 migration and tests it against a hand-built v1 database.
 
-**Task 6 — State layer + Alarm mission fields + DB migration.** Add `mission` (`'none'|'math'|'hold'|'tap'|'memory'`) and `missionDiff` (`'easy'|'medium'|'hard'`) to the `Alarm` entity and the Drift `Alarms` table, with a **schemaVersion 1→2 migration** (`addColumn`) so existing installs upgrade rather than wipe. Riverpod (2.x) providers over the existing `AlarmRepository`/`AlarmSyncService`: `alarmsProvider` (`StreamProvider` over `watchAll`), `alarmMutationsProvider` (upsert/delete/toggle → each calls `AlarmSyncService.reconcileNow()`), `draftProvider` (create/edit form state), `toastProvider`. Unit-tested against an in-memory DB (like Plan 1 Task 5), including the migration.
+**Files:**
+- Modify: `lib/domain/alarm.dart` (add `mission`, `missionDiff`)
+- Modify: `lib/data/local/database.dart` (add columns, schemaVersion 2, migration)
+- Modify: `lib/data/local/alarm_repository.dart` (map the new fields)
+- Create: `lib/ui/state/alarm_providers.dart`
+- Modify: `pubspec.yaml` (add `sqlite3` to dev_dependencies for the migration test)
+- Test: `test/data/migration_test.dart`, `test/ui/state/alarm_providers_test.dart`
+- Modify: `test/domain/alarm_test.dart` (extend for the new fields)
+
+**Interfaces:**
+- Consumes: `Alarm`, `AlarmRepository`, `AlarmSyncService` (Plans 1–2).
+- Produces:
+  - `Alarm` gains `String mission` (default `'none'`) and `String missionDiff` (default `'easy'`), in the constructor, `copyWith`, `==`, `hashCode`.
+  - `RiseDatabase.schemaVersion == 2` with a `MigrationStrategy` that adds the two columns when upgrading from < 2.
+  - `alarmSyncServiceProvider` (`Provider<AlarmSyncService>`), `alarmRepositoryProvider` (`Provider<AlarmRepository>`), `alarmsProvider` (`StreamProvider<List<Alarm>>`), `alarmMutationsProvider` (`Provider<AlarmMutations>` with `save`/`delete`/`setEnabled`, each reconciling), `draftProvider` (`StateNotifierProvider<DraftNotifier, Alarm?>`), `toastProvider` (`StateProvider<String?>`).
+
+- [ ] **Step 1: Add mission fields to the Alarm entity**
+
+In `lib/domain/alarm.dart`, add two constructor params (after `vibrate`), two fields, `copyWith` params, and include them in `==`/`hashCode`:
+
+```dart
+    this.vibrate = true,
+    this.mission = 'none',
+    this.missionDiff = 'easy',
+    this.lastDismissedAt,
+```
+(insert `mission`/`missionDiff` before `lastDismissedAt` in the constructor). Fields (after `vibrate`):
+```dart
+  /// Dismiss mission: 'none' | 'math' | 'hold' | 'tap' | 'memory'.
+  final String mission;
+
+  /// Mission difficulty: 'easy' | 'medium' | 'hard'.
+  final String missionDiff;
+```
+`copyWith` — add params and pass-throughs:
+```dart
+    String? mission,
+    String? missionDiff,
+```
+and in the returned `Alarm(...)`: `mission: mission ?? this.mission, missionDiff: missionDiff ?? this.missionDiff,`.
+`==` — add `&& other.mission == mission && other.missionDiff == missionDiff`.
+`hashCode` — add `mission, missionDiff` to the `Object.hash(...)` argument list.
+
+Add a test to `test/domain/alarm_test.dart`:
+```dart
+  test('mission fields default to none/easy and round-trip through copyWith', () {
+    const a = Alarm(id: 1, hour: 6, minute: 30);
+    expect(a.mission, 'none');
+    expect(a.missionDiff, 'easy');
+    final b = a.copyWith(mission: 'math', missionDiff: 'hard');
+    expect(b.mission, 'math');
+    expect(b.missionDiff, 'hard');
+    expect(b.minute, 30); // unrelated field preserved
+    expect(a == a.copyWith(), isTrue); // equality includes the new fields
+  });
+```
+
+- [ ] **Step 2: Add the columns, schemaVersion 2, and the migration**
+
+In `lib/data/local/database.dart`, add two columns to the `Alarms` table (after `lastDismissedAt`, before `customConstraints`):
+
+```dart
+  /// Dismiss mission and difficulty (added in schema v2).
+  TextColumn get mission => text().withDefault(const Constant('none'))();
+  TextColumn get missionDiff => text().withDefault(const Constant('easy'))();
+```
+
+Replace the `RiseDatabase` class with:
+
+```dart
+@DriftDatabase(tables: [Alarms])
+class RiseDatabase extends _$RiseDatabase {
+  RiseDatabase(super.e);
+
+  @override
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          // v1 -> v2: dismiss missions. Existing rows keep their data and get
+          // the column defaults ('none'/'easy'); no wipe.
+          if (from < 2) {
+            await m.addColumn(alarms, alarms.mission);
+            await m.addColumn(alarms, alarms.missionDiff);
+          }
+        },
+      );
+}
+```
+
+- [ ] **Step 3: Map the new fields in the repository**
+
+In `lib/data/local/alarm_repository.dart`, `_toDomain` — add `mission: row.mission, missionDiff: row.missionDiff,` to the `Alarm(...)`. In `upsert`'s `AlarmsCompanion` — add `mission: Value(alarm.mission), missionDiff: Value(alarm.missionDiff),`.
+
+- [ ] **Step 4: Regenerate Drift and run the entity/repository tests**
+
+```bash
+cd "C:/Users/ASUS/Desktop/startuping/rise"
+dart run build_runner build --delete-conflicting-outputs
+flutter test test/domain/alarm_test.dart test/data/alarm_repository_test.dart
+```
+Expected: `database.g.dart` regenerates with the two columns; entity and repository tests pass (the repository round-trips mission/missionDiff via the defaults; if the existing repository test asserts equality of a full Alarm, the new fields default on both sides so it stays green).
+
+- [ ] **Step 5: Write the migration test**
+
+Add `sqlite3` to `dev_dependencies` in `pubspec.yaml` (it is already present transitively; declaring it satisfies the analyzer for a direct import), then `flutter pub get`:
+
+```yaml
+dev_dependencies:
+  sqlite3: ^2.4.0
+```
+
+Create `test/data/migration_test.dart`:
+
+```dart
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/local/database.dart';
+import 'package:sqlite3/sqlite3.dart';
+
+void main() {
+  test('upgrading a v1 database adds mission columns and keeps existing rows', () async {
+    // Build a schema-v1 alarms table by hand (no mission columns), as it
+    // exists on an already-installed device, and seed one alarm.
+    final raw = sqlite3.openInMemory();
+    raw.execute('''
+      CREATE TABLE alarms (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        hour INTEGER NOT NULL,
+        minute INTEGER NOT NULL,
+        days TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        label TEXT NOT NULL DEFAULT 'Alarm',
+        sound_asset TEXT NOT NULL DEFAULT 'sounds/default_alarm.mp3',
+        vibrate INTEGER NOT NULL DEFAULT 1,
+        last_dismissed_at INTEGER,
+        CHECK (hour BETWEEN 0 AND 23),
+        CHECK (minute BETWEEN 0 AND 59)
+      );
+    ''');
+    raw.execute("INSERT INTO alarms (hour, minute, label) VALUES (6, 30, 'Run');");
+    raw.execute('PRAGMA user_version = 1;');
+
+    // Opening RiseDatabase over this connection triggers onUpgrade(1 -> 2).
+    final db = RiseDatabase(NativeDatabase.opened(raw));
+    addTearDown(db.close);
+
+    final rows = await db.select(db.alarms).get();
+    expect(rows, hasLength(1), reason: 'existing row survives the upgrade');
+    expect(rows.single.label, 'Run');
+    expect(rows.single.mission, 'none', reason: 'new column defaults');
+    expect(rows.single.missionDiff, 'easy');
+    expect(await db.schemaVersion, 2);
+  });
+
+  test('a fresh database is created at v2 with the mission columns', () async {
+    final db = RiseDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final id = await db.into(db.alarms).insert(
+        AlarmsCompanion.insert(hour: 6, minute: 30));
+    final row = await (db.select(db.alarms)..where((t) => t.id.equals(id))).getSingle();
+    expect(row.mission, 'none');
+    expect(row.missionDiff, 'easy');
+  });
+}
+```
+
+Run it:
+```bash
+flutter test test/data/migration_test.dart
+```
+Expected: PASS — both tests green. The first proves an existing v1 row upgrades (data intact, columns added with defaults); the second proves a fresh install is created at v2.
+
+> If `NativeDatabase.opened` reports the DB is already at the target version and skips onUpgrade, confirm `PRAGMA user_version = 1` was set on `raw` before wrapping it. If `sqlite3.openInMemory` can't find the native library in the test runner, the existing `NativeDatabase.memory()` tests from Plan 1 prove sqlite loads here — use the same import setup they use.
+
+- [ ] **Step 6: Write the Riverpod providers**
+
+Create `lib/ui/state/alarm_providers.dart`:
+
+```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../data/alarm_sync_service.dart';
+import '../../data/local/alarm_repository.dart';
+import '../../domain/alarm.dart';
+
+/// The app's configured AlarmSyncService. In production this is the singleton
+/// built by `AlarmSyncService.configureForApp()` in main(); tests override it
+/// with a service over an in-memory database.
+final alarmSyncServiceProvider = Provider<AlarmSyncService>((ref) {
+  return AlarmSyncService.instance;
+});
+
+final alarmRepositoryProvider = Provider<AlarmRepository>((ref) {
+  return ref.watch(alarmSyncServiceProvider).repository;
+});
+
+/// Live list of the user's alarms from the local database.
+final alarmsProvider = StreamProvider<List<Alarm>>((ref) {
+  return ref.watch(alarmRepositoryProvider).watchAll();
+});
+
+/// Every alarm write persists locally AND re-arms the platform scheduler, so
+/// the OS never drifts out of sync with the database (the source of truth).
+class AlarmMutations {
+  AlarmMutations(this._repo, this._sync);
+
+  final AlarmRepository _repo;
+  final AlarmSyncService _sync;
+
+  Future<void> save(Alarm alarm) async {
+    await _repo.upsert(alarm);
+    await _sync.reconcileNow();
+  }
+
+  Future<void> delete(int id) async {
+    await _repo.delete(id);
+    await _sync.reconcileNow();
+  }
+
+  Future<void> setEnabled(int id, bool enabled) async {
+    await _repo.setEnabled(id, enabled);
+    await _sync.reconcileNow();
+  }
+}
+
+final alarmMutationsProvider = Provider<AlarmMutations>((ref) {
+  return AlarmMutations(ref.watch(alarmRepositoryProvider), ref.watch(alarmSyncServiceProvider));
+});
+
+/// The alarm currently being created or edited, or null when no form is open.
+class DraftNotifier extends StateNotifier<Alarm?> {
+  DraftNotifier() : super(null);
+
+  void startNew() => state =
+      const Alarm(id: 0, hour: 6, minute: 30, days: {1, 2, 3, 4, 5});
+  void startEdit(Alarm alarm) => state = alarm;
+  void update(Alarm alarm) => state = alarm;
+  void clear() => state = null;
+}
+
+final draftProvider =
+    StateNotifierProvider<DraftNotifier, Alarm?>((ref) => DraftNotifier());
+
+/// The message shown by the ToastHost, or null when no toast is visible.
+final toastProvider = StateProvider<String?>((ref) => null);
+```
+
+- [ ] **Step 7: Write the provider test**
+
+Create `test/ui/state/alarm_providers_test.dart`:
+
+```dart
+import 'package:drift/native.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:timezone/data/latest.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
+import 'package:rise/data/alarm_sync_service.dart';
+import 'package:rise/data/local/alarm_repository.dart';
+import 'package:rise/data/local/database.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/domain/scheduled_occurrence.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+class _FakePlatform implements AlarmPlatform {
+  @override
+  Future<void> reconcile(List<ScheduledOccurrence> o) async {}
+  @override
+  Future<void> ringNow(ScheduledOccurrence o) async {}
+  @override
+  Future<bool> supportsSystemAlarms() async => true;
+  @override
+  Future<void> reconcileNotifications(List requests) async {}
+}
+
+void main() {
+  setUpAll(() => tzdata.initializeTimeZones());
+
+  ProviderContainer makeContainer() {
+    final db = RiseDatabase(NativeDatabase.memory());
+    final service = AlarmSyncService(
+      repository: AlarmRepository(db),
+      platform: _FakePlatform(),
+      location: tz.getLocation('America/New_York'),
+    );
+    addTearDown(db.close);
+    return ProviderContainer(overrides: [
+      alarmSyncServiceProvider.overrideWithValue(service),
+    ]);
+  }
+
+  test('alarmsProvider streams alarms saved through the mutations', () async {
+    final c = makeContainer();
+    addTearDown(c.dispose);
+
+    // Prime the stream.
+    final sub = c.listen(alarmsProvider, (_, __) {});
+    addTearDown(sub.close);
+
+    await c.read(alarmMutationsProvider).save(
+        const Alarm(id: 0, hour: 6, minute: 30, label: 'Run'));
+
+    // The StreamProvider re-emits with the new alarm.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final alarms = c.read(alarmsProvider).value ?? const [];
+    expect(alarms, hasLength(1));
+    expect(alarms.single.label, 'Run');
+  });
+
+  test('draftProvider starts, edits, and clears', () {
+    final c = makeContainer();
+    addTearDown(c.dispose);
+    final notifier = c.read(draftProvider.notifier);
+
+    expect(c.read(draftProvider), isNull);
+    notifier.startNew();
+    expect(c.read(draftProvider)!.days, {1, 2, 3, 4, 5});
+    notifier.update(c.read(draftProvider)!.copyWith(mission: 'math'));
+    expect(c.read(draftProvider)!.mission, 'math');
+    notifier.clear();
+    expect(c.read(draftProvider), isNull);
+  });
+}
+```
+
+Run it:
+```bash
+flutter test test/ui/state/alarm_providers_test.dart
+```
+Expected: PASS — both tests green.
+
+> `_FakePlatform.reconcileNotifications` takes `List` (untyped) to avoid importing the domain `NotificationRequest` in this test; the real interface uses `List<NotificationRequest>` but Dart accepts the wider positional type in an `implements` override only if it matches — if the analyzer rejects it, import `package:rise/domain/notification_request.dart` and type it `List<NotificationRequest>`.
+
+- [ ] **Step 8: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green (Plan 1/2 suites still pass — the migration keeps them working; the new fields default); `No issues found!`.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add lib/domain/alarm.dart lib/data/local/database.dart lib/data/local/database.g.dart lib/data/local/alarm_repository.dart lib/ui/state/alarm_providers.dart pubspec.yaml pubspec.lock test/domain/alarm_test.dart test/data/migration_test.dart test/ui/state/alarm_providers_test.dart
+git commit -m "feat: add mission fields (schema v2 migration) and the Riverpod state layer"
+```
+
+---
+
+## Remaining tasks (Tasks 7–14 — screens; specified, full code in the next authoring pass)
+
+Tasks 1–6 above complete the design-system + state foundation. The screens are scoped below (see the "Task 7–14" descriptions in the plan's earlier revision) and get full code just before execution: Home, Create/Edit, Ring (replacing DevRingPage), the four missions + host, Onboarding, Profile/Settings, the tab-bar app shell, and the `main.dart` wiring + device verification. They build purely on the components, interactions, and providers above.
 
 **Task 7 — Home screen.** Header (greeting + first name + streak pill, avatar), the next-alarm hero card (NEXT ALARM label, big mono time + AM/PM, "{label} · rings in Xh Ym" live countdown via a 1s ticker, animated bell, full-width Preview button that opens the ring screen), and the "Your alarms" list (rows: mono time + AM/PM, "{label} · {repeat}", `DayChips` compact, `RiseSwitch`; tap row → edit). The Crew·live strip is omitted this plan (empty region). Reads `alarmsProvider`; toggling a row calls the mutation. Widget-tested for rendering alarms and the toggle.
 
