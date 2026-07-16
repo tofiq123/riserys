@@ -28,6 +28,10 @@ class Alarms extends Table {
   /// one-shot alarm once it has fired.
   DateTimeColumn get lastDismissedAt => dateTime().nullable()();
 
+  /// Dismiss mission and difficulty (added in schema v2).
+  TextColumn get mission => text().withDefault(const Constant('none'))();
+  TextColumn get missionDiff => text().withDefault(const Constant('easy'))();
+
   // Alarm's hour/minute range checks are `assert`s, which are stripped in
   // release builds, and rows built from the database (_toDomain) never went
   // through that constructor validation to begin with — an out-of-range
@@ -47,5 +51,33 @@ class RiseDatabase extends _$RiseDatabase {
   RiseDatabase(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          // v1 -> v2: dismiss missions. Idempotent by design: the DB is opened
+          // from several isolates in parallel (foreground, ring, headless boot),
+          // so two could race this migration on the first launch after upgrade.
+          // Checking the existing columns first turns the loser's ALTER from a
+          // "duplicate column name" crash into a safe no-op.
+          if (from < 2) {
+            final existing = await _columnNames('alarms');
+            if (!existing.contains('mission')) {
+              await m.addColumn(alarms, alarms.mission);
+            }
+            if (!existing.contains('mission_diff')) {
+              await m.addColumn(alarms, alarms.missionDiff);
+            }
+          }
+        },
+      );
+
+  /// The column names currently on [table], read from sqlite's schema. Used to
+  /// make migrations idempotent under the app's multi-isolate DB opens.
+  Future<Set<String>> _columnNames(String table) async {
+    final rows = await customSelect('PRAGMA table_info($table)').get();
+    return rows.map((r) => r.read<String>('name')).toSet();
+  }
 }

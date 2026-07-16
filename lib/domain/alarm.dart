@@ -13,6 +13,8 @@ class Alarm {
     this.label = 'Alarm',
     this.soundAsset = 'sounds/default_alarm.mp3',
     this.vibrate = true,
+    this.mission = 'none',
+    this.missionDiff = 'easy',
     this.lastDismissedAt,
   })  : assert(hour >= 0 && hour <= 23),
         assert(minute >= 0 && minute <= 59);
@@ -25,6 +27,12 @@ class Alarm {
   final String label;
   final String soundAsset;
   final bool vibrate;
+
+  /// Dismiss mission: 'none' | 'math' | 'hold' | 'tap' | 'memory'.
+  final String mission;
+
+  /// Mission difficulty: 'easy' | 'medium' | 'hard'.
+  final String missionDiff;
 
   /// UTC instant this alarm was last dismissed, or null if never dismissed.
   /// Recovery uses this to avoid re-ringing an occurrence already dealt with.
@@ -53,6 +61,8 @@ class Alarm {
     String? label,
     String? soundAsset,
     bool? vibrate,
+    String? mission,
+    String? missionDiff,
     DateTime? lastDismissedAt,
     // The `field ?? this.field` idiom used above cannot express "set this
     // nullable field back to null" — passing null is indistinguishable from
@@ -73,6 +83,8 @@ class Alarm {
       label: label ?? this.label,
       soundAsset: soundAsset ?? this.soundAsset,
       vibrate: vibrate ?? this.vibrate,
+      mission: mission ?? this.mission,
+      missionDiff: missionDiff ?? this.missionDiff,
       lastDismissedAt: clearLastDismissedAt
           ? null
           : (lastDismissedAt ?? this.lastDismissedAt),
@@ -90,6 +102,8 @@ class Alarm {
       other.label == label &&
       other.soundAsset == soundAsset &&
       other.vibrate == vibrate &&
+      other.mission == mission &&
+      other.missionDiff == missionDiff &&
       _sameInstant(other.lastDismissedAt, lastDismissedAt);
 
   @override
@@ -102,6 +116,8 @@ class Alarm {
       label,
       soundAsset,
       vibrate,
+      mission,
+      missionDiff,
       // Normalized to UTC, not the raw DateTime: Dart's DateTime.== treats a
       // UTC and a local DateTime representing the exact same instant as
       // unequal, even though DateTime.hashCode (derived only from the epoch

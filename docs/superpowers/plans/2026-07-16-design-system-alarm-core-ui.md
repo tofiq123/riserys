@@ -996,13 +996,874 @@ git commit -m "feat(ui): add switch, segmented control, day chips, sound chips"
 ```
 
 ---
-## Remaining tasks (specified; full code written in the next authoring pass)
+### Task 5: Interactions — TimeDial, SlideToWake, ToastHost
 
-The design-system foundation above (Tasks 1–4) is complete and independently executable. The rest of the plan is scoped below — each will get the same complete-code + TDD treatment. They are grouped so the plan can, if desired, be executed as two sub-projects (**3a: foundation** = Tasks 1–6; **3b: screens** = Tasks 7–14).
+**Files:**
+- Create: `lib/ui/components/time_dial.dart`, `lib/ui/components/slide_to_wake.dart`, `lib/ui/components/toast.dart`
+- Test: `test/ui/components/interactions_test.dart`
 
-**Task 5 — Interactions: TimeDial, SlideToWake, ToastHost.** The draggable `HH : MM` picker (chevrons + vertical pointer-drag ~7px/step, wraps, AM/PM segmented) and the slide-to-wake track (pointer capture, fill+knob track the drag, ≥97% triggers, snaps back below). `ToastHost` overlay auto-hiding ~2.7s. Widget-tested for drag stepping, wrap, and the 97% threshold.
+**Interfaces:**
+- Consumes: tokens, typography.
+- Produces:
+  - `typedef DialTime = ({int hour12, int minute, bool isAm});`
+  - `class TimeDial extends StatelessWidget` — `TimeDial({required DialTime value, required ValueChanged<DialTime> onChanged})`. Drag a number vertically (~7px/step, wraps) or tap chevrons; AM/PM buttons.
+  - `class SlideToWake extends StatefulWidget` — `SlideToWake({required VoidCallback onWake, String label = 'Slide to wake up'})`. Drag the knob; ≥97% fires `onWake` once; a shorter drag snaps back.
+  - `class RiseToast extends StatelessWidget` — `RiseToast(String message)`; the pill visual.
+  - `class ToastHost extends StatefulWidget` — `ToastHost({required String? message, required VoidCallback onHide, required Widget child})`; overlays `message` bottom-center and calls `onHide` ~2.7s later.
 
-**Task 6 — State layer + Alarm mission fields + DB migration.** Add `mission` (`'none'|'math'|'hold'|'tap'|'memory'`) and `missionDiff` (`'easy'|'medium'|'hard'`) to the `Alarm` entity and the Drift `Alarms` table, with a **schemaVersion 1→2 migration** (`addColumn`) so existing installs upgrade rather than wipe. Riverpod (2.x) providers over the existing `AlarmRepository`/`AlarmSyncService`: `alarmsProvider` (`StreamProvider` over `watchAll`), `alarmMutationsProvider` (upsert/delete/toggle → each calls `AlarmSyncService.reconcileNow()`), `draftProvider` (create/edit form state), `toastProvider`. Unit-tested against an in-memory DB (like Plan 1 Task 5), including the migration.
+- [ ] **Step 1: Write the failing test**
+
+Create `test/ui/components/interactions_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/ui/components/slide_to_wake.dart';
+import 'package:rise/ui/components/time_dial.dart';
+import 'package:rise/ui/components/toast.dart';
+
+Widget _wrap(Widget child) => MaterialApp(home: Scaffold(body: Center(child: child)));
+
+void main() {
+  group('TimeDial', () {
+    testWidgets('dragging the hour up increments it by ~7px/step', (t) async {
+      DialTime v = (hour12: 6, minute: 30, isAm: true);
+      await t.pumpWidget(_wrap(StatefulBuilder(
+        builder: (c, s) => TimeDial(value: v, onChanged: (nv) => s(() => v = nv)),
+      )));
+      await t.drag(find.text('6'), const Offset(0, -21)); // 21px up = 3 steps
+      await t.pump();
+      expect(v.hour12, 9);
+    });
+
+    testWidgets('hour wraps 12 -> 1 when dragged past the top', (t) async {
+      DialTime v = (hour12: 11, minute: 0, isAm: true);
+      await t.pumpWidget(_wrap(StatefulBuilder(
+        builder: (c, s) => TimeDial(value: v, onChanged: (nv) => s(() => v = nv)),
+      )));
+      await t.drag(find.text('11'), const Offset(0, -21)); // +3 -> 11,12,1 -> 2
+      await t.pump();
+      expect(v.hour12, 2);
+    });
+
+    testWidgets('AM/PM toggle reports the change', (t) async {
+      DialTime v = (hour12: 6, minute: 30, isAm: true);
+      await t.pumpWidget(_wrap(StatefulBuilder(
+        builder: (c, s) => TimeDial(value: v, onChanged: (nv) => s(() => v = nv)),
+      )));
+      await t.tap(find.text('PM'));
+      await t.pump();
+      expect(v.isAm, isFalse);
+    });
+  });
+
+  group('SlideToWake', () {
+    testWidgets('sliding to the end fires onWake', (t) async {
+      var woke = false;
+      await t.pumpWidget(_wrap(SizedBox(width: 300, child: SlideToWake(onWake: () => woke = true))));
+      await t.drag(find.byType(SlideToWake), const Offset(300, 0));
+      expect(woke, isTrue);
+    });
+
+    testWidgets('a short slide snaps back and does not fire', (t) async {
+      var woke = false;
+      await t.pumpWidget(_wrap(SizedBox(width: 300, child: SlideToWake(onWake: () => woke = true))));
+      await t.drag(find.byType(SlideToWake), const Offset(40, 0));
+      await t.pumpAndSettle();
+      expect(woke, isFalse);
+    });
+  });
+
+  group('ToastHost', () {
+    testWidgets('shows the message then hides it after ~2.7s', (t) async {
+      var hidden = false;
+      await t.pumpWidget(_wrap(SizedBox(
+        width: 300, height: 300,
+        child: ToastHost(message: 'Alarm set', onHide: () => hidden = true, child: const SizedBox()),
+      )));
+      await t.pump();
+      expect(find.text('Alarm set'), findsOneWidget);
+      await t.pump(const Duration(milliseconds: 2800));
+      expect(hidden, isTrue);
+    });
+  });
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+flutter test test/ui/components/interactions_test.dart
+```
+Expected: FAIL — the three files not found.
+
+- [ ] **Step 3: Write TimeDial**
+
+Create `lib/ui/components/time_dial.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// The dial's current time: 12-hour clock plus AM/PM.
+typedef DialTime = ({int hour12, int minute, bool isAm});
+
+/// Big draggable HH:MM picker. Drag a number vertically (~7px per step) to
+/// change it, or use the chevrons; values wrap. AM/PM buttons on the right.
+class TimeDial extends StatelessWidget {
+  const TimeDial({super.key, required this.value, required this.onChanged});
+
+  final DialTime value;
+  final ValueChanged<DialTime> onChanged;
+
+  void _setHour(int h) => onChanged((hour12: h, minute: value.minute, isAm: value.isAm));
+  void _setMinute(int m) => onChanged((hour12: value.hour12, minute: m, isAm: value.isAm));
+  void _setAm(bool am) => onChanged((hour12: value.hour12, minute: value.minute, isAm: am));
+
+  static int _wrapHour(int start, int step) => ((start - 1 + step) % 12 + 12) % 12 + 1;
+  static int _wrapMinute(int start, int step) => ((start + step) % 60 + 60) % 60;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _DragNumber(
+          value: value.hour12,
+          format: (v) => '$v',
+          wrap: _wrapHour,
+          onChanged: _setHour,
+          onIncrement: () => _setHour(value.hour12 % 12 + 1),
+          onDecrement: () => _setHour(value.hour12 <= 1 ? 12 : value.hour12 - 1),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Text(':',
+              style: RiseText.mono(size: 58, weight: FontWeight.w500, color: RiseColors.textFaint)),
+        ),
+        _DragNumber(
+          value: value.minute,
+          format: (v) => v.toString().padLeft(2, '0'),
+          wrap: _wrapMinute,
+          onChanged: _setMinute,
+          onIncrement: () => _setMinute((value.minute + 1) % 60),
+          onDecrement: () => _setMinute((value.minute + 59) % 60),
+        ),
+        const SizedBox(width: 8),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _AmPmButton(label: 'AM', selected: value.isAm, onTap: () => _setAm(true)),
+            const SizedBox(height: 6),
+            _AmPmButton(label: 'PM', selected: !value.isAm, onTap: () => _setAm(false)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _DragNumber extends StatefulWidget {
+  const _DragNumber({
+    required this.value,
+    required this.format,
+    required this.wrap,
+    required this.onChanged,
+    required this.onIncrement,
+    required this.onDecrement,
+  });
+
+  final int value;
+  final String Function(int) format;
+  final int Function(int start, int step) wrap;
+  final ValueChanged<int> onChanged;
+  final VoidCallback onIncrement;
+  final VoidCallback onDecrement;
+
+  @override
+  State<_DragNumber> createState() => _DragNumberState();
+}
+
+class _DragNumberState extends State<_DragNumber> {
+  double _startY = 0;
+  int _startValue = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _chevron(true, widget.onIncrement),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onVerticalDragStart: (d) {
+            _startY = d.globalPosition.dy;
+            _startValue = widget.value;
+          },
+          onVerticalDragUpdate: (d) {
+            // Recompute from the drag start each move, like the prototype:
+            // dragging up (smaller y) increases the value, ~7px per step.
+            final step = ((_startY - d.globalPosition.dy) / 7).round();
+            widget.onChanged(widget.wrap(_startValue, step));
+          },
+          child: SizedBox(
+            width: 96,
+            child: Text(
+              widget.format(widget.value),
+              textAlign: TextAlign.center,
+              style: RiseText.mono(size: 66, weight: FontWeight.w500, color: RiseColors.text),
+            ),
+          ),
+        ),
+        _chevron(false, widget.onDecrement),
+      ],
+    );
+  }
+
+  Widget _chevron(bool up, VoidCallback onTap) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 44,
+          height: 34,
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: RiseColors.surface2,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: RiseColors.border),
+          ),
+          child: Icon(up ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+              size: 18, color: RiseColors.textDim),
+        ),
+      );
+}
+
+class _AmPmButton extends StatelessWidget {
+  const _AmPmButton({required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+          decoration: BoxDecoration(
+            color: selected ? RiseColors.primary : RiseColors.surface2,
+            borderRadius: BorderRadius.circular(11),
+            border: selected ? null : Border.all(color: RiseColors.border),
+          ),
+          child: Text(label,
+              style: RiseText.mono(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: selected ? RiseColors.primaryText : RiseColors.textDim)),
+        ),
+      );
+}
+```
+
+> `find.text('6')` in the test hits the hour number. `t.drag` sends the offset as pointer moves; because `onVerticalDragUpdate` recomputes from `_startY` on each move, the final value reflects the total offset — 21px up = round(21/7) = 3 steps. Material `Icons` is why this file imports `flutter/material.dart` (the other components import only `flutter/widgets.dart`).
+
+- [ ] **Step 4: Write SlideToWake**
+
+Create `lib/ui/components/slide_to_wake.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// Draggable "slide to wake up" track. The knob follows the drag; crossing 97%
+/// of the travel fires [onWake] once. A shorter drag snaps the knob back.
+class SlideToWake extends StatefulWidget {
+  const SlideToWake({super.key, required this.onWake, this.label = 'Slide to wake up'});
+
+  final VoidCallback onWake;
+  final String label;
+
+  @override
+  State<SlideToWake> createState() => _SlideToWakeState();
+}
+
+class _SlideToWakeState extends State<SlideToWake> {
+  static const double _trackHeight = 64;
+  static const double _knob = 56;
+
+  double _fraction = 0; // 0..1 of the available travel
+  bool _fired = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final travel = (constraints.maxWidth - _knob).clamp(1.0, double.infinity);
+        return GestureDetector(
+          onHorizontalDragUpdate: (d) {
+            if (_fired) return;
+            setState(() => _fraction = (_fraction + d.delta.dx / travel).clamp(0.0, 1.0));
+            if (_fraction >= 0.97) {
+              _fired = true;
+              widget.onWake();
+            }
+          },
+          onHorizontalDragEnd: (_) {
+            if (!_fired && _fraction < 0.97) setState(() => _fraction = 0);
+          },
+          child: Container(
+            height: _trackHeight,
+            decoration: BoxDecoration(
+              color: RiseColors.card,
+              borderRadius: BorderRadius.circular(RiseRadii.pill),
+              border: Border.all(color: RiseColors.border),
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: _knob + _fraction * travel,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: RiseColors.accentSoft,
+                      borderRadius: BorderRadius.circular(RiseRadii.pill),
+                    ),
+                  ),
+                ),
+                Center(
+                  child: Text(widget.label,
+                      style: RiseText.body.copyWith(
+                          fontWeight: FontWeight.w600, color: RiseColors.textFaint)),
+                ),
+                Positioned(
+                  left: 4 + _fraction * travel,
+                  top: 4,
+                  child: Container(
+                    width: _knob,
+                    height: _knob,
+                    decoration: BoxDecoration(
+                      color: RiseColors.primary,
+                      shape: BoxShape.circle,
+                      boxShadow: RiseShadows.primary,
+                    ),
+                    child: const Icon(Icons.arrow_forward, color: RiseColors.primaryText, size: 24),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+```
+
+- [ ] **Step 5: Write the toast**
+
+Create `lib/ui/components/toast.dart`:
+
+```dart
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
+
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// The dark pill toast visual.
+class RiseToast extends StatelessWidget {
+  const RiseToast(this.message, {super.key});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 11),
+      decoration: BoxDecoration(
+        color: RiseColors.primary,
+        borderRadius: BorderRadius.circular(RiseRadii.pill),
+        boxShadow: const [
+          BoxShadow(color: Color(0x47000000), offset: Offset(0, 8), blurRadius: 30),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(color: RiseColors.primaryText, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 9),
+          Text(message,
+              style: RiseText.body.copyWith(
+                  fontSize: 13.5, fontWeight: FontWeight.w600, color: RiseColors.primaryText)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Overlays [message] near the bottom of [child] and calls [onHide] ~2.7s after
+/// it appears. The parent clears its message state in [onHide].
+class ToastHost extends StatefulWidget {
+  const ToastHost({
+    super.key,
+    required this.message,
+    required this.onHide,
+    required this.child,
+  });
+
+  final String? message;
+  final VoidCallback onHide;
+  final Widget child;
+
+  @override
+  State<ToastHost> createState() => _ToastHostState();
+}
+
+class _ToastHostState extends State<ToastHost> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.message != null) _arm();
+  }
+
+  @override
+  void didUpdateWidget(ToastHost old) {
+    super.didUpdateWidget(old);
+    if (widget.message != null && widget.message != old.message) _arm();
+  }
+
+  void _arm() {
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 2700), () {
+      if (mounted) widget.onHide();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        widget.child,
+        if (widget.message != null)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 104,
+            child: Center(child: RiseToast(widget.message!)),
+          ),
+      ],
+    );
+  }
+}
+```
+
+- [ ] **Step 6: Run the test to verify it passes**
+
+```bash
+flutter test test/ui/components/interactions_test.dart
+```
+Expected: PASS — all groups green.
+
+> If the SlideToWake "end" test fails to fire: `t.drag` of the full width should push `_fraction` to 1.0 (≥0.97). If it snaps back instead, confirm `onWake` is called inside `onHorizontalDragUpdate` (not on end) so it fires the instant the threshold is crossed mid-drag.
+
+- [ ] **Step 7: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add lib/ui/components/time_dial.dart lib/ui/components/slide_to_wake.dart lib/ui/components/toast.dart test/ui/components/interactions_test.dart
+git commit -m "feat(ui): add draggable time dial, slide-to-wake, and toast"
+```
+
+---
+
+### Task 6: State layer + Alarm mission fields + DB migration
+
+The one correctness-critical foundation task: it changes the database schema. Existing installs (the dev Samsung already has schemaVersion-1 data) must **upgrade**, not wipe — so this adds a real Drift 1→2 migration and tests it against a hand-built v1 database.
+
+**Files:**
+- Modify: `lib/domain/alarm.dart` (add `mission`, `missionDiff`)
+- Modify: `lib/data/local/database.dart` (add columns, schemaVersion 2, migration)
+- Modify: `lib/data/local/alarm_repository.dart` (map the new fields)
+- Create: `lib/ui/state/alarm_providers.dart`
+- Modify: `pubspec.yaml` (add `sqlite3` to dev_dependencies for the migration test)
+- Test: `test/data/migration_test.dart`, `test/ui/state/alarm_providers_test.dart`
+- Modify: `test/domain/alarm_test.dart` (extend for the new fields)
+
+**Interfaces:**
+- Consumes: `Alarm`, `AlarmRepository`, `AlarmSyncService` (Plans 1–2).
+- Produces:
+  - `Alarm` gains `String mission` (default `'none'`) and `String missionDiff` (default `'easy'`), in the constructor, `copyWith`, `==`, `hashCode`.
+  - `RiseDatabase.schemaVersion == 2` with a `MigrationStrategy` that adds the two columns when upgrading from < 2.
+  - `alarmSyncServiceProvider` (`Provider<AlarmSyncService>`), `alarmRepositoryProvider` (`Provider<AlarmRepository>`), `alarmsProvider` (`StreamProvider<List<Alarm>>`), `alarmMutationsProvider` (`Provider<AlarmMutations>` with `save`/`delete`/`setEnabled`, each reconciling), `draftProvider` (`StateNotifierProvider<DraftNotifier, Alarm?>`), `toastProvider` (`StateProvider<String?>`).
+
+- [ ] **Step 1: Add mission fields to the Alarm entity**
+
+In `lib/domain/alarm.dart`, add two constructor params (after `vibrate`), two fields, `copyWith` params, and include them in `==`/`hashCode`:
+
+```dart
+    this.vibrate = true,
+    this.mission = 'none',
+    this.missionDiff = 'easy',
+    this.lastDismissedAt,
+```
+(insert `mission`/`missionDiff` before `lastDismissedAt` in the constructor). Fields (after `vibrate`):
+```dart
+  /// Dismiss mission: 'none' | 'math' | 'hold' | 'tap' | 'memory'.
+  final String mission;
+
+  /// Mission difficulty: 'easy' | 'medium' | 'hard'.
+  final String missionDiff;
+```
+`copyWith` — add params and pass-throughs:
+```dart
+    String? mission,
+    String? missionDiff,
+```
+and in the returned `Alarm(...)`: `mission: mission ?? this.mission, missionDiff: missionDiff ?? this.missionDiff,`.
+`==` — add `&& other.mission == mission && other.missionDiff == missionDiff`.
+`hashCode` — add `mission, missionDiff` to the `Object.hash(...)` argument list.
+
+Add a test to `test/domain/alarm_test.dart`:
+```dart
+  test('mission fields default to none/easy and round-trip through copyWith', () {
+    const a = Alarm(id: 1, hour: 6, minute: 30);
+    expect(a.mission, 'none');
+    expect(a.missionDiff, 'easy');
+    final b = a.copyWith(mission: 'math', missionDiff: 'hard');
+    expect(b.mission, 'math');
+    expect(b.missionDiff, 'hard');
+    expect(b.minute, 30); // unrelated field preserved
+    expect(a == a.copyWith(), isTrue); // equality includes the new fields
+  });
+```
+
+- [ ] **Step 2: Add the columns, schemaVersion 2, and the migration**
+
+In `lib/data/local/database.dart`, add two columns to the `Alarms` table (after `lastDismissedAt`, before `customConstraints`):
+
+```dart
+  /// Dismiss mission and difficulty (added in schema v2).
+  TextColumn get mission => text().withDefault(const Constant('none'))();
+  TextColumn get missionDiff => text().withDefault(const Constant('easy'))();
+```
+
+Replace the `RiseDatabase` class with:
+
+```dart
+@DriftDatabase(tables: [Alarms])
+class RiseDatabase extends _$RiseDatabase {
+  RiseDatabase(super.e);
+
+  @override
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          // v1 -> v2: dismiss missions. Existing rows keep their data and get
+          // the column defaults ('none'/'easy'); no wipe.
+          if (from < 2) {
+            await m.addColumn(alarms, alarms.mission);
+            await m.addColumn(alarms, alarms.missionDiff);
+          }
+        },
+      );
+}
+```
+
+- [ ] **Step 3: Map the new fields in the repository**
+
+In `lib/data/local/alarm_repository.dart`, `_toDomain` — add `mission: row.mission, missionDiff: row.missionDiff,` to the `Alarm(...)`. In `upsert`'s `AlarmsCompanion` — add `mission: Value(alarm.mission), missionDiff: Value(alarm.missionDiff),`.
+
+- [ ] **Step 4: Regenerate Drift and run the entity/repository tests**
+
+```bash
+cd "C:/Users/ASUS/Desktop/startuping/rise"
+dart run build_runner build --delete-conflicting-outputs
+flutter test test/domain/alarm_test.dart test/data/alarm_repository_test.dart
+```
+Expected: `database.g.dart` regenerates with the two columns; entity and repository tests pass (the repository round-trips mission/missionDiff via the defaults; if the existing repository test asserts equality of a full Alarm, the new fields default on both sides so it stays green).
+
+- [ ] **Step 5: Write the migration test**
+
+Add `sqlite3` to `dev_dependencies` in `pubspec.yaml` (it is already present transitively; declaring it satisfies the analyzer for a direct import), then `flutter pub get`:
+
+```yaml
+dev_dependencies:
+  sqlite3: ^2.4.0
+```
+
+Create `test/data/migration_test.dart`:
+
+```dart
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/local/database.dart';
+import 'package:sqlite3/sqlite3.dart';
+
+void main() {
+  test('upgrading a v1 database adds mission columns and keeps existing rows', () async {
+    // Build a schema-v1 alarms table by hand (no mission columns), as it
+    // exists on an already-installed device, and seed one alarm.
+    final raw = sqlite3.openInMemory();
+    raw.execute('''
+      CREATE TABLE alarms (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        hour INTEGER NOT NULL,
+        minute INTEGER NOT NULL,
+        days TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        label TEXT NOT NULL DEFAULT 'Alarm',
+        sound_asset TEXT NOT NULL DEFAULT 'sounds/default_alarm.mp3',
+        vibrate INTEGER NOT NULL DEFAULT 1,
+        last_dismissed_at INTEGER,
+        CHECK (hour BETWEEN 0 AND 23),
+        CHECK (minute BETWEEN 0 AND 59)
+      );
+    ''');
+    raw.execute("INSERT INTO alarms (hour, minute, label) VALUES (6, 30, 'Run');");
+    raw.execute('PRAGMA user_version = 1;');
+
+    // Opening RiseDatabase over this connection triggers onUpgrade(1 -> 2).
+    final db = RiseDatabase(NativeDatabase.opened(raw));
+    addTearDown(db.close);
+
+    final rows = await db.select(db.alarms).get();
+    expect(rows, hasLength(1), reason: 'existing row survives the upgrade');
+    expect(rows.single.label, 'Run');
+    expect(rows.single.mission, 'none', reason: 'new column defaults');
+    expect(rows.single.missionDiff, 'easy');
+    expect(await db.schemaVersion, 2);
+  });
+
+  test('a fresh database is created at v2 with the mission columns', () async {
+    final db = RiseDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final id = await db.into(db.alarms).insert(
+        AlarmsCompanion.insert(hour: 6, minute: 30));
+    final row = await (db.select(db.alarms)..where((t) => t.id.equals(id))).getSingle();
+    expect(row.mission, 'none');
+    expect(row.missionDiff, 'easy');
+  });
+}
+```
+
+Run it:
+```bash
+flutter test test/data/migration_test.dart
+```
+Expected: PASS — both tests green. The first proves an existing v1 row upgrades (data intact, columns added with defaults); the second proves a fresh install is created at v2.
+
+> If `NativeDatabase.opened` reports the DB is already at the target version and skips onUpgrade, confirm `PRAGMA user_version = 1` was set on `raw` before wrapping it. If `sqlite3.openInMemory` can't find the native library in the test runner, the existing `NativeDatabase.memory()` tests from Plan 1 prove sqlite loads here — use the same import setup they use.
+
+- [ ] **Step 6: Write the Riverpod providers**
+
+Create `lib/ui/state/alarm_providers.dart`:
+
+```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../data/alarm_sync_service.dart';
+import '../../data/local/alarm_repository.dart';
+import '../../domain/alarm.dart';
+
+/// The app's configured AlarmSyncService. In production this is the singleton
+/// built by `AlarmSyncService.configureForApp()` in main(); tests override it
+/// with a service over an in-memory database.
+final alarmSyncServiceProvider = Provider<AlarmSyncService>((ref) {
+  return AlarmSyncService.instance;
+});
+
+final alarmRepositoryProvider = Provider<AlarmRepository>((ref) {
+  return ref.watch(alarmSyncServiceProvider).repository;
+});
+
+/// Live list of the user's alarms from the local database.
+final alarmsProvider = StreamProvider<List<Alarm>>((ref) {
+  return ref.watch(alarmRepositoryProvider).watchAll();
+});
+
+/// Every alarm write persists locally AND re-arms the platform scheduler, so
+/// the OS never drifts out of sync with the database (the source of truth).
+class AlarmMutations {
+  AlarmMutations(this._repo, this._sync);
+
+  final AlarmRepository _repo;
+  final AlarmSyncService _sync;
+
+  Future<void> save(Alarm alarm) async {
+    await _repo.upsert(alarm);
+    await _sync.reconcileNow();
+  }
+
+  Future<void> delete(int id) async {
+    await _repo.delete(id);
+    await _sync.reconcileNow();
+  }
+
+  Future<void> setEnabled(int id, bool enabled) async {
+    await _repo.setEnabled(id, enabled);
+    await _sync.reconcileNow();
+  }
+}
+
+final alarmMutationsProvider = Provider<AlarmMutations>((ref) {
+  return AlarmMutations(ref.watch(alarmRepositoryProvider), ref.watch(alarmSyncServiceProvider));
+});
+
+/// The alarm currently being created or edited, or null when no form is open.
+class DraftNotifier extends StateNotifier<Alarm?> {
+  DraftNotifier() : super(null);
+
+  void startNew() => state =
+      const Alarm(id: 0, hour: 6, minute: 30, days: {1, 2, 3, 4, 5});
+  void startEdit(Alarm alarm) => state = alarm;
+  void update(Alarm alarm) => state = alarm;
+  void clear() => state = null;
+}
+
+final draftProvider =
+    StateNotifierProvider<DraftNotifier, Alarm?>((ref) => DraftNotifier());
+
+/// The message shown by the ToastHost, or null when no toast is visible.
+final toastProvider = StateProvider<String?>((ref) => null);
+```
+
+- [ ] **Step 7: Write the provider test**
+
+Create `test/ui/state/alarm_providers_test.dart`:
+
+```dart
+import 'package:drift/native.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:timezone/data/latest.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
+import 'package:rise/data/alarm_sync_service.dart';
+import 'package:rise/data/local/alarm_repository.dart';
+import 'package:rise/data/local/database.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/domain/scheduled_occurrence.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+class _FakePlatform implements AlarmPlatform {
+  @override
+  Future<void> reconcile(List<ScheduledOccurrence> o) async {}
+  @override
+  Future<void> ringNow(ScheduledOccurrence o) async {}
+  @override
+  Future<bool> supportsSystemAlarms() async => true;
+  @override
+  Future<void> reconcileNotifications(List requests) async {}
+}
+
+void main() {
+  setUpAll(() => tzdata.initializeTimeZones());
+
+  ProviderContainer makeContainer() {
+    final db = RiseDatabase(NativeDatabase.memory());
+    final service = AlarmSyncService(
+      repository: AlarmRepository(db),
+      platform: _FakePlatform(),
+      location: tz.getLocation('America/New_York'),
+    );
+    addTearDown(db.close);
+    return ProviderContainer(overrides: [
+      alarmSyncServiceProvider.overrideWithValue(service),
+    ]);
+  }
+
+  test('alarmsProvider streams alarms saved through the mutations', () async {
+    final c = makeContainer();
+    addTearDown(c.dispose);
+
+    // Prime the stream.
+    final sub = c.listen(alarmsProvider, (_, __) {});
+    addTearDown(sub.close);
+
+    await c.read(alarmMutationsProvider).save(
+        const Alarm(id: 0, hour: 6, minute: 30, label: 'Run'));
+
+    // The StreamProvider re-emits with the new alarm.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final alarms = c.read(alarmsProvider).value ?? const [];
+    expect(alarms, hasLength(1));
+    expect(alarms.single.label, 'Run');
+  });
+
+  test('draftProvider starts, edits, and clears', () {
+    final c = makeContainer();
+    addTearDown(c.dispose);
+    final notifier = c.read(draftProvider.notifier);
+
+    expect(c.read(draftProvider), isNull);
+    notifier.startNew();
+    expect(c.read(draftProvider)!.days, {1, 2, 3, 4, 5});
+    notifier.update(c.read(draftProvider)!.copyWith(mission: 'math'));
+    expect(c.read(draftProvider)!.mission, 'math');
+    notifier.clear();
+    expect(c.read(draftProvider), isNull);
+  });
+}
+```
+
+Run it:
+```bash
+flutter test test/ui/state/alarm_providers_test.dart
+```
+Expected: PASS — both tests green.
+
+> `_FakePlatform.reconcileNotifications` takes `List` (untyped) to avoid importing the domain `NotificationRequest` in this test; the real interface uses `List<NotificationRequest>` but Dart accepts the wider positional type in an `implements` override only if it matches — if the analyzer rejects it, import `package:rise/domain/notification_request.dart` and type it `List<NotificationRequest>`.
+
+- [ ] **Step 8: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green (Plan 1/2 suites still pass — the migration keeps them working; the new fields default); `No issues found!`.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add lib/domain/alarm.dart lib/data/local/database.dart lib/data/local/database.g.dart lib/data/local/alarm_repository.dart lib/ui/state/alarm_providers.dart pubspec.yaml pubspec.lock test/domain/alarm_test.dart test/data/migration_test.dart test/ui/state/alarm_providers_test.dart
+git commit -m "feat: add mission fields (schema v2 migration) and the Riverpod state layer"
+```
+
+---
+
+## Remaining tasks (Tasks 7–14 — screens; specified, full code in the next authoring pass)
+
+Tasks 1–6 above complete the design-system + state foundation. The screens are scoped below (see the "Task 7–14" descriptions in the plan's earlier revision) and get full code just before execution: Home, Create/Edit, Ring (replacing DevRingPage), the four missions + host, Onboarding, Profile/Settings, the tab-bar app shell, and the `main.dart` wiring + device verification. They build purely on the components, interactions, and providers above.
 
 **Task 7 — Home screen.** Header (greeting + first name + streak pill, avatar), the next-alarm hero card (NEXT ALARM label, big mono time + AM/PM, "{label} · rings in Xh Ym" live countdown via a 1s ticker, animated bell, full-width Preview button that opens the ring screen), and the "Your alarms" list (rows: mono time + AM/PM, "{label} · {repeat}", `DayChips` compact, `RiseSwitch`; tap row → edit). The Crew·live strip is omitted this plan (empty region). Reads `alarmsProvider`; toggling a row calls the mutation. Widget-tested for rendering alarms and the toggle.
 

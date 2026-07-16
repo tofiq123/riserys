@@ -51,5 +51,16 @@ void main() {
       const b = Alarm(id: 1, hour: 6, minute: 30, days: {1, 2});
       expect(a, equals(b));
     });
+
+    test('mission fields default to none/easy and round-trip through copyWith', () {
+      const a = Alarm(id: 1, hour: 6, minute: 30);
+      expect(a.mission, 'none');
+      expect(a.missionDiff, 'easy');
+      final b = a.copyWith(mission: 'math', missionDiff: 'hard');
+      expect(b.mission, 'math');
+      expect(b.missionDiff, 'hard');
+      expect(b.minute, 30); // unrelated field preserved
+      expect(a == a.copyWith(), isTrue); // equality includes the new fields
+    });
   });
 }
