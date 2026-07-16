@@ -27,18 +27,44 @@ Future<void> reconcileEntrypoint() async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   tzdata.initializeTimeZones();
-  await AlarmSyncService.configureForApp();
 
-  // Every launch re-arms the scheduler: OEMs and OS updates silently clear it.
-  await AlarmSyncService.instance.reconcileNow();
+  // RingActivity is a plain FlutterActivity: it runs this same main() in its
+  // own engine while an alarm is audibly ringing (isLooping, no timeout) with
+  // an ongoing/non-dismissible notification. If a throw here (a missing
+  // documents directory, a SqliteException opening the db, a PlatformException
+  // from the native reconcile call) stopped runApp() from ever being reached,
+  // the ring UI — including its Dismiss button — would never render, and the
+  // alarm would be unstoppable short of force-stop or reboot. So this must
+  // never let an exception escape past this point.
+  try {
+    await AlarmSyncService.configureForApp();
+    // Every launch re-arms the scheduler: OEMs and OS updates silently clear it.
+    await AlarmSyncService.instance.reconcileNow();
+  } catch (e, s) {
+    debugPrint('Rise: startup reconcile failed: $e\n$s');
+  }
 
-  runApp(RiseApp(repository: AlarmSyncService.instance.repository));
+  // AlarmSyncService.instance throws if configureForApp() itself failed
+  // above (rather than reconcileNow() failing after configure succeeded).
+  // Guard this second access too, so a startup failure already reported
+  // above does not crash main() a second time before runApp() is reached.
+  AlarmRepository? repository;
+  try {
+    repository = AlarmSyncService.instance.repository;
+  } catch (e) {
+    debugPrint('Rise: AlarmSyncService unavailable after startup failure: $e');
+  }
+
+  runApp(RiseApp(repository: repository));
 }
 
 class RiseApp extends StatefulWidget {
   const RiseApp({super.key, required this.repository});
 
-  final AlarmRepository repository;
+  // Null when startup failed to configure the service (see main() above).
+  // The home screen degrades visibly instead of the app crashing on a second
+  // throw from AlarmSyncService.instance.
+  final AlarmRepository? repository;
 
   @override
   State<RiseApp> createState() => _RiseAppState();
@@ -70,10 +96,45 @@ class _RiseAppState extends State<RiseApp> {
 
   @override
   Widget build(BuildContext context) {
+    final repository = widget.repository;
     return MaterialApp(
       title: 'Rise',
       navigatorKey: _navigatorKey,
-      home: DevHomePage(repository: widget.repository),
+      home: repository == null
+          ? const _StartupFailedPage()
+          : DevHomePage(repository: repository),
+    );
+  }
+}
+
+/// Throwaway degrade-visibly screen shown when startup's configureForApp()
+/// failed. Alarms already armed still ring — RingActivity runs its own
+/// engine and DevRingPage's Dismiss does not depend on this repository — but
+/// the home screen has no database to read or write until the app restarts.
+class _StartupFailedPage extends StatelessWidget {
+  const _StartupFailedPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Icon(Icons.error_outline, size: 48),
+              SizedBox(height: 16),
+              Text(
+                'Rise failed to start and could not reach the database.\n'
+                'Already-armed alarms will still ring. Restart the app to '
+                'try again.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

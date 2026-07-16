@@ -29,10 +29,31 @@ class DevRingPage extends StatelessWidget {
                 // alarm) before stopping the sound, then reconcile so a
                 // disabled one-shot is actually disarmed rather than re-armed
                 // for tomorrow on the next boot/edit-triggered reconcile.
-                await AlarmSyncService.instance.repository
-                    .recordDismissed(alarmId, DateTime.now().toUtc());
+                //
+                // AlarmSyncService.instance throws if configureForApp()
+                // failed at startup (see main.dart). stopRinging must still
+                // run even then: it talks straight to AlarmHostApi() and
+                // does not depend on the Dart-side service, so it is pulled
+                // out of the service calls' try/catch rather than skipped
+                // along with them — a ringing alarm must always be
+                // stoppable, even with no database reachable.
+                try {
+                  await AlarmSyncService.instance.repository
+                      .recordDismissed(alarmId, DateTime.now().toUtc());
+                } catch (e) {
+                  debugPrint(
+                      'Rise: could not record dismissal for alarm $alarmId: $e');
+                }
+
                 await AlarmHostApi().stopRinging(alarmId);
-                await AlarmSyncService.instance.reconcileNow();
+
+                try {
+                  await AlarmSyncService.instance.reconcileNow();
+                } catch (e) {
+                  debugPrint(
+                      'Rise: could not reconcile after dismissing alarm $alarmId: $e');
+                }
+
                 if (context.mounted) Navigator.of(context).maybePop();
               },
               child: const Padding(
