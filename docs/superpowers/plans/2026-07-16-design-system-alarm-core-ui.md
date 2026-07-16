@@ -1861,9 +1861,454 @@ git commit -m "feat: add mission fields (schema v2 migration) and the Riverpod s
 
 ---
 
-## Remaining tasks (Tasks 7–14 — screens; specified, full code in the next authoring pass)
+### Task 7: Home screen
 
-Tasks 1–6 above complete the design-system + state foundation. The screens are scoped below (see the "Task 7–14" descriptions in the plan's earlier revision) and get full code just before execution: Home, Create/Edit, Ring (replacing DevRingPage), the four missions + host, Onboarding, Profile/Settings, the tab-bar app shell, and the `main.dart` wiring + device verification. They build purely on the components, interactions, and providers above.
+**Files:**
+- Create: `lib/ui/screens/home_screen.dart`
+- Modify: `lib/ui/state/alarm_providers.dart` (add `nextOccurrenceProvider`)
+- Test: `test/ui/screens/home_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `alarmsProvider`, `alarmMutationsProvider`, `alarmSyncServiceProvider` (Task 6), the components (`RiseCard`, `GhostButton`, `SectionLabel`, `DayChips`, `RiseSwitch`), `repeatLabel`, tokens/typography; `Alarm`, `ScheduledOccurrence`.
+- Produces:
+  - `nextOccurrenceProvider` (`FutureProvider<ScheduledOccurrence?>`) — the soonest upcoming occurrence, or null.
+  - `class HomeScreen extends ConsumerStatefulWidget` — `HomeScreen({required VoidCallback onNew, required void Function(Alarm) onEdit, required VoidCallback onPreview})`. Renders the greeting header, next-alarm hero (live 1s countdown), and the alarm list.
+
+- [ ] **Step 1: Add nextOccurrenceProvider**
+
+Append to `lib/ui/state/alarm_providers.dart`:
+
+```dart
+import '../../domain/scheduled_occurrence.dart';
+
+/// The soonest upcoming alarm occurrence, or null if no alarm is enabled.
+/// Recomputes whenever the alarm list changes.
+final nextOccurrenceProvider = FutureProvider<ScheduledOccurrence?>((ref) async {
+  ref.watch(alarmsProvider); // rebuild when alarms change
+  final plan = await ref.watch(alarmSyncServiceProvider).currentPlan();
+  return plan.isEmpty ? null : plan.first;
+});
+```
+
+(Put the `import` at the top with the other imports.)
+
+- [ ] **Step 2: Write the failing test**
+
+Create `test/ui/screens/home_screen_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/ui/screens/home_screen.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+class _RecordingMutations implements AlarmMutations {
+  final List<(int, bool)> enabledCalls = [];
+  @override
+  Future<void> setEnabled(int id, bool enabled) async => enabledCalls.add((id, enabled));
+  @override
+  Future<void> save(Alarm alarm) async {}
+  @override
+  Future<void> delete(int id) async {}
+}
+
+Widget _host({
+  required List<Alarm> alarms,
+  required _RecordingMutations mutations,
+  VoidCallback? onNew,
+  void Function(Alarm)? onEdit,
+}) {
+  return ProviderScope(
+    overrides: [
+      alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
+      nextOccurrenceProvider.overrideWith((ref) async => null),
+      alarmMutationsProvider.overrideWithValue(mutations),
+    ],
+    child: MaterialApp(
+      home: HomeScreen(
+        onNew: onNew ?? () {},
+        onEdit: onEdit ?? (_) {},
+        onPreview: () {},
+      ),
+    ),
+  );
+}
+
+void main() {
+  testWidgets('lists an alarm with its time and repeat label', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 1, hour: 6, minute: 30, label: 'Run', days: {1, 2, 3, 4, 5})],
+      mutations: _RecordingMutations(),
+    ));
+    await t.pump();
+    expect(find.text('6:30'), findsOneWidget);
+    expect(find.textContaining('Run'), findsOneWidget);
+    expect(find.textContaining('Weekdays'), findsOneWidget);
+  });
+
+  testWidgets('toggling a row calls setEnabled', (t) async {
+    final m = _RecordingMutations();
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 7, hour: 6, minute: 30, enabled: true)],
+      mutations: m,
+    ));
+    await t.pump();
+    await t.tap(find.byType(Switch).first.hitTestable(), warnIfMissed: false);
+    // The RiseSwitch is a GestureDetector, not a Material Switch — tap it by type.
+    await t.pump();
+    expect(m.enabledCalls, isNotEmpty);
+    expect(m.enabledCalls.first, (7, false));
+  });
+
+  testWidgets('tapping a row calls onEdit', (t) async {
+    Alarm? edited;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 3, hour: 7, minute: 0)],
+      mutations: _RecordingMutations(),
+      onEdit: (a) => edited = a,
+    ));
+    await t.pump();
+    await t.tap(find.text('7:00'));
+    await t.pump();
+    expect(edited?.id, 3);
+  });
+
+  testWidgets('empty state invites the user to add an alarm', (t) async {
+    await t.pumpWidget(_host(alarms: const [], mutations: _RecordingMutations()));
+    await t.pump();
+    expect(find.textContaining('No alarms'), findsOneWidget);
+  });
+}
+```
+
+> The toggle test taps the `RiseSwitch` (a `GestureDetector`, not a Material `Switch`). Replace the `find.byType(Switch)` line with `await t.tap(find.byType(RiseSwitch).first);` (import `RiseSwitch`) — the placeholder above is a reminder; the implementer wires the real finder. Keep the assertion that `setEnabled(7, false)` was called.
+
+- [ ] **Step 3: Run the test to verify it fails**
+
+```bash
+flutter test test/ui/screens/home_screen_test.dart
+```
+Expected: FAIL — `home_screen.dart` not found.
+
+- [ ] **Step 4: Write the Home screen**
+
+Create `lib/ui/screens/home_screen.dart`:
+
+```dart
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../domain/alarm.dart';
+import '../../domain/scheduled_occurrence.dart';
+import '../components/day_chips.dart';
+import '../components/rise_buttons.dart';
+import '../components/rise_card.dart';
+import '../components/rise_switch.dart';
+import '../components/section_label.dart';
+import '../state/alarm_providers.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+String _greeting() {
+  final h = DateTime.now().hour;
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
+String _countdown(Duration d) {
+  if (d.isNegative || d.inSeconds == 0) return 'now';
+  final h = d.inHours, m = d.inMinutes % 60, s = d.inSeconds % 60;
+  if (h > 0) return 'in ${h}h ${m}m';
+  return 'in ${m}m ${s.toString().padLeft(2, '0')}s';
+}
+
+class HomeScreen extends ConsumerStatefulWidget {
+  const HomeScreen({
+    super.key,
+    required this.onNew,
+    required this.onEdit,
+    required this.onPreview,
+  });
+
+  final VoidCallback onNew;
+  final void Function(Alarm) onEdit;
+  final VoidCallback onPreview;
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    // Drives the hero's live countdown.
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final alarmsAsync = ref.watch(alarmsProvider);
+    final alarms = alarmsAsync.value ?? const <Alarm>[];
+    final next = ref.watch(nextOccurrenceProvider).value;
+
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+            RiseSpacing.screen, 8, RiseSpacing.screen, 108),
+        children: [
+          _header(),
+          const SizedBox(height: 18),
+          _hero(alarms, next),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const SectionLabel('Your alarms'),
+              GhostButton(label: '+ New', onPressed: widget.onNew),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (alarms.isEmpty)
+            _empty()
+          else
+            for (final a in alarms) ...[
+              _AlarmRow(
+                alarm: a,
+                onEdit: () => widget.onEdit(a),
+                onToggle: (v) =>
+                    ref.read(alarmMutationsProvider).setEnabled(a.id, v),
+              ),
+              const SizedBox(height: 10),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _header() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(_greeting(), style: RiseText.display),
+        Container(
+          width: 40,
+          height: 40,
+          decoration: const BoxDecoration(color: RiseColors.primary, shape: BoxShape.circle),
+          child: const Icon(Icons.person, color: RiseColors.primaryText, size: 20),
+        ),
+      ],
+    );
+  }
+
+  Widget _hero(List<Alarm> alarms, ScheduledOccurrence? next) {
+    if (next == null) {
+      return RiseCard(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SectionLabel('Next alarm'),
+              const SizedBox(height: 10),
+              Text('No alarm set',
+                  style: RiseText.mono(size: 24, color: RiseColors.textFaint)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Alarm? alarm;
+    for (final a in alarms) {
+      if (a.id == next.alarmId) {
+        alarm = a;
+        break;
+      }
+    }
+    final hour12 = alarm?.hour12 ?? 0;
+    final minute = alarm?.minute ?? 0;
+    final ampm = (alarm?.isAm ?? true) ? 'AM' : 'PM';
+    final remaining = next.fireAt.toLocal().difference(DateTime.now());
+
+    return RiseCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionLabel('Next alarm'),
+                  const SizedBox(height: 8),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text('$hour12:${minute.toString().padLeft(2, '0')}',
+                          style: RiseText.mono(size: 46, weight: FontWeight.w500)),
+                      const SizedBox(width: 8),
+                      Text(ampm, style: RiseText.mono(size: 16, color: RiseColors.textDim)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text('${next.label} · rings ',
+                          style: RiseText.caption),
+                      Text(_countdown(remaining),
+                          style: RiseText.caption.copyWith(
+                              color: RiseColors.accent, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ],
+              ),
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: RiseColors.accentSoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.notifications_active_outlined,
+                    color: RiseColors.accent, size: 22),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          PrimaryButton(
+              label: 'Preview alarm', icon: Icons.play_arrow, onPressed: widget.onPreview),
+        ],
+      ),
+    );
+  }
+
+  Widget _empty() {
+    return RiseCard(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        child: Center(
+          child: Text('No alarms yet. Tap New to set one.',
+              style: RiseText.caption),
+        ),
+      ),
+    );
+  }
+}
+
+class _AlarmRow extends StatelessWidget {
+  const _AlarmRow({required this.alarm, required this.onEdit, required this.onToggle});
+
+  final Alarm alarm;
+  final VoidCallback onEdit;
+  final ValueChanged<bool> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: alarm.enabled ? 1 : 0.62,
+      child: RiseCard(
+        radius: RiseRadii.base,
+        child: Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onEdit,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text('${alarm.hour12}:${alarm.minute.toString().padLeft(2, '0')}',
+                            style: RiseText.mono(
+                                size: 27,
+                                color: alarm.enabled ? RiseColors.text : RiseColors.textFaint)),
+                        const SizedBox(width: 6),
+                        Text(alarm.isAm ? 'AM' : 'PM',
+                            style: RiseText.mono(size: 13, color: RiseColors.textDim)),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text('${alarm.label} · ${repeatLabel(alarm.days)}',
+                        style: RiseText.caption,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 9),
+                    DayChips(days: alarm.days, compact: true),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            RiseSwitch(value: alarm.enabled, onChanged: onToggle),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+> The header shows a time-based greeting and a neutral avatar — no fake user name, no streak pill; those belong to the profile/stats plans (5/7) and are added when real data exists. The Crew·live strip is omitted this plan.
+
+- [ ] **Step 5: Fix the toggle test's finder**
+
+In `test/ui/screens/home_screen_test.dart`, replace the placeholder toggle line with a real `RiseSwitch` tap (add `import 'package:rise/ui/components/rise_switch.dart';`):
+
+```dart
+    await t.tap(find.byType(RiseSwitch).first);
+```
+
+- [ ] **Step 6: Run the test to verify it passes**
+
+```bash
+flutter test test/ui/screens/home_screen_test.dart
+```
+Expected: PASS — 4 tests green.
+
+- [ ] **Step 7: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add lib/ui/screens/home_screen.dart lib/ui/state/alarm_providers.dart test/ui/screens/home_screen_test.dart
+git commit -m "feat(ui): add the Home screen with next-alarm hero and alarm list"
+```
+
+---
+
+## Remaining tasks (Tasks 8–14 — screens; full code just before execution)
+
+Tasks 1–7 above are complete. The remaining screens build on the same components/providers and get full code just before execution: **Task 8** Create/Edit, **Task 9** Ring (replacing DevRingPage), **Task 10** the four missions + host, **Task 11** Onboarding, **Task 12** Profile/Settings, **Task 13** the tab-bar app shell, **Task 14** `main.dart` wiring + delete dev screens + device verification (per the descriptions earlier in this plan).
 
 **Task 7 — Home screen.** Header (greeting + first name + streak pill, avatar), the next-alarm hero card (NEXT ALARM label, big mono time + AM/PM, "{label} · rings in Xh Ym" live countdown via a 1s ticker, animated bell, full-width Preview button that opens the ring screen), and the "Your alarms" list (rows: mono time + AM/PM, "{label} · {repeat}", `DayChips` compact, `RiseSwitch`; tap row → edit). The Crew·live strip is omitted this plan (empty region). Reads `alarmsProvider`; toggling a row calls the mutation. Widget-tested for rendering alarms and the toggle.
 
