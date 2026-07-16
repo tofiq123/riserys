@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -85,6 +86,13 @@ class AlarmSyncService {
   /// Builds the production service against the real database and platform.
   /// Call once from main() and once from the headless boot entrypoint.
   static Future<void> configureForApp() async {
+    // tz.local defaults to UTC until setLocalLocation() is called — the
+    // `timezone` package does not discover the device zone on its own. Skip
+    // this and every alarm is armed off by the device's UTC offset: on a
+    // UTC+4 device, "ring in 1 minute" fires ~4 hours late. This must happen
+    // before the service (and anything backed by tz.local) is constructed.
+    await _setLocalLocationFromDevice();
+
     final dir = await getApplicationDocumentsDirectory();
     final db = RiseDatabase(NativeDatabase(File(p.join(dir.path, 'rise.sqlite'))));
     configure(AlarmSyncService(
@@ -92,6 +100,32 @@ class AlarmSyncService {
       platform: PigeonAlarmPlatform(),
       location: tz.local,
     ));
+  }
+
+  /// Resolves the device's IANA timezone (e.g. "America/New_York") from the
+  /// platform and makes it `tz.local`.
+  ///
+  /// Both current callers (main() and reconcileEntrypoint() in main.dart)
+  /// already run `tzdata.initializeTimeZones()` before this, but a future
+  /// caller might not, and a device can also report a zone name the bundled
+  /// tz database doesn't recognize (stale platform data, an alias the
+  /// database renamed, etc). Either way `tz.getLocation()` throws
+  /// `LocationNotFoundException` rather than crashing the process, so this
+  /// falls back to UTC — loudly, via debugPrint, since a silent fallback here
+  /// would silently recreate the exact bug this method exists to fix.
+  static Future<void> _setLocalLocationFromDevice() async {
+    final info = await FlutterTimezone.getLocalTimezone();
+    try {
+      tz.setLocalLocation(tz.getLocation(info.identifier));
+    } catch (e) {
+      debugPrint(
+        'AlarmSyncService: could not resolve device timezone '
+        '"${info.identifier}" ($e). Falling back to UTC — alarms WILL be '
+        'armed at the wrong instant on any device outside UTC until this is '
+        'diagnosed and fixed.',
+      );
+      tz.setLocalLocation(tz.UTC);
+    }
   }
 
   Future<List<ScheduledOccurrence>> currentPlan() async {

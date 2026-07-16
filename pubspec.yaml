@@ -41,6 +41,7 @@ dependencies:
   timezone: ^0.10.1
   flutter_riverpod: ^2.6.1
   collection: ^1.19.1
+  flutter_timezone: ^5.1.0
 
 dev_dependencies:
   flutter_test:
