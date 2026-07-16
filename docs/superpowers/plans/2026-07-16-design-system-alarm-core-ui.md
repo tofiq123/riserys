@@ -2306,9 +2306,479 @@ git commit -m "feat(ui): add the Home screen with next-alarm hero and alarm list
 
 ---
 
-## Remaining tasks (Tasks 8–14 — screens; full code just before execution)
+### Task 8: Create/Edit alarm screen
 
-Tasks 1–7 above are complete. The remaining screens build on the same components/providers and get full code just before execution: **Task 8** Create/Edit, **Task 9** Ring (replacing DevRingPage), **Task 10** the four missions + host, **Task 11** Onboarding, **Task 12** Profile/Settings, **Task 13** the tab-bar app shell, **Task 14** `main.dart` wiring + delete dev screens + device verification (per the descriptions earlier in this plan).
+**Files:**
+- Create: `lib/domain/alarm_sounds.dart` (the selectable-sound catalog)
+- Create: `lib/ui/screens/create_edit_screen.dart`
+- Test: `test/domain/alarm_sounds_test.dart`
+- Test: `test/ui/screens/create_edit_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `draftProvider`/`DraftNotifier` (`startNew`/`startEdit`/`update`/`clear`), `alarmMutationsProvider` (`save(Alarm)`/`delete(int)`), `toastProvider`; `Alarm` (`copyWith`, `hour12`, `isAm`, `Alarm.to24Hour`); components `TimeDial` (`DialTime = ({int hour12, int minute, bool isAm})`), `DayChips`, `SoundChips`, `SegmentedControl<T>` (`segments: List<({T value, String label})>`), `RiseSwitch`, `RiseCard`, `SectionLabel`, `PrimaryButton`; tokens/typography.
+- Produces:
+  - `class AlarmSound { const AlarmSound(this.label, this.asset); final String label; final String asset; }`, `const List<AlarmSound> kAlarmSounds`, `String soundLabelFor(String asset)`, `String soundAssetFor(String label)`.
+  - `class CreateEditScreen extends ConsumerStatefulWidget` — `CreateEditScreen({required VoidCallback onDone})`. Edits the current `draftProvider` alarm in place; Save persists + arms via `alarmMutationsProvider` then calls `onDone`; Delete (edit mode only) removes + `onDone`; Cancel clears + `onDone`.
+
+- [ ] **Step 1: Write the failing sound-catalog test**
+
+Create `test/domain/alarm_sounds_test.dart`:
+
+```dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/alarm_sounds.dart';
+
+void main() {
+  test('catalog is non-empty and Default maps to the entity default asset', () {
+    expect(kAlarmSounds, isNotEmpty);
+    expect(kAlarmSounds.first.label, 'Default');
+    expect(kAlarmSounds.first.asset, 'sounds/default_alarm.mp3');
+  });
+
+  test('label<->asset round-trips for every catalog entry', () {
+    for (final s in kAlarmSounds) {
+      expect(soundLabelFor(s.asset), s.label);
+      expect(soundAssetFor(s.label), s.asset);
+    }
+  });
+
+  test('unknown asset or label falls back to the first entry', () {
+    expect(soundLabelFor('sounds/does_not_exist.mp3'), kAlarmSounds.first.label);
+    expect(soundAssetFor('Nonexistent'), kAlarmSounds.first.asset);
+  });
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+```bash
+flutter test test/domain/alarm_sounds_test.dart
+```
+Expected: FAIL — `alarm_sounds.dart` not found.
+
+- [ ] **Step 3: Write the sound catalog**
+
+Create `lib/domain/alarm_sounds.dart`:
+
+```dart
+/// A selectable alarm tone. [asset] is the bundled audio path handed to the
+/// native player. Until real audio files are bundled, the native layer falls
+/// back to the platform default alarm tone for any missing asset — so every
+/// option currently rings the system default. The user's choice is still
+/// persisted and is ready to sound the moment the files are added.
+class AlarmSound {
+  const AlarmSound(this.label, this.asset);
+  final String label;
+  final String asset;
+}
+
+/// The first entry MUST be 'Default' → the entity's default `soundAsset`, so an
+/// alarm created with no explicit sound reverse-maps to a selected chip.
+const List<AlarmSound> kAlarmSounds = [
+  AlarmSound('Default', 'sounds/default_alarm.mp3'),
+  AlarmSound('Radar', 'sounds/radar.mp3'),
+  AlarmSound('Chimes', 'sounds/chimes.mp3'),
+  AlarmSound('Beacon', 'sounds/beacon.mp3'),
+  AlarmSound('Signal', 'sounds/signal.mp3'),
+];
+
+/// The display label for a stored asset path; falls back to the first entry.
+String soundLabelFor(String asset) => kAlarmSounds
+    .firstWhere((s) => s.asset == asset, orElse: () => kAlarmSounds.first)
+    .label;
+
+/// The asset path for a display label; falls back to the first entry.
+String soundAssetFor(String label) => kAlarmSounds
+    .firstWhere((s) => s.label == label, orElse: () => kAlarmSounds.first)
+    .asset;
+```
+
+- [ ] **Step 4: Run it to verify it passes**
+
+```bash
+flutter test test/domain/alarm_sounds_test.dart
+```
+Expected: PASS — 3 tests green.
+
+- [ ] **Step 5: Write the failing Create/Edit widget test**
+
+Create `test/ui/screens/create_edit_screen_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/ui/components/segmented.dart';
+import 'package:rise/ui/screens/create_edit_screen.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+class _RecordingMutations implements AlarmMutations {
+  final List<Alarm> saved = [];
+  final List<int> deleted = [];
+  @override
+  Future<void> save(Alarm alarm) async => saved.add(alarm);
+  @override
+  Future<void> delete(int id) async => deleted.add(id);
+  @override
+  Future<void> setEnabled(int id, bool enabled) async {}
+}
+
+ProviderContainer _container(_RecordingMutations m) {
+  final c = ProviderContainer(
+    overrides: [alarmMutationsProvider.overrideWithValue(m)],
+  );
+  addTearDown(c.dispose);
+  return c;
+}
+
+Widget _host(ProviderContainer c, {VoidCallback? onDone}) {
+  return UncontrolledProviderScope(
+    container: c,
+    child: MaterialApp(
+      home: Scaffold(body: CreateEditScreen(onDone: onDone ?? () {})),
+    ),
+  );
+}
+
+void main() {
+  testWidgets('edit mode shows the alarm time, label, and "Edit alarm" title', (t) async {
+    final c = _container(_RecordingMutations());
+    c.read(draftProvider.notifier).startEdit(
+        const Alarm(id: 5, hour: 6, minute: 30, label: 'Run', days: {1, 2, 3}));
+    await t.pumpWidget(_host(c));
+    await t.pump();
+    expect(find.text('Edit alarm'), findsOneWidget);
+    expect(find.text('6'), findsOneWidget);        // hour dial
+    expect(find.text('30'), findsOneWidget);       // minute dial
+    expect(find.widgetWithText(TextField, 'Run'), findsOneWidget);
+    expect(find.text('Delete alarm'), findsOneWidget);
+  });
+
+  testWidgets('new mode shows "New alarm" and no delete button', (t) async {
+    final c = _container(_RecordingMutations());
+    c.read(draftProvider.notifier).startNew();
+    await t.pumpWidget(_host(c));
+    await t.pump();
+    expect(find.text('New alarm'), findsOneWidget);
+    expect(find.text('Delete alarm'), findsNothing);
+  });
+
+  testWidgets('tapping a day chip toggles it in the draft', (t) async {
+    final c = _container(_RecordingMutations());
+    c.read(draftProvider.notifier)
+        .startEdit(const Alarm(id: 5, hour: 6, minute: 30, days: {}));
+    await t.pumpWidget(_host(c));
+    await t.pump();
+    // Monday is index 1; tap the 'M' chip.
+    await t.tap(find.text('M'));
+    await t.pump();
+    expect(c.read(draftProvider)!.days.contains(1), isTrue);
+  });
+
+  testWidgets('difficulty control appears only when a mission is chosen', (t) async {
+    final c = _container(_RecordingMutations());
+    c.read(draftProvider.notifier).startEdit(
+        const Alarm(id: 5, hour: 6, minute: 30, mission: 'none'));
+    await t.pumpWidget(_host(c));
+    await t.pump();
+    expect(find.byType(SegmentedControl<String>), findsNothing);
+    await t.tap(find.text('Math'));
+    await t.pump();
+    expect(find.byType(SegmentedControl<String>), findsOneWidget);
+    expect(c.read(draftProvider)!.mission, 'math');
+  });
+
+  testWidgets('Save persists the draft, arms it, and calls onDone', (t) async {
+    final m = _RecordingMutations();
+    final c = _container(m);
+    var doneCalled = false;
+    c.read(draftProvider.notifier)
+        .startEdit(const Alarm(id: 5, hour: 6, minute: 30, label: 'Run'));
+    await t.pumpWidget(_host(c, onDone: () => doneCalled = true));
+    await t.pump();
+    await t.tap(find.text('Save alarm'));
+    await t.pumpAndSettle();
+    expect(m.saved.single.id, 5);
+    expect(m.saved.single.label, 'Run');
+    expect(doneCalled, isTrue);
+  });
+
+  testWidgets('Delete removes the alarm and calls onDone', (t) async {
+    final m = _RecordingMutations();
+    final c = _container(m);
+    var doneCalled = false;
+    c.read(draftProvider.notifier)
+        .startEdit(const Alarm(id: 5, hour: 6, minute: 30));
+    await t.pumpWidget(_host(c, onDone: () => doneCalled = true));
+    await t.pump();
+    await t.tap(find.text('Delete alarm'));
+    await t.pumpAndSettle();
+    expect(m.deleted.single, 5);
+    expect(doneCalled, isTrue);
+  });
+}
+```
+
+- [ ] **Step 6: Run it to verify it fails**
+
+```bash
+flutter test test/ui/screens/create_edit_screen_test.dart
+```
+Expected: FAIL — `create_edit_screen.dart` not found.
+
+- [ ] **Step 7: Write the Create/Edit screen**
+
+Create `lib/ui/screens/create_edit_screen.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../domain/alarm.dart';
+import '../../domain/alarm_sounds.dart';
+import '../components/day_chips.dart';
+import '../components/rise_buttons.dart';
+import '../components/rise_card.dart';
+import '../components/rise_switch.dart';
+import '../components/section_label.dart';
+import '../components/segmented.dart';
+import '../components/sound_chips.dart';
+import '../components/time_dial.dart';
+import '../state/alarm_providers.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// Mission keys ↔ display labels. The `SoundChips` pill row is a generic
+/// single-select chip strip, reused here for the mission picker.
+const Map<String, String> _missionLabels = {
+  'none': 'None',
+  'math': 'Math',
+  'hold': 'Hold',
+  'tap': 'Tap',
+  'memory': 'Memory',
+};
+
+class CreateEditScreen extends ConsumerStatefulWidget {
+  const CreateEditScreen({super.key, required this.onDone});
+
+  final VoidCallback onDone;
+
+  @override
+  ConsumerState<CreateEditScreen> createState() => _CreateEditScreenState();
+}
+
+class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
+  late final TextEditingController _label;
+
+  @override
+  void initState() {
+    super.initState();
+    // Seed once from the draft set before navigation; the controller then owns
+    // the text so watching the draft in build() won't fight the user's typing.
+    _label = TextEditingController(text: ref.read(draftProvider)?.label ?? '');
+  }
+
+  @override
+  void dispose() {
+    _label.dispose();
+    super.dispose();
+  }
+
+  void _update(Alarm next) => ref.read(draftProvider.notifier).update(next);
+
+  Future<void> _save(Alarm draft) async {
+    await ref.read(alarmMutationsProvider).save(draft);
+    if (!mounted) return;
+    ref.read(toastProvider.notifier).state = 'Alarm saved';
+    ref.read(draftProvider.notifier).clear();
+    widget.onDone();
+  }
+
+  Future<void> _delete(int id) async {
+    await ref.read(alarmMutationsProvider).delete(id);
+    if (!mounted) return;
+    ref.read(toastProvider.notifier).state = 'Alarm deleted';
+    ref.read(draftProvider.notifier).clear();
+    widget.onDone();
+  }
+
+  void _cancel() {
+    ref.read(draftProvider.notifier).clear();
+    widget.onDone();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final draft = ref.watch(draftProvider);
+    if (draft == null) return const SizedBox.shrink();
+    final isEdit = draft.id != 0;
+
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+            RiseSpacing.screen, 8, RiseSpacing.screen, 40),
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              GhostButton(label: 'Cancel', onPressed: _cancel),
+              Text(isEdit ? 'Edit alarm' : 'New alarm', style: RiseText.title),
+              const SizedBox(width: 64), // balances the Cancel button
+            ],
+          ),
+          const SizedBox(height: 12),
+          RiseCard(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            child: TimeDial(
+              value: (hour12: draft.hour12, minute: draft.minute, isAm: draft.isAm),
+              onChanged: (t) => _update(draft.copyWith(
+                hour: Alarm.to24Hour(t.hour12, t.isAm),
+                minute: t.minute,
+                clearLastDismissedAt: true, // editing time clears a stale dismissal
+              )),
+            ),
+          ),
+          _section('Repeat', DayChips(
+            days: draft.days,
+            onToggle: (i) {
+              final next = {...draft.days};
+              next.contains(i) ? next.remove(i) : next.add(i);
+              _update(draft.copyWith(days: next));
+            },
+          ),
+          trailing: Text(repeatLabel(draft.days), style: RiseText.caption)),
+          _section('Label', TextField(
+            controller: _label,
+            onChanged: (v) => _update(draft.copyWith(label: v)),
+            style: RiseText.body,
+            cursorColor: RiseColors.primary,
+            decoration: InputDecoration(
+              hintText: 'Alarm',
+              hintStyle: RiseText.body.copyWith(color: RiseColors.textFaint),
+              filled: true,
+              fillColor: RiseColors.surface2,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: _fieldBorder(RiseColors.border),
+              enabledBorder: _fieldBorder(RiseColors.border),
+              focusedBorder: _fieldBorder(RiseColors.primary),
+            ),
+          )),
+          _section('Sound', SoundChips(
+            sounds: kAlarmSounds.map((s) => s.label).toList(),
+            selected: soundLabelFor(draft.soundAsset),
+            onChanged: (label) =>
+                _update(draft.copyWith(soundAsset: soundAssetFor(label))),
+          )),
+          _section('Wake mission', SoundChips(
+            sounds: _missionLabels.values.toList(),
+            selected: _missionLabels[draft.mission]!,
+            onChanged: (label) {
+              final key = _missionLabels.entries
+                  .firstWhere((e) => e.value == label)
+                  .key;
+              _update(draft.copyWith(mission: key));
+            },
+          )),
+          if (draft.mission != 'none')
+            _section('Difficulty', SegmentedControl<String>(
+              segments: const [
+                (value: 'easy', label: 'Easy'),
+                (value: 'medium', label: 'Medium'),
+                (value: 'hard', label: 'Hard'),
+              ],
+              selected: draft.missionDiff,
+              onChanged: (d) => _update(draft.copyWith(missionDiff: d)),
+            )),
+          const SizedBox(height: 20),
+          RiseCard(
+            radius: RiseRadii.base,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Vibrate', style: RiseText.body),
+                RiseSwitch(
+                  value: draft.vibrate,
+                  onChanged: (v) => _update(draft.copyWith(vibrate: v)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          PrimaryButton(label: 'Save alarm', onPressed: () => _save(draft)),
+          if (isEdit) ...[
+            const SizedBox(height: 8),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _delete(draft.id),
+              child: Container(
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                child: Text('Delete alarm',
+                    style: RiseText.body.copyWith(
+                        color: RiseColors.danger, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static OutlineInputBorder _fieldBorder(Color color) => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(RiseRadii.base),
+        borderSide: BorderSide(color: color),
+      );
+
+  Widget _section(String label, Widget child, {Widget? trailing}) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [SectionLabel(label), if (trailing != null) trailing],
+          ),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+}
+```
+
+> The delete action is a danger-tinted text button (the component set has no danger button, and adding one is out of scope). Editing the time clears `lastDismissedAt` (per the `Alarm.copyWith` contract) so a stale dismissal can't suppress the edited occurrence. The screen returns bare content (no `Scaffold`); its host — the app shell in Task 13, and a `Scaffold` in the tests — supplies the `Material` ancestor the label `TextField` needs.
+
+- [ ] **Step 8: Run both new test files to verify they pass**
+
+```bash
+flutter test test/domain/alarm_sounds_test.dart test/ui/screens/create_edit_screen_test.dart
+```
+Expected: PASS — 3 + 6 tests green.
+
+- [ ] **Step 9: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add lib/domain/alarm_sounds.dart lib/ui/screens/create_edit_screen.dart test/domain/alarm_sounds_test.dart test/ui/screens/create_edit_screen_test.dart
+git commit -m "feat(ui): add the Create/Edit alarm screen with sound catalog"
+```
+
+---
+
+## Remaining tasks (Tasks 9–14 — screens; full code just before execution)
+
+Tasks 1–8 above are complete. The remaining screens build on the same components/providers and get full code just before execution: **Task 9** Ring (replacing DevRingPage), **Task 10** the four missions + host, **Task 11** Onboarding, **Task 12** Profile/Settings, **Task 13** the tab-bar app shell, **Task 14** `main.dart` wiring + delete dev screens + device verification (per the descriptions earlier in this plan).
 
 **Task 7 — Home screen.** Header (greeting + first name + streak pill, avatar), the next-alarm hero card (NEXT ALARM label, big mono time + AM/PM, "{label} · rings in Xh Ym" live countdown via a 1s ticker, animated bell, full-width Preview button that opens the ring screen), and the "Your alarms" list (rows: mono time + AM/PM, "{label} · {repeat}", `DayChips` compact, `RiseSwitch`; tap row → edit). The Crew·live strip is omitted this plan (empty region). Reads `alarmsProvider`; toggling a row calls the mutation. Widget-tested for rendering alarms and the toggle.
 
