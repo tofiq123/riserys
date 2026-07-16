@@ -27,6 +27,19 @@ class Alarms extends Table {
   /// dealt with, and by [AlarmRepository.recordDismissed] to disable a
   /// one-shot alarm once it has fired.
   DateTimeColumn get lastDismissedAt => dateTime().nullable()();
+
+  // Alarm's hour/minute range checks are `assert`s, which are stripped in
+  // release builds, and rows built from the database (_toDomain) never went
+  // through that constructor validation to begin with — an out-of-range
+  // value would not crash, it would just silently ring at the wrong time
+  // once TZDateTime normalizes it. schemaVersion is still 1 with no
+  // installed base, so enforcing this at the actual trust boundary (the
+  // database) is a one-line fix today rather than a migration later.
+  @override
+  List<String> get customConstraints => [
+        'CHECK (hour BETWEEN 0 AND 23)',
+        'CHECK (minute BETWEEN 0 AND 59)',
+      ];
 }
 
 @DriftDatabase(tables: [Alarms])

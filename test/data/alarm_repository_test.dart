@@ -118,6 +118,25 @@ void main() {
     expect(stored, sameInstant(local.toUtc()));
   });
 
+  test('the database rejects an out-of-range hour at the schema level',
+      () async {
+    // Bypasses Alarm's constructor entirely (its range check is an `assert`,
+    // stripped in release builds) to prove the CHECK constraint enforces the
+    // range at the actual trust boundary: the database itself.
+    await expectLater(
+      db.into(db.alarms).insert(AlarmsCompanion.insert(hour: 24, minute: 0)),
+      throwsException,
+    );
+  });
+
+  test('the database rejects an out-of-range minute at the schema level',
+      () async {
+    await expectLater(
+      db.into(db.alarms).insert(AlarmsCompanion.insert(hour: 5, minute: 60)),
+      throwsException,
+    );
+  });
+
   test('watchAll emits on change', () async {
     final firstEmission = Completer<void>();
     final afterWrite = Completer<List<Alarm>>();
