@@ -72,6 +72,22 @@ void main() {
       expect(result.single.fireAt.isUtc, isTrue);
     });
 
+    test('carries the recurrence pattern (hour, minute, weekdays) from Alarm '
+        'through to the occurrence — a refactor that silently flips or drops '
+        'a weekday must fail here, not just in a doc comment', () {
+      final now = tz.TZDateTime(ny, 2026, 7, 15, 5, 0);
+      final result = desiredOccurrences(
+        alarms: const [
+          Alarm(id: 1, hour: 6, minute: 30, days: {0, 6}),
+        ],
+        now: now,
+        location: ny,
+      );
+      expect(result.single.hour, 6);
+      expect(result.single.minute, 30);
+      expect(result.single.weekdays, {0, 6});
+    });
+
     test(
         'breaks ties on alarmId when two alarms fire at the exact same '
         'instant, so ordering is deterministic rather than an artifact of '
