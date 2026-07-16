@@ -120,6 +120,15 @@ class AlarmHostApiImpl(
         engine?.let { FlutterEngineHolder.release(it) }
     }
 
+    override fun capabilities(): PlatformCapabilities =
+        // Android always has real system alarms via AlarmManager.
+        PlatformCapabilities(supportsSystemAlarms = true)
+
+    override fun reconcileNotifications(requests: List<NotificationRequest>) {
+        // No-op: Android schedules system alarms, never notification bursts.
+        // The sync service only calls this when supportsSystemAlarms is false.
+    }
+
     /**
      * Pigeon alarm ids are Long, but the Intent extra AlarmService reads
      * (EXTRA_ALARM_ID) is an Int. A bare `.toInt()` truncates silently on

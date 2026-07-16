@@ -18,6 +18,9 @@ class NativeAlarm {
     required this.label,
     required this.soundAsset,
     required this.vibrate,
+    required this.hour,
+    required this.minute,
+    required this.weekdays,
   });
 
   int id;
@@ -25,6 +28,13 @@ class NativeAlarm {
   String label;
   String soundAsset;
   bool vibrate;
+
+  /// Recurrence pattern, for platforms that own recurrence natively (iOS
+  /// AlarmKit / UNCalendar). [weekdays] uses 0=Sun…6=Sat; empty = one-shot.
+  /// Android ignores these and schedules the single [fireAtEpochMs] instant.
+  int hour;
+  int minute;
+  List<int> weekdays;
 }
 
 /// Everything that can silently stop Rise from ringing. Surfaced by the Setup
@@ -41,6 +51,39 @@ class AlarmPermissions {
   bool exactAlarm;
   bool fullScreenIntent;
   bool batteryUnrestricted;
+}
+
+/// What a platform's alarm engine can do. iOS 16–25 has no system-alarm API,
+/// so the sync service falls back to a notification burst there.
+class PlatformCapabilities {
+  PlatformCapabilities({required this.supportsSystemAlarms});
+
+  /// True when the platform can schedule true system alarms (Android
+  /// AlarmManager always; iOS only on 26+ via AlarmKit). False on iOS 16–25,
+  /// where [AlarmHostApi.reconcileNotifications] is used instead.
+  bool supportsSystemAlarms;
+}
+
+/// One scheduled local notification in the iOS 16–25 fallback burst. The Dart
+/// budget allocator produces these; only the iOS notification engine consumes
+/// them. Android reports [PlatformCapabilities.supportsSystemAlarms] true and
+/// never receives these.
+class NotificationRequest {
+  NotificationRequest({
+    required this.alarmId,
+    required this.fireAtEpochMs,
+    required this.label,
+    required this.sound,
+    required this.burstIndex,
+    required this.burstTotal,
+  });
+
+  int alarmId;
+  int fireAtEpochMs;
+  String label;
+  String sound;
+  int burstIndex;
+  int burstTotal;
 }
 
 @HostApi()
@@ -83,4 +126,12 @@ abstract class AlarmHostApi {
   /// finished, so the platform can tear down the engine that ran it.
   /// Harmless to call from a normal app engine, where it is a no-op.
   void reconcileFinished();
+
+  /// What this platform's alarm engine supports. Queried by the sync service
+  /// to choose between system alarms and the notification-burst fallback.
+  PlatformCapabilities capabilities();
+
+  /// Replaces the platform's entire scheduled notification set (the iOS 16–25
+  /// fallback). A full replace, like [reconcile]. No-op on Android.
+  void reconcileNotifications(List<NotificationRequest> requests);
 }

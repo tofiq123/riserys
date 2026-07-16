@@ -204,7 +204,15 @@ data class NativeAlarm (
   val fireAtEpochMs: Long,
   val label: String,
   val soundAsset: String,
-  val vibrate: Boolean
+  val vibrate: Boolean,
+  /**
+   * Recurrence pattern, for platforms that own recurrence natively (iOS
+   * AlarmKit / UNCalendar). [weekdays] uses 0=Sun…6=Sat; empty = one-shot.
+   * Android ignores these and schedules the single [fireAtEpochMs] instant.
+   */
+  val hour: Long,
+  val minute: Long,
+  val weekdays: List<Long>
 )
  {
   companion object {
@@ -214,7 +222,10 @@ data class NativeAlarm (
       val label = pigeonVar_list[2] as String
       val soundAsset = pigeonVar_list[3] as String
       val vibrate = pigeonVar_list[4] as Boolean
-      return NativeAlarm(id, fireAtEpochMs, label, soundAsset, vibrate)
+      val hour = pigeonVar_list[5] as Long
+      val minute = pigeonVar_list[6] as Long
+      val weekdays = pigeonVar_list[7] as List<Long>
+      return NativeAlarm(id, fireAtEpochMs, label, soundAsset, vibrate, hour, minute, weekdays)
     }
   }
   fun toList(): List<Any?> {
@@ -224,6 +235,9 @@ data class NativeAlarm (
       label,
       soundAsset,
       vibrate,
+      hour,
+      minute,
+      weekdays,
     )
   }
   override fun equals(other: Any?): Boolean {
@@ -234,7 +248,7 @@ data class NativeAlarm (
       return true
     }
     val other = other as NativeAlarm
-    return AlarmApiPigeonUtils.deepEquals(this.id, other.id) && AlarmApiPigeonUtils.deepEquals(this.fireAtEpochMs, other.fireAtEpochMs) && AlarmApiPigeonUtils.deepEquals(this.label, other.label) && AlarmApiPigeonUtils.deepEquals(this.soundAsset, other.soundAsset) && AlarmApiPigeonUtils.deepEquals(this.vibrate, other.vibrate)
+    return AlarmApiPigeonUtils.deepEquals(this.id, other.id) && AlarmApiPigeonUtils.deepEquals(this.fireAtEpochMs, other.fireAtEpochMs) && AlarmApiPigeonUtils.deepEquals(this.label, other.label) && AlarmApiPigeonUtils.deepEquals(this.soundAsset, other.soundAsset) && AlarmApiPigeonUtils.deepEquals(this.vibrate, other.vibrate) && AlarmApiPigeonUtils.deepEquals(this.hour, other.hour) && AlarmApiPigeonUtils.deepEquals(this.minute, other.minute) && AlarmApiPigeonUtils.deepEquals(this.weekdays, other.weekdays)
   }
 
   override fun hashCode(): Int {
@@ -244,6 +258,9 @@ data class NativeAlarm (
     result = 31 * result + AlarmApiPigeonUtils.deepHash(this.label)
     result = 31 * result + AlarmApiPigeonUtils.deepHash(this.soundAsset)
     result = 31 * result + AlarmApiPigeonUtils.deepHash(this.vibrate)
+    result = 31 * result + AlarmApiPigeonUtils.deepHash(this.hour)
+    result = 31 * result + AlarmApiPigeonUtils.deepHash(this.minute)
+    result = 31 * result + AlarmApiPigeonUtils.deepHash(this.weekdays)
     return result
   }
 }
@@ -298,6 +315,111 @@ data class AlarmPermissions (
     return result
   }
 }
+
+/**
+ * What a platform's alarm engine can do. iOS 16–25 has no system-alarm API,
+ * so the sync service falls back to a notification burst there.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class PlatformCapabilities (
+  /**
+   * True when the platform can schedule true system alarms (Android
+   * AlarmManager always; iOS only on 26+ via AlarmKit). False on iOS 16–25,
+   * where [AlarmHostApi.reconcileNotifications] is used instead.
+   */
+  val supportsSystemAlarms: Boolean
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): PlatformCapabilities {
+      val supportsSystemAlarms = pigeonVar_list[0] as Boolean
+      return PlatformCapabilities(supportsSystemAlarms)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      supportsSystemAlarms,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as PlatformCapabilities
+    return AlarmApiPigeonUtils.deepEquals(this.supportsSystemAlarms, other.supportsSystemAlarms)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + AlarmApiPigeonUtils.deepHash(this.supportsSystemAlarms)
+    return result
+  }
+}
+
+/**
+ * One scheduled local notification in the iOS 16–25 fallback burst. The Dart
+ * budget allocator produces these; only the iOS notification engine consumes
+ * them. Android reports [PlatformCapabilities.supportsSystemAlarms] true and
+ * never receives these.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class NotificationRequest (
+  val alarmId: Long,
+  val fireAtEpochMs: Long,
+  val label: String,
+  val sound: String,
+  val burstIndex: Long,
+  val burstTotal: Long
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): NotificationRequest {
+      val alarmId = pigeonVar_list[0] as Long
+      val fireAtEpochMs = pigeonVar_list[1] as Long
+      val label = pigeonVar_list[2] as String
+      val sound = pigeonVar_list[3] as String
+      val burstIndex = pigeonVar_list[4] as Long
+      val burstTotal = pigeonVar_list[5] as Long
+      return NotificationRequest(alarmId, fireAtEpochMs, label, sound, burstIndex, burstTotal)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      alarmId,
+      fireAtEpochMs,
+      label,
+      sound,
+      burstIndex,
+      burstTotal,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as NotificationRequest
+    return AlarmApiPigeonUtils.deepEquals(this.alarmId, other.alarmId) && AlarmApiPigeonUtils.deepEquals(this.fireAtEpochMs, other.fireAtEpochMs) && AlarmApiPigeonUtils.deepEquals(this.label, other.label) && AlarmApiPigeonUtils.deepEquals(this.sound, other.sound) && AlarmApiPigeonUtils.deepEquals(this.burstIndex, other.burstIndex) && AlarmApiPigeonUtils.deepEquals(this.burstTotal, other.burstTotal)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + AlarmApiPigeonUtils.deepHash(this.alarmId)
+    result = 31 * result + AlarmApiPigeonUtils.deepHash(this.fireAtEpochMs)
+    result = 31 * result + AlarmApiPigeonUtils.deepHash(this.label)
+    result = 31 * result + AlarmApiPigeonUtils.deepHash(this.sound)
+    result = 31 * result + AlarmApiPigeonUtils.deepHash(this.burstIndex)
+    result = 31 * result + AlarmApiPigeonUtils.deepHash(this.burstTotal)
+    return result
+  }
+}
 private open class AlarmApiPigeonCodec : StandardMessageCodec() {
   override fun readValueOfType(type: Byte, buffer: ByteBuffer): Any? {
     return when (type) {
@@ -311,6 +433,16 @@ private open class AlarmApiPigeonCodec : StandardMessageCodec() {
           AlarmPermissions.fromList(it)
         }
       }
+      131.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          PlatformCapabilities.fromList(it)
+        }
+      }
+      132.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          NotificationRequest.fromList(it)
+        }
+      }
       else -> super.readValueOfType(type, buffer)
     }
   }
@@ -322,6 +454,14 @@ private open class AlarmApiPigeonCodec : StandardMessageCodec() {
       }
       is AlarmPermissions -> {
         stream.write(130)
+        writeValue(stream, value.toList())
+      }
+      is PlatformCapabilities -> {
+        stream.write(131)
+        writeValue(stream, value.toList())
+      }
+      is NotificationRequest -> {
+        stream.write(132)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -368,6 +508,16 @@ interface AlarmHostApi {
    * Harmless to call from a normal app engine, where it is a no-op.
    */
   fun reconcileFinished()
+  /**
+   * What this platform's alarm engine supports. Queried by the sync service
+   * to choose between system alarms and the notification-burst fallback.
+   */
+  fun capabilities(): PlatformCapabilities
+  /**
+   * Replaces the platform's entire scheduled notification set (the iOS 16–25
+   * fallback). A full replace, like [reconcile]. No-op on Android.
+   */
+  fun reconcileNotifications(requests: List<NotificationRequest>)
 
   companion object {
     /** The codec used by AlarmHostApi. */
@@ -548,6 +698,39 @@ interface AlarmHostApi {
           channel.setMessageHandler { _, reply ->
             val wrapped: List<Any?> = try {
               api.reconcileFinished()
+              listOf(null)
+            } catch (exception: Throwable) {
+              AlarmApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.capabilities$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.capabilities())
+            } catch (exception: Throwable) {
+              AlarmApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.reconcileNotifications$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val requestsArg = args[0] as List<NotificationRequest>
+            val wrapped: List<Any?> = try {
+              api.reconcileNotifications(requestsArg)
               listOf(null)
             } catch (exception: Throwable) {
               AlarmApiPigeonUtils.wrapError(exception)

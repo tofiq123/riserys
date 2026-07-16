@@ -107,6 +107,9 @@ class NativeAlarm {
     required this.label,
     required this.soundAsset,
     required this.vibrate,
+    required this.hour,
+    required this.minute,
+    required this.weekdays,
   });
 
   int id;
@@ -119,6 +122,15 @@ class NativeAlarm {
 
   bool vibrate;
 
+  /// Recurrence pattern, for platforms that own recurrence natively (iOS
+  /// AlarmKit / UNCalendar). [weekdays] uses 0=Sun…6=Sat; empty = one-shot.
+  /// Android ignores these and schedules the single [fireAtEpochMs] instant.
+  int hour;
+
+  int minute;
+
+  List<int> weekdays;
+
   List<Object?> _toList() {
     return <Object?>[
       id,
@@ -126,6 +138,9 @@ class NativeAlarm {
       label,
       soundAsset,
       vibrate,
+      hour,
+      minute,
+      weekdays,
     ];
   }
 
@@ -140,6 +155,9 @@ class NativeAlarm {
       label: result[2]! as String,
       soundAsset: result[3]! as String,
       vibrate: result[4]! as bool,
+      hour: result[5]! as int,
+      minute: result[6]! as int,
+      weekdays: (result[7]! as List<Object?>).cast<int>(),
     );
   }
 
@@ -152,7 +170,7 @@ class NativeAlarm {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(id, other.id) && _deepEquals(fireAtEpochMs, other.fireAtEpochMs) && _deepEquals(label, other.label) && _deepEquals(soundAsset, other.soundAsset) && _deepEquals(vibrate, other.vibrate);
+    return _deepEquals(id, other.id) && _deepEquals(fireAtEpochMs, other.fireAtEpochMs) && _deepEquals(label, other.label) && _deepEquals(soundAsset, other.soundAsset) && _deepEquals(vibrate, other.vibrate) && _deepEquals(hour, other.hour) && _deepEquals(minute, other.minute) && _deepEquals(weekdays, other.weekdays);
   }
 
   @override
@@ -217,6 +235,120 @@ class AlarmPermissions {
   int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
 }
 
+/// What a platform's alarm engine can do. iOS 16–25 has no system-alarm API,
+/// so the sync service falls back to a notification burst there.
+class PlatformCapabilities {
+  PlatformCapabilities({
+    required this.supportsSystemAlarms,
+  });
+
+  /// True when the platform can schedule true system alarms (Android
+  /// AlarmManager always; iOS only on 26+ via AlarmKit). False on iOS 16–25,
+  /// where [AlarmHostApi.reconcileNotifications] is used instead.
+  bool supportsSystemAlarms;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      supportsSystemAlarms,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static PlatformCapabilities decode(Object result) {
+    result as List<Object?>;
+    return PlatformCapabilities(
+      supportsSystemAlarms: result[0]! as bool,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! PlatformCapabilities || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(supportsSystemAlarms, other.supportsSystemAlarms);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+}
+
+/// One scheduled local notification in the iOS 16–25 fallback burst. The Dart
+/// budget allocator produces these; only the iOS notification engine consumes
+/// them. Android reports [PlatformCapabilities.supportsSystemAlarms] true and
+/// never receives these.
+class NotificationRequest {
+  NotificationRequest({
+    required this.alarmId,
+    required this.fireAtEpochMs,
+    required this.label,
+    required this.sound,
+    required this.burstIndex,
+    required this.burstTotal,
+  });
+
+  int alarmId;
+
+  int fireAtEpochMs;
+
+  String label;
+
+  String sound;
+
+  int burstIndex;
+
+  int burstTotal;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      alarmId,
+      fireAtEpochMs,
+      label,
+      sound,
+      burstIndex,
+      burstTotal,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static NotificationRequest decode(Object result) {
+    result as List<Object?>;
+    return NotificationRequest(
+      alarmId: result[0]! as int,
+      fireAtEpochMs: result[1]! as int,
+      label: result[2]! as String,
+      sound: result[3]! as String,
+      burstIndex: result[4]! as int,
+      burstTotal: result[5]! as int,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! NotificationRequest || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(alarmId, other.alarmId) && _deepEquals(fireAtEpochMs, other.fireAtEpochMs) && _deepEquals(label, other.label) && _deepEquals(sound, other.sound) && _deepEquals(burstIndex, other.burstIndex) && _deepEquals(burstTotal, other.burstTotal);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+}
+
 
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
@@ -231,6 +363,12 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is AlarmPermissions) {
       buffer.putUint8(130);
       writeValue(buffer, value.encode());
+    }    else if (value is PlatformCapabilities) {
+      buffer.putUint8(131);
+      writeValue(buffer, value.encode());
+    }    else if (value is NotificationRequest) {
+      buffer.putUint8(132);
+      writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
     }
@@ -243,6 +381,10 @@ class _PigeonCodec extends StandardMessageCodec {
         return NativeAlarm.decode(readValue(buffer)!);
       case 130:
         return AlarmPermissions.decode(readValue(buffer)!);
+      case 131:
+        return PlatformCapabilities.decode(readValue(buffer)!);
+      case 132:
+        return NotificationRequest.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
     }
@@ -472,6 +614,47 @@ class AlarmHostApi {
       binaryMessenger: pigeonVar_binaryMessenger,
     );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  /// What this platform's alarm engine supports. Queried by the sync service
+  /// to choose between system alarms and the notification-burst fallback.
+  Future<PlatformCapabilities> capabilities() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.capabilities$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as PlatformCapabilities;
+  }
+
+  /// Replaces the platform's entire scheduled notification set (the iOS 16–25
+  /// fallback). A full replace, like [reconcile]. No-op on Android.
+  Future<void> reconcileNotifications(List<NotificationRequest> requests) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.reconcileNotifications$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[requests]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     _extractReplyValueOrThrow(
