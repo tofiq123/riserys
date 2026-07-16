@@ -1,13 +1,18 @@
 import 'scheduled_occurrence.dart';
 
 /// Default recovery window from the spec: an alarm due within the last 30
-/// minutes and never dismissed should ring now rather than be silently lost.
+/// minutes should ring now rather than be silently lost.
 const Duration kMissedAlarmWindow = Duration(minutes: 30);
 
 /// The most recent occurrence that came due within [window] before [now].
 ///
 /// Used after boot, app update, or a clock change: the device may have been
 /// off or the scheduler cleared when the alarm was supposed to ring.
+///
+/// This checks the time window only — it has no notion of dismissal. The
+/// caller is responsible for excluding any occurrence the user already
+/// dismissed before calling this (see `AlarmSyncService.reconcileNow`, which
+/// filters dismissed occurrences out of the candidate list it passes in).
 ScheduledOccurrence? findMissedAlarm({
   required List<ScheduledOccurrence> occurrences,
   required DateTime now,

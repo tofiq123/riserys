@@ -169,8 +169,10 @@ class AlarmSyncService {
   /// Re-arms the platform scheduler from the local database.
   ///
   /// When [recoverMissed] is true (boot, app update, clock change), an alarm
-  /// that came due within the last 30 minutes and was never dismissed rings
-  /// immediately rather than being silently lost.
+  /// that came due within the last 30 minutes rings immediately rather than
+  /// being silently lost — unless the user already dismissed that specific
+  /// occurrence, which this method (not [findMissedAlarm]) is responsible for
+  /// excluding before the missed-alarm search ever runs.
   Future<void> reconcileNow({bool recoverMissed = false}) async {
     // Re-resolve the device zone before computing the plan: BootReceiver's
     // headless engine runs this on every boot/app-update/clock-change, so an
@@ -200,9 +202,19 @@ class AlarmSyncService {
       final before = previousOccurrence(
           alarm: alarm, before: now, location: _location);
       if (before == null) continue;
+
+      final fireAt = before.toUtc();
+      final dismissedAt = alarm.lastDismissedAt;
+      // A dismissal at or after this occurrence's fireAt means the user
+      // already dealt with it — do not ring it again. An older dismissal
+      // (e.g. of yesterday's occurrence) must not suppress this one.
+      if (dismissedAt != null && !dismissedAt.toUtc().isBefore(fireAt)) {
+        continue;
+      }
+
       previous.add(ScheduledOccurrence(
         alarmId: alarm.id,
-        fireAt: before.toUtc(),
+        fireAt: fireAt,
         label: alarm.label,
         soundAsset: alarm.soundAsset,
         vibrate: alarm.vibrate,

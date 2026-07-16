@@ -29,6 +29,7 @@ class AlarmRepository {
         label: row.label,
         soundAsset: row.soundAsset,
         vibrate: row.vibrate,
+        lastDismissedAt: row.lastDismissedAt,
       );
 
   Future<List<Alarm>> all() async {
@@ -51,6 +52,7 @@ class AlarmRepository {
       label: Value(alarm.label),
       soundAsset: Value(alarm.soundAsset),
       vibrate: Value(alarm.vibrate),
+      lastDismissedAt: Value(alarm.lastDismissedAt),
     );
 
     if (alarm.id == 0) {
@@ -68,4 +70,21 @@ class AlarmRepository {
   Future<void> setEnabled(int id, bool enabled) =>
       (_db.update(_db.alarms)..where((t) => t.id.equals(id)))
           .write(AlarmsCompanion(enabled: Value(enabled)));
+
+  /// Records that [id] was dismissed at [at]. A one-shot alarm also disables
+  /// itself here: an empty day set means "fire once", and without this it
+  /// would re-arm for tomorrow forever.
+  Future<void> recordDismissed(int id, DateTime at) async {
+    final row = await (_db.select(_db.alarms)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    if (row == null) return;
+
+    final isOneShot = decodeDays(row.days).isEmpty;
+    await (_db.update(_db.alarms)..where((t) => t.id.equals(id))).write(
+      AlarmsCompanion(
+        lastDismissedAt: Value(at.toUtc()),
+        enabled: isOneShot ? const Value(false) : const Value.absent(),
+      ),
+    );
+  }
 }

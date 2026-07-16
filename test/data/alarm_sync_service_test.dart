@@ -102,6 +102,57 @@ void main() {
     expect(platform.reconcileCalls.single, hasLength(1));
   });
 
+  test(
+      'recovery does not ring an alarm dismissed at or after that occurrence',
+      () async {
+    // Repeating (non-empty days) so recordDismissed does not also disable
+    // the alarm — that would suppress recovery for an unrelated reason
+    // (`!alarm.enabled`) and the test would not be exercising the dismissal
+    // filter at all.
+    final now = tz.TZDateTime.now(tz.getLocation('America/New_York'));
+    final justPassed = now.subtract(const Duration(minutes: 1));
+    final upserted = await repo.upsert(Alarm(
+      id: 0,
+      hour: justPassed.hour,
+      minute: justPassed.minute,
+      days: const {0, 1, 2, 3, 4, 5, 6},
+    ));
+
+    // First prove it WOULD ring absent a dismissal, and capture the
+    // occurrence's exact fireAt so the dismissal timestamp lines up with it.
+    await AlarmSyncService.instance.reconcileNow(recoverMissed: true);
+    expect(platform.ringNowCalls, hasLength(1));
+    final fireAt = platform.ringNowCalls.single.fireAt;
+
+    await repo.recordDismissed(upserted.id, fireAt);
+    platform.ringNowCalls.clear();
+
+    await AlarmSyncService.instance.reconcileNow(recoverMissed: true);
+    expect(platform.ringNowCalls, isEmpty);
+  });
+
+  test(
+      'recovery still rings an alarm dismissed before that occurrence '
+      '(an older dismissal must not suppress a newer firing)', () async {
+    final now = tz.TZDateTime.now(tz.getLocation('America/New_York'));
+    final justPassed = now.subtract(const Duration(minutes: 1));
+    final upserted = await repo.upsert(Alarm(
+      id: 0,
+      hour: justPassed.hour,
+      minute: justPassed.minute,
+      days: const {0, 1, 2, 3, 4, 5, 6},
+    ));
+
+    // Simulate a dismissal of an earlier occurrence (e.g. yesterday's),
+    // well before today's firing.
+    await repo.recordDismissed(
+        upserted.id, now.toUtc().subtract(const Duration(days: 1)));
+
+    await AlarmSyncService.instance.reconcileNow(recoverMissed: true);
+    expect(platform.ringNowCalls, hasLength(1));
+    expect(platform.ringNowCalls.single.alarmId, upserted.id);
+  });
+
   test('currentPlan reports every enabled alarm sorted by fire time', () async {
     await repo.upsert(const Alarm(id: 0, hour: 9, minute: 0));
     await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));

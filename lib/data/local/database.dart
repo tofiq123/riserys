@@ -21,6 +21,12 @@ class Alarms extends Table {
   TextColumn get soundAsset =>
       text().withDefault(const Constant('sounds/default_alarm.mp3'))();
   BoolColumn get vibrate => boolean().withDefault(const Constant(true))();
+
+  /// UTC instant the alarm was last dismissed, or null if never dismissed.
+  /// Used by recovery to avoid re-ringing an occurrence the user already
+  /// dealt with, and by [AlarmRepository.recordDismissed] to disable a
+  /// one-shot alarm once it has fired.
+  DateTimeColumn get lastDismissedAt => dateTime().nullable()();
 }
 
 @DriftDatabase(tables: [Alarms])

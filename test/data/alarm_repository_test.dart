@@ -6,6 +6,15 @@ import 'package:rise/data/local/alarm_repository.dart';
 import 'package:rise/data/local/database.dart';
 import 'package:rise/domain/alarm.dart';
 
+/// Matches a [DateTime] denoting the same instant as [expected], regardless
+/// of whether either value is flagged UTC or local. Needed because drift's
+/// default storage (unix seconds) reads DateTimeColumn values back as
+/// local-flavored DateTimes, while this test writes UTC ones; Dart's plain
+/// `==` treats those as unequal even when they are the same moment.
+Matcher sameInstant(DateTime expected) => predicate<DateTime?>(
+    (actual) => actual != null && actual.isAtSameMomentAs(expected),
+    'is at the same moment as $expected');
+
 void main() {
   late RiseDatabase db;
   late AlarmRepository repo;
@@ -57,6 +66,56 @@ void main() {
     final saved = await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));
     await repo.delete(saved.id);
     expect(await repo.all(), isEmpty);
+  });
+
+  test('lastDismissedAt is null until an alarm is dismissed', () async {
+    await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));
+    expect((await repo.all()).single.lastDismissedAt, isNull);
+  });
+
+  test('recordDismissed round-trips lastDismissedAt through the database',
+      () async {
+    final saved = await repo.upsert(
+        const Alarm(id: 0, hour: 6, minute: 30, days: {1, 2, 3, 4, 5}));
+    final at = DateTime.utc(2026, 7, 15, 6, 30, 45);
+
+    await repo.recordDismissed(saved.id, at);
+
+    expect((await repo.all()).single.lastDismissedAt, sameInstant(at));
+  });
+
+  test('recordDismissed disables a one-shot alarm (empty days)', () async {
+    final saved = await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));
+    expect(saved.days, isEmpty, reason: 'precondition: this is a one-shot');
+
+    await repo.recordDismissed(saved.id, DateTime.utc(2026, 7, 15, 6, 30));
+
+    final row = (await repo.all()).single;
+    expect(row.enabled, isFalse);
+    expect(row.lastDismissedAt, sameInstant(DateTime.utc(2026, 7, 15, 6, 30)));
+  });
+
+  test('recordDismissed does not disable a repeating alarm', () async {
+    final saved = await repo.upsert(
+        const Alarm(id: 0, hour: 6, minute: 30, days: {1, 2, 3, 4, 5}));
+
+    await repo.recordDismissed(saved.id, DateTime.utc(2026, 7, 15, 6, 30));
+
+    final row = (await repo.all()).single;
+    expect(row.enabled, isTrue);
+    expect(row.lastDismissedAt, sameInstant(DateTime.utc(2026, 7, 15, 6, 30)));
+  });
+
+  test(
+      'recordDismissed normalizes a local instant to the same UTC moment '
+      'before storing it', () async {
+    final saved = await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));
+    final local = DateTime(2026, 7, 15, 6, 30); // not explicitly UTC
+
+    await repo.recordDismissed(saved.id, local);
+
+    final stored = (await repo.all()).single.lastDismissedAt;
+    expect(stored, sameInstant(local.toUtc()));
   });
 
   test('watchAll emits on change', () async {

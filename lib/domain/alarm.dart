@@ -13,6 +13,7 @@ class Alarm {
     this.label = 'Alarm',
     this.soundAsset = 'sounds/default_alarm.mp3',
     this.vibrate = true,
+    this.lastDismissedAt,
   })  : assert(hour >= 0 && hour <= 23),
         assert(minute >= 0 && minute <= 59);
 
@@ -24,6 +25,10 @@ class Alarm {
   final String label;
   final String soundAsset;
   final bool vibrate;
+
+  /// UTC instant this alarm was last dismissed, or null if never dismissed.
+  /// Recovery uses this to avoid re-ringing an occurrence already dealt with.
+  final DateTime? lastDismissedAt;
 
   bool get isOneShot => days.isEmpty;
 
@@ -48,6 +53,16 @@ class Alarm {
     String? label,
     String? soundAsset,
     bool? vibrate,
+    DateTime? lastDismissedAt,
+    // The `field ?? this.field` idiom used above cannot express "set this
+    // nullable field back to null" — passing null is indistinguishable from
+    // not passing it at all. That matters here: editing an alarm's time must
+    // clear a stale dismissal (an old dismissal must not suppress the newly
+    // edited occurrence). A sentinel bool flag is used instead of a sentinel
+    // object because it keeps the call site explicit:
+    // `copyWith(hour: 7, clearLastDismissedAt: true)` reads unambiguously,
+    // whereas a magic "unset" sentinel value would not.
+    bool clearLastDismissedAt = false,
   }) {
     return Alarm(
       id: id ?? this.id,
@@ -58,6 +73,9 @@ class Alarm {
       label: label ?? this.label,
       soundAsset: soundAsset ?? this.soundAsset,
       vibrate: vibrate ?? this.vibrate,
+      lastDismissedAt: clearLastDismissedAt
+          ? null
+          : (lastDismissedAt ?? this.lastDismissedAt),
     );
   }
 
@@ -71,13 +89,38 @@ class Alarm {
       other.enabled == enabled &&
       other.label == label &&
       other.soundAsset == soundAsset &&
-      other.vibrate == vibrate;
+      other.vibrate == vibrate &&
+      _sameInstant(other.lastDismissedAt, lastDismissedAt);
 
   @override
-  int get hashCode => Object.hash(id, hour, minute,
-      const SetEquality<int>().hash(days), enabled, label, soundAsset, vibrate);
+  int get hashCode => Object.hash(
+      id,
+      hour,
+      minute,
+      const SetEquality<int>().hash(days),
+      enabled,
+      label,
+      soundAsset,
+      vibrate,
+      // Normalized to UTC, not the raw DateTime: Dart's DateTime.== (and
+      // hence its default hashCode) treats a UTC and a local DateTime
+      // representing the exact same instant as unequal. The database round
+      // trip hands back a local-flavored DateTime (drift's default
+      // unix-seconds storage), while values set in memory are UTC — without
+      // this, an alarm freshly loaded from the database would not equal an
+      // otherwise-identical one built in code, and would hash differently.
+      lastDismissedAt?.toUtc());
 
   @override
   String toString() =>
-      'Alarm(id: $id, $hour:${minute.toString().padLeft(2, '0')}, days: $days, enabled: $enabled)';
+      'Alarm(id: $id, $hour:${minute.toString().padLeft(2, '0')}, days: $days, '
+      'enabled: $enabled, lastDismissedAt: $lastDismissedAt)';
+}
+
+/// Compares two nullable instants ignoring whether either is flagged UTC or
+/// local — see the hashCode comment on [Alarm] for why plain `==` is wrong
+/// here.
+bool _sameInstant(DateTime? a, DateTime? b) {
+  if (a == null || b == null) return a == null && b == null;
+  return a.isAtSameMomentAs(b);
 }

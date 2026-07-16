@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/alarm_sync_service.dart';
 import '../data/native/alarm_api.g.dart';
 
 /// Throwaway ringing screen. Plan 3 replaces this with the designed ringing
@@ -24,7 +25,14 @@ class DevRingPage extends StatelessWidget {
             const SizedBox(height: 48),
             FilledButton(
               onPressed: () async {
+                // Order matters: record the dismissal (and disable a one-shot
+                // alarm) before stopping the sound, then reconcile so a
+                // disabled one-shot is actually disarmed rather than re-armed
+                // for tomorrow on the next boot/edit-triggered reconcile.
+                await AlarmSyncService.instance.repository
+                    .recordDismissed(alarmId, DateTime.now().toUtc());
                 await AlarmHostApi().stopRinging(alarmId);
+                await AlarmSyncService.instance.reconcileNow();
                 if (context.mounted) Navigator.of(context).maybePop();
               },
               child: const Padding(
