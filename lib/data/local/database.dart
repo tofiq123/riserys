@@ -57,12 +57,27 @@ class RiseDatabase extends _$RiseDatabase {
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
-          // v1 -> v2: dismiss missions. Existing rows keep their data and get
-          // the column defaults ('none'/'easy'); no wipe.
+          // v1 -> v2: dismiss missions. Idempotent by design: the DB is opened
+          // from several isolates in parallel (foreground, ring, headless boot),
+          // so two could race this migration on the first launch after upgrade.
+          // Checking the existing columns first turns the loser's ALTER from a
+          // "duplicate column name" crash into a safe no-op.
           if (from < 2) {
-            await m.addColumn(alarms, alarms.mission);
-            await m.addColumn(alarms, alarms.missionDiff);
+            final existing = await _columnNames('alarms');
+            if (!existing.contains('mission')) {
+              await m.addColumn(alarms, alarms.mission);
+            }
+            if (!existing.contains('mission_diff')) {
+              await m.addColumn(alarms, alarms.missionDiff);
+            }
           }
         },
       );
+
+  /// The column names currently on [table], read from sqlite's schema. Used to
+  /// make migrations idempotent under the app's multi-isolate DB opens.
+  Future<Set<String>> _columnNames(String table) async {
+    final rows = await customSelect('PRAGMA table_info($table)').get();
+    return rows.map((r) => r.read<String>('name')).toSet();
+  }
 }
