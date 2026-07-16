@@ -29,6 +29,8 @@ class AlarmRepository {
         label: row.label,
         soundAsset: row.soundAsset,
         vibrate: row.vibrate,
+        mission: row.mission,
+        missionDiff: row.missionDiff,
         lastDismissedAt: row.lastDismissedAt,
       );
 
@@ -52,6 +54,8 @@ class AlarmRepository {
       label: Value(alarm.label),
       soundAsset: Value(alarm.soundAsset),
       vibrate: Value(alarm.vibrate),
+      mission: Value(alarm.mission),
+      missionDiff: Value(alarm.missionDiff),
       lastDismissedAt: Value(alarm.lastDismissedAt),
     );
 

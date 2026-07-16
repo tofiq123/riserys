@@ -28,6 +28,10 @@ class Alarms extends Table {
   /// one-shot alarm once it has fired.
   DateTimeColumn get lastDismissedAt => dateTime().nullable()();
 
+  /// Dismiss mission and difficulty (added in schema v2).
+  TextColumn get mission => text().withDefault(const Constant('none'))();
+  TextColumn get missionDiff => text().withDefault(const Constant('easy'))();
+
   // Alarm's hour/minute range checks are `assert`s, which are stripped in
   // release builds, and rows built from the database (_toDomain) never went
   // through that constructor validation to begin with — an out-of-range
@@ -47,5 +51,18 @@ class RiseDatabase extends _$RiseDatabase {
   RiseDatabase(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          // v1 -> v2: dismiss missions. Existing rows keep their data and get
+          // the column defaults ('none'/'easy'); no wipe.
+          if (from < 2) {
+            await m.addColumn(alarms, alarms.mission);
+            await m.addColumn(alarms, alarms.missionDiff);
+          }
+        },
+      );
 }
