@@ -8,12 +8,14 @@ import 'package:path_provider/path_provider.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../domain/missed_alarm.dart';
+import '../domain/notification_budget.dart';
+import '../domain/notification_request.dart';
 import '../domain/reconcile.dart';
 import '../domain/schedule_math.dart';
 import '../domain/scheduled_occurrence.dart';
 import 'local/alarm_repository.dart';
 import 'local/database.dart';
-import 'native/alarm_api.g.dart';
+import 'native/alarm_api.g.dart' as pigeon;
 
 /// What the sync service needs from the platform, in domain types.
 ///
@@ -22,15 +24,23 @@ import 'native/alarm_api.g.dart';
 abstract class AlarmPlatform {
   Future<void> reconcile(List<ScheduledOccurrence> occurrences);
   Future<void> ringNow(ScheduledOccurrence occurrence);
+
+  /// Whether this platform can schedule true system alarms. When false the
+  /// sync service sends a notification burst instead of [reconcile].
+  Future<bool> supportsSystemAlarms();
+
+  /// Replaces the platform's scheduled notification set (iOS 16–25 fallback).
+  Future<void> reconcileNotifications(List<NotificationRequest> requests);
 }
 
-/// The only place that knows [NativeAlarm] exists.
+/// The only place that knows [pigeon.NativeAlarm] exists.
 class PigeonAlarmPlatform implements AlarmPlatform {
-  PigeonAlarmPlatform([AlarmHostApi? api]) : _api = api ?? AlarmHostApi();
+  PigeonAlarmPlatform([pigeon.AlarmHostApi? api])
+      : _api = api ?? pigeon.AlarmHostApi();
 
-  final AlarmHostApi _api;
+  final pigeon.AlarmHostApi _api;
 
-  NativeAlarm _toNative(ScheduledOccurrence o) => NativeAlarm(
+  pigeon.NativeAlarm _toNative(ScheduledOccurrence o) => pigeon.NativeAlarm(
         id: o.alarmId,
         fireAtEpochMs: o.fireAt.millisecondsSinceEpoch,
         label: o.label,
@@ -48,6 +58,24 @@ class PigeonAlarmPlatform implements AlarmPlatform {
   @override
   Future<void> ringNow(ScheduledOccurrence occurrence) =>
       _api.ringNow(_toNative(occurrence));
+
+  @override
+  Future<bool> supportsSystemAlarms() async =>
+      (await _api.capabilities()).supportsSystemAlarms;
+
+  @override
+  Future<void> reconcileNotifications(List<NotificationRequest> requests) =>
+      _api.reconcileNotifications([
+        for (final r in requests)
+          pigeon.NotificationRequest(
+            alarmId: r.alarmId,
+            fireAtEpochMs: r.fireAtEpochMs,
+            label: r.label,
+            sound: r.sound,
+            burstIndex: r.burstIndex,
+            burstTotal: r.burstTotal,
+          )
+      ]);
 }
 
 /// Single point where alarms in the local database become alarms armed in the
@@ -203,7 +231,21 @@ class AlarmSyncService {
     }
 
     final plan = await currentPlan();
-    await _platform.reconcile(plan);
+
+    if (await _platform.supportsSystemAlarms()) {
+      await _platform.reconcile(plan);
+    } else {
+      final now = tz.TZDateTime.now(_location);
+      final requests =
+          allocateNotifications(occurrences: plan, now: now.toUtc());
+      final dropped =
+          droppedAlarmCount(occurrences: plan, now: now.toUtc());
+      if (dropped > 0) {
+        debugPrint('Rise: $dropped alarm(s) exceed the iOS notification cap '
+            'and will not fire until sooner alarms pass');
+      }
+      await _platform.reconcileNotifications(requests);
+    }
 
     if (!recoverMissed) return;
 

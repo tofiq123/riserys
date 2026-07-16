@@ -6,12 +6,17 @@ import 'package:rise/data/alarm_sync_service.dart';
 import 'package:rise/data/local/alarm_repository.dart';
 import 'package:rise/data/local/database.dart';
 import 'package:rise/domain/alarm.dart';
+import 'package:rise/domain/notification_request.dart';
 import 'package:rise/domain/scheduled_occurrence.dart';
 
 /// Records what the service would have sent to the platform.
 class FakeAlarmPlatform implements AlarmPlatform {
+  FakeAlarmPlatform({this.systemAlarms = true});
+
+  bool systemAlarms;
   final List<List<ScheduledOccurrence>> reconcileCalls = [];
   final List<ScheduledOccurrence> ringNowCalls = [];
+  final List<List<NotificationRequest>> notificationCalls = [];
 
   @override
   Future<void> reconcile(List<ScheduledOccurrence> occurrences) async =>
@@ -20,6 +25,13 @@ class FakeAlarmPlatform implements AlarmPlatform {
   @override
   Future<void> ringNow(ScheduledOccurrence occurrence) async =>
       ringNowCalls.add(occurrence);
+
+  @override
+  Future<bool> supportsSystemAlarms() async => systemAlarms;
+
+  @override
+  Future<void> reconcileNotifications(List<NotificationRequest> requests) async =>
+      notificationCalls.add(requests);
 }
 
 void main() {
@@ -41,6 +53,37 @@ void main() {
   });
 
   tearDown(() async => db.close());
+
+  test('system-alarm platform uses reconcile, not notifications', () async {
+    platform = FakeAlarmPlatform(systemAlarms: true);
+    AlarmSyncService.configure(AlarmSyncService(
+      repository: repo,
+      platform: platform,
+      location: tz.getLocation('America/New_York'),
+    ));
+    await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));
+    await AlarmSyncService.instance.reconcileNow();
+
+    expect(platform.reconcileCalls, hasLength(1));
+    expect(platform.notificationCalls, isEmpty);
+  });
+
+  test('fallback platform uses a notification burst, not reconcile', () async {
+    platform = FakeAlarmPlatform(systemAlarms: false);
+    AlarmSyncService.configure(AlarmSyncService(
+      repository: repo,
+      platform: platform,
+      location: tz.getLocation('America/New_York'),
+    ));
+    await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));
+    await AlarmSyncService.instance.reconcileNow();
+
+    expect(platform.notificationCalls, hasLength(1));
+    // A single alarm gets a full 16-notification burst.
+    expect(platform.notificationCalls.single, hasLength(16));
+    expect(platform.reconcileCalls, isEmpty,
+        reason: 'the fallback platform must not arm system alarms');
+  });
 
   test('sends nothing to the platform when there are no alarms', () async {
     await AlarmSyncService.instance.reconcileNow();
