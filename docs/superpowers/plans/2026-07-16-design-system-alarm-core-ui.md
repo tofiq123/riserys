@@ -2776,9 +2776,346 @@ git commit -m "feat(ui): add the Create/Edit alarm screen with sound catalog"
 
 ---
 
-## Remaining tasks (Tasks 9–14 — screens; full code just before execution)
+### Task 9: Ring screen (replaces DevRingPage's logic)
 
-Tasks 1–8 above are complete. The remaining screens build on the same components/providers and get full code just before execution: **Task 9** Ring (replacing DevRingPage), **Task 10** the four missions + host, **Task 11** Onboarding, **Task 12** Profile/Settings, **Task 13** the tab-bar app shell, **Task 14** `main.dart` wiring + delete dev screens + device verification (per the descriptions earlier in this plan).
+**Files:**
+- Create: `lib/ui/screens/ring_screen.dart`
+- Test: `test/ui/screens/ring_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `alarmsProvider` (to read the ringing alarm's label/mission); `AlarmHostApi().stopRinging` + `AlarmSyncService.instance` (for the production dismissal only); `SlideToWake`, tokens/typography; `Alarm`.
+- Produces:
+  - `typedef MissionBuilder = Widget Function(BuildContext context, Alarm alarm, VoidCallback onSolved);`
+  - `Future<void> dismissRingingAlarm(int alarmId)` — the production dismissal (stop → record → reconcile, in that exact order).
+  - `class RingScreen extends ConsumerStatefulWidget` — `RingScreen({required int alarmId, VoidCallback? onDismissed, Future<void> Function(int) dismissAlarm = dismissRingingAlarm, MissionBuilder? missionBuilder})`. Task 14 swaps `main.dart`'s `DevRingPage` for this and passes `onDismissed`; Task 10 supplies `missionBuilder`.
+
+> This task does NOT touch `main.dart` — `DevRingPage` stays wired until Task 14. `RingScreen` is built and tested standalone. The dismissal ordering (silence first, unconditional; record + reconcile second, best-effort) is copied faithfully from `DevRingPage` — it is load-bearing and was validated on a physical device in Plan 1.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/ui/screens/ring_screen_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/ui/components/slide_to_wake.dart';
+import 'package:rise/ui/screens/ring_screen.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+Widget _host({
+  required List<Alarm> alarms,
+  required int alarmId,
+  Future<void> Function(int)? dismissAlarm,
+  VoidCallback? onDismissed,
+  MissionBuilder? missionBuilder,
+}) {
+  return ProviderScope(
+    overrides: [alarmsProvider.overrideWith((ref) => Stream.value(alarms))],
+    child: MaterialApp(
+      home: RingScreen(
+        alarmId: alarmId,
+        onDismissed: onDismissed,
+        dismissAlarm: dismissAlarm ?? (_) async {},
+        missionBuilder: missionBuilder,
+      ),
+    ),
+  );
+}
+
+void main() {
+  testWidgets('no-mission alarm shows slide-to-wake; sliding dismisses', (t) async {
+    int? dismissed;
+    var doneCalled = false;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30, label: 'Run')],
+      alarmId: 5,
+      dismissAlarm: (id) async => dismissed = id,
+      onDismissed: () => doneCalled = true,
+    ));
+    await t.pump(); // let alarmsProvider emit
+    expect(find.byType(SlideToWake), findsOneWidget);
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(dismissed, 5);
+    expect(doneCalled, isTrue);
+  });
+
+  testWidgets('shows the alarm label', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30, label: 'Gym time')],
+      alarmId: 5,
+    ));
+    await t.pump();
+    expect(find.text('Gym time'), findsOneWidget);
+  });
+
+  testWidgets('a missioned alarm with a missionBuilder shows the mission, not the slider', (t) async {
+    int? dismissed;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 7, hour: 6, minute: 30, mission: 'math')],
+      alarmId: 7,
+      dismissAlarm: (id) async => dismissed = id,
+      missionBuilder: (context, alarm, onSolved) =>
+          TextButton(onPressed: onSolved, child: const Text('SOLVE')),
+    ));
+    await t.pump();
+    expect(find.byType(SlideToWake), findsNothing);
+    expect(find.text('SOLVE'), findsOneWidget);
+    await t.tap(find.text('SOLVE'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(dismissed, 7);
+  });
+
+  testWidgets('unknown alarm still shows a slider so the user can dismiss', (t) async {
+    await t.pumpWidget(_host(alarms: const [], alarmId: 999));
+    await t.pump();
+    expect(find.byType(SlideToWake), findsOneWidget);
+  });
+
+  testWidgets('a failed dismissal keeps the screen so the user can retry', (t) async {
+    var doneCalled = false;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      dismissAlarm: (_) async => throw StateError('stop failed'),
+      onDismissed: () => doneCalled = true,
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(doneCalled, isFalse);
+    expect(find.byType(RingScreen), findsOneWidget);
+  });
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+```bash
+flutter test test/ui/screens/ring_screen_test.dart
+```
+Expected: FAIL — `ring_screen.dart` not found.
+
+- [ ] **Step 3: Write the ring screen**
+
+Create `lib/ui/screens/ring_screen.dart`:
+
+```dart
+import 'dart:async';
+
+import 'package:collection/collection.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../data/alarm_sync_service.dart';
+import '../../data/native/alarm_api.g.dart';
+import '../../domain/alarm.dart';
+import '../components/slide_to_wake.dart';
+import '../state/alarm_providers.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// Builds the dismissal gate for a missioned alarm. Task 10 supplies the real
+/// mission widgets; [onSolved] must be called exactly once when the user
+/// completes the mission — that dismisses the alarm.
+typedef MissionBuilder = Widget Function(
+    BuildContext context, Alarm alarm, VoidCallback onSolved);
+
+/// Fully dismisses a ringing alarm. The order is deliberate and load-bearing
+/// (validated on a physical device in Plan 1):
+///
+/// 1. [AlarmHostApi.stopRinging] runs FIRST and unconditionally — a user who
+///    dismisses must get silence immediately, never gated on a database write
+///    that can block for seconds under SQLite contention. It talks straight to
+///    the native side and does not depend on the Dart service being configured,
+///    so a ringing alarm is always stoppable.
+/// 2. Recording the dismissal + reconciling is best-effort and MUST run after
+///    stopRinging: it disables a fired one-shot so reconcile does not re-arm it
+///    for tomorrow. A failure here is logged, not fatal — the alarm is already
+///    silent.
+///
+/// If stopRinging itself throws (a real platform failure — the alarm may still
+/// be sounding), the throw propagates so the caller keeps the ring screen up
+/// for a retry instead of falsely reporting success.
+Future<void> dismissRingingAlarm(int alarmId) async {
+  await AlarmHostApi().stopRinging(alarmId);
+  try {
+    await AlarmSyncService.instance.repository
+        .recordDismissed(alarmId, DateTime.now().toUtc());
+    await AlarmSyncService.instance.reconcileNow();
+  } catch (e) {
+    debugPrint('Rise: could not record dismissal for alarm $alarmId: $e');
+  }
+}
+
+class RingScreen extends ConsumerStatefulWidget {
+  const RingScreen({
+    super.key,
+    required this.alarmId,
+    this.onDismissed,
+    this.dismissAlarm = dismissRingingAlarm,
+    this.missionBuilder,
+  });
+
+  final int alarmId;
+
+  /// Called after the alarm is fully dismissed — the host pops the screen.
+  final VoidCallback? onDismissed;
+
+  /// The dismissal work (stop → record → reconcile). Injectable for tests;
+  /// defaults to [dismissRingingAlarm].
+  final Future<void> Function(int alarmId) dismissAlarm;
+
+  final MissionBuilder? missionBuilder;
+
+  @override
+  ConsumerState<RingScreen> createState() => _RingScreenState();
+}
+
+class _RingScreenState extends ConsumerState<RingScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+  Timer? _clock;
+  bool _dismissing = false;
+  int _attempt = 0; // bumped on a failed dismissal to reset the slider
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+      lowerBound: 0.92,
+      upperBound: 1.08,
+    )..repeat(reverse: true);
+    _clock = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {}); // advances the live clock
+    });
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  Future<void> _dismiss() async {
+    if (_dismissing) return; // guard double-taps / repeated slide fires
+    setState(() => _dismissing = true);
+    try {
+      await widget.dismissAlarm(widget.alarmId);
+    } catch (e) {
+      debugPrint('Rise: dismiss failed for ${widget.alarmId}: $e');
+      if (mounted) {
+        setState(() {
+          _dismissing = false;
+          _attempt++; // fresh key resets the slide-to-wake so it can fire again
+        });
+      }
+      return;
+    }
+    if (!mounted) return;
+    widget.onDismissed?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final alarm = ref
+        .watch(alarmsProvider)
+        .value
+        ?.firstWhereOrNull((a) => a.id == widget.alarmId);
+    final label = alarm?.label ?? 'Alarm';
+    final now = DateTime.now();
+    final hour12 = now.hour % 12 == 0 ? 12 : now.hour % 12;
+    final ampm = now.hour < 12 ? 'AM' : 'PM';
+    final reduce = MediaQuery.of(context).disableAnimations;
+
+    Widget bell = Container(
+      width: 92,
+      height: 92,
+      decoration: BoxDecoration(
+        color: RiseColors.accentSoft,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: const Icon(Icons.notifications_active,
+          color: RiseColors.accent, size: 44),
+    );
+    if (!reduce) bell = ScaleTransition(scale: _pulse, child: bell);
+
+    final gate = (alarm != null &&
+            alarm.mission != 'none' &&
+            widget.missionBuilder != null)
+        ? widget.missionBuilder!(context, alarm, _dismiss)
+        : SlideToWake(key: ValueKey(_attempt), onWake: _dismiss);
+
+    return Scaffold(
+      backgroundColor: RiseColors.appBg,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(RiseSpacing.screen),
+          child: Column(
+            children: [
+              const Spacer(),
+              bell,
+              const SizedBox(height: 30),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text('$hour12:${now.minute.toString().padLeft(2, '0')}',
+                      style: RiseText.mono(size: 72, weight: FontWeight.w500)),
+                  const SizedBox(width: 10),
+                  Text(ampm,
+                      style: RiseText.mono(size: 20, color: RiseColors.textDim)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(label, style: RiseText.title.copyWith(color: RiseColors.textDim)),
+              const Spacer(),
+              gate,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 4: Run it to verify it passes**
+
+```bash
+flutter test test/ui/screens/ring_screen_test.dart
+```
+Expected: PASS — 5 tests green. (Use `flutter test` — the repeating pulse animation means `pumpAndSettle` would hang; the tests deliberately use `pump`.)
+
+- [ ] **Step 5: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add lib/ui/screens/ring_screen.dart test/ui/screens/ring_screen_test.dart
+git commit -m "feat(ui): add the ring screen with slide-to-wake and mission seam"
+```
+
+---
+
+## Remaining tasks (Tasks 10–14 — screens; full code just before execution)
+
+Tasks 1–9 above are complete. The remaining screens build on the same components/providers and get full code just before execution: **Task 10** the four missions + host (fills `RingScreen`'s `missionBuilder`), **Task 11** Onboarding, **Task 12** Profile/Settings, **Task 13** the tab-bar app shell, **Task 14** `main.dart` wiring (swap `DevRingPage`→`RingScreen`, `DevHomePage`→`AppShell`) + delete dev screens + device verification.
 
 **Task 7 — Home screen.** Header (greeting + first name + streak pill, avatar), the next-alarm hero card (NEXT ALARM label, big mono time + AM/PM, "{label} · rings in Xh Ym" live countdown via a 1s ticker, animated bell, full-width Preview button that opens the ring screen), and the "Your alarms" list (rows: mono time + AM/PM, "{label} · {repeat}", `DayChips` compact, `RiseSwitch`; tap row → edit). The Crew·live strip is omitted this plan (empty region). Reads `alarmsProvider`; toggling a row calls the mutation. Widget-tested for rendering alarms and the toggle.
 
