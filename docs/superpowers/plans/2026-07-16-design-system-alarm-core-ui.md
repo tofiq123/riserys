@@ -3879,9 +3879,428 @@ git commit -m "feat(ui): add the four wake missions and the mission host"
 
 ---
 
-## Remaining tasks (Tasks 11–14 — screens; full code just before execution)
+### Task 11: Onboarding
 
-Tasks 1–10 above are complete. The remaining screens build on the same components/providers and get full code just before execution: **Task 11** Onboarding, **Task 12** Profile/Settings, **Task 13** the tab-bar app shell (wires Home ↔ Create/Edit navigation and the ToastHost), **Task 14** `main.dart` wiring (swap `DevRingPage`→`RingScreen` with `missionBuilder: buildMission`, `DevHomePage`→`AppShell`) + delete dev screens + device verification.
+**Files:**
+- Create: `lib/ui/screens/onboarding_screen.dart`
+- Test: `test/ui/screens/onboarding_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `AlarmHostApi`/`AlarmPermissions` (`lib/data/native/alarm_api.g.dart` — `getPermissions()`, `requestNotificationPermission()`, `openExactAlarmSettings()`, `openFullScreenIntentSettings()`, `openBatterySettings()`); components (`RiseCard`, `PrimaryButton`, `SecondaryButton`, `GhostButton`); tokens/typography.
+- Produces:
+  - `abstract interface class PermissionGateway { Future<AlarmPermissions> status(); Future<void> requestNotifications(); Future<void> openExactAlarm(); Future<void> openFullScreenIntent(); Future<void> openBattery(); }`
+  - `class NativePermissionGateway implements PermissionGateway` (const; wraps `AlarmHostApi`).
+  - `class OnboardingScreen extends StatefulWidget` — `OnboardingScreen({required VoidCallback onDone, PermissionGateway permissions = const NativePermissionGateway()})`. A 3-page intro ending in a permissions page; `onDone` fires on "Start using Rise" or "Skip". Persisting "onboarding seen" is the host's concern (Task 13/14).
+
+> The permission calls are abstracted behind `PermissionGateway` so the screen is testable without the platform channel (mirrors `RingScreen`'s injected `dismissAlarm`). The screen never gates "Start" on permissions — a user can grant later from Profile — but shows each permission's live status and a Grant button. `AlarmPermissions` is a mutable Pigeon value; the fake gateway flips fields to simulate a grant.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/ui/screens/onboarding_screen_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/native/alarm_api.g.dart';
+import 'package:rise/ui/screens/onboarding_screen.dart';
+
+AlarmPermissions _perms({
+  bool notif = false,
+  bool exact = false,
+  bool fsi = false,
+  bool batt = false,
+}) =>
+    AlarmPermissions(
+        notifications: notif,
+        exactAlarm: exact,
+        fullScreenIntent: fsi,
+        batteryUnrestricted: batt);
+
+class _FakeGateway implements PermissionGateway {
+  _FakeGateway(this._p);
+  AlarmPermissions _p;
+  int notifRequests = 0;
+  final opened = <String>[];
+  @override
+  Future<AlarmPermissions> status() async => _p;
+  @override
+  Future<void> requestNotifications() async {
+    notifRequests++;
+    _p.notifications = true;
+  }
+
+  @override
+  Future<void> openExactAlarm() async => opened.add('exact');
+  @override
+  Future<void> openFullScreenIntent() async => opened.add('fsi');
+  @override
+  Future<void> openBattery() async => opened.add('battery');
+}
+
+Widget _host(_FakeGateway gw, {VoidCallback? onDone}) => MaterialApp(
+      home: OnboardingScreen(onDone: onDone ?? () {}, permissions: gw),
+    );
+
+Future<void> _toPermissions(WidgetTester t) async {
+  await t.tap(find.text('Next'));
+  await t.pumpAndSettle();
+  await t.tap(find.text('Next'));
+  await t.pumpAndSettle();
+}
+
+void main() {
+  testWidgets('advances through pages and Start calls onDone', (t) async {
+    var done = false;
+    await t.pumpWidget(_host(_FakeGateway(_perms()), onDone: () => done = true));
+    await t.pumpAndSettle();
+    expect(find.text('Wake up, for real'), findsOneWidget);
+    await _toPermissions(t);
+    expect(find.text('Ring through anything'), findsOneWidget);
+    await t.tap(find.text('Start using Rise'));
+    await t.pumpAndSettle();
+    expect(done, isTrue);
+  });
+
+  testWidgets('Skip on the first page calls onDone', (t) async {
+    var done = false;
+    await t.pumpWidget(_host(_FakeGateway(_perms()), onDone: () => done = true));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Skip'));
+    await t.pumpAndSettle();
+    expect(done, isTrue);
+  });
+
+  testWidgets('ungranted notifications shows Grant; tapping requests and updates',
+      (t) async {
+    final gw = _FakeGateway(_perms());
+    await t.pumpWidget(_host(gw));
+    await t.pumpAndSettle();
+    await _toPermissions(t);
+    expect(find.text('Grant'), findsNWidgets(4)); // all four ungranted
+    await t.tap(find.text('Grant').first); // notifications is first
+    await t.pumpAndSettle();
+    expect(gw.notifRequests, 1);
+    expect(find.text('Grant'), findsNWidgets(3)); // notifications now granted
+  });
+
+  testWidgets('a granted permission shows no Grant button', (t) async {
+    final gw = _FakeGateway(_perms(notif: true));
+    await t.pumpWidget(_host(gw));
+    await t.pumpAndSettle();
+    await _toPermissions(t);
+    expect(find.text('Notifications'), findsOneWidget);
+    expect(find.text('Grant'), findsNWidgets(3)); // three ungranted
+  });
+
+  testWidgets('tapping the exact-alarm Grant opens its settings', (t) async {
+    final gw = _FakeGateway(_perms());
+    await t.pumpWidget(_host(gw));
+    await t.pumpAndSettle();
+    await _toPermissions(t);
+    await t.tap(find.text('Grant').at(1)); // order: notif, exact, fsi, battery
+    await t.pumpAndSettle();
+    expect(gw.opened, contains('exact'));
+  });
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+```bash
+flutter test test/ui/screens/onboarding_screen_test.dart
+```
+Expected: FAIL — `onboarding_screen.dart` not found.
+
+- [ ] **Step 3: Write the onboarding screen**
+
+Create `lib/ui/screens/onboarding_screen.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../../data/native/alarm_api.g.dart';
+import '../components/rise_buttons.dart';
+import '../components/rise_card.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// Abstracts the native permission calls so onboarding is testable without the
+/// platform channel. Production uses [NativePermissionGateway].
+abstract interface class PermissionGateway {
+  Future<AlarmPermissions> status();
+  Future<void> requestNotifications();
+  Future<void> openExactAlarm();
+  Future<void> openFullScreenIntent();
+  Future<void> openBattery();
+}
+
+class NativePermissionGateway implements PermissionGateway {
+  const NativePermissionGateway();
+  @override
+  Future<AlarmPermissions> status() => AlarmHostApi().getPermissions();
+  @override
+  Future<void> requestNotifications() =>
+      AlarmHostApi().requestNotificationPermission();
+  @override
+  Future<void> openExactAlarm() => AlarmHostApi().openExactAlarmSettings();
+  @override
+  Future<void> openFullScreenIntent() =>
+      AlarmHostApi().openFullScreenIntentSettings();
+  @override
+  Future<void> openBattery() => AlarmHostApi().openBatterySettings();
+}
+
+class OnboardingScreen extends StatefulWidget {
+  const OnboardingScreen({
+    super.key,
+    required this.onDone,
+    this.permissions = const NativePermissionGateway(),
+  });
+
+  final VoidCallback onDone;
+  final PermissionGateway permissions;
+
+  @override
+  State<OnboardingScreen> createState() => _OnboardingScreenState();
+}
+
+class _OnboardingScreenState extends State<OnboardingScreen>
+    with WidgetsBindingObserver {
+  final _controller = PageController();
+  int _page = 0;
+  AlarmPermissions? _perms;
+
+  static const _lastPage = 2;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Returning from a system settings screen (exact-alarm, battery, …) should
+    // refresh the granted/needed checks.
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final p = await widget.permissions.status();
+    if (mounted) setState(() => _perms = p);
+  }
+
+  Future<void> _grant(Future<void> Function() action) async {
+    await action();
+    await _refresh();
+  }
+
+  void _next() {
+    if (_page < _lastPage) {
+      _controller.nextPage(
+          duration: const Duration(milliseconds: 280), curve: Curves.easeOut);
+    } else {
+      widget.onDone();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: RiseColors.appBg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8, top: 4),
+                child: _page < _lastPage
+                    ? GhostButton(label: 'Skip', onPressed: widget.onDone)
+                    : const SizedBox(height: 44),
+              ),
+            ),
+            Expanded(
+              child: PageView(
+                controller: _controller,
+                onPageChanged: (i) => setState(() => _page = i),
+                children: [
+                  _intro(
+                    icon: Icons.notifications_active,
+                    title: 'Wake up, for real',
+                    body:
+                        'Rise rings through silent mode, Focus, and a locked screen — and makes sure you actually get up.',
+                  ),
+                  _intro(
+                    icon: Icons.psychology_alt,
+                    title: 'Prove you\'re awake',
+                    body:
+                        'Turn an alarm off only by finishing a quick mission — solve some math, repeat a pattern, or hold a button. No half-asleep swipe.',
+                  ),
+                  _permissionsPage(),
+                ],
+              ),
+            ),
+            _dots(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  RiseSpacing.screen, 12, RiseSpacing.screen, 16),
+              child: PrimaryButton(
+                label: _page < _lastPage ? 'Next' : 'Start using Rise',
+                onPressed: _next,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _intro(
+      {required IconData icon, required String title, required String body}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              color: RiseColors.accentSoft,
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: Icon(icon, size: 44, color: RiseColors.accent),
+          ),
+          const SizedBox(height: 28),
+          Text(title, textAlign: TextAlign.center, style: RiseText.display),
+          const SizedBox(height: 12),
+          Text(body,
+              textAlign: TextAlign.center,
+              style: RiseText.body.copyWith(color: RiseColors.textDim)),
+        ],
+      ),
+    );
+  }
+
+  Widget _permissionsPage() {
+    final p = _perms;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+          RiseSpacing.screen, 12, RiseSpacing.screen, 12),
+      children: [
+        Text('Ring through anything', style: RiseText.title),
+        const SizedBox(height: 8),
+        Text(
+            'Rise needs a few permissions to reach you on silent, locked, or dozing.',
+            style: RiseText.body.copyWith(color: RiseColors.textDim)),
+        const SizedBox(height: 18),
+        if (p == null)
+          const Center(
+              child: Padding(
+                  padding: EdgeInsets.all(20), child: Text('Checking…')))
+        else ...[
+          _permRow('Notifications', 'Show the alarm and let it ring.',
+              p.notifications, () => _grant(widget.permissions.requestNotifications)),
+          _permRow('Exact alarm', 'Fire at the exact minute.', p.exactAlarm,
+              () => _grant(widget.permissions.openExactAlarm)),
+          _permRow('Full-screen alarm', 'Show over the lock screen.',
+              p.fullScreenIntent,
+              () => _grant(widget.permissions.openFullScreenIntent)),
+          _permRow('Unrestricted battery',
+              'Don\'t let the system doze the alarm.', p.batteryUnrestricted,
+              () => _grant(widget.permissions.openBattery)),
+          const SizedBox(height: 4),
+          Center(child: GhostButton(label: 'Re-check', onPressed: _refresh)),
+        ],
+      ],
+    );
+  }
+
+  Widget _permRow(String label, String why, bool granted, VoidCallback onGrant) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: RiseCard(
+        child: Row(
+          children: [
+            Icon(granted ? Icons.check_circle : Icons.circle_outlined,
+                color: granted ? RiseColors.positive : RiseColors.textFaint,
+                size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style:
+                          RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(why, style: RiseText.caption),
+                ],
+              ),
+            ),
+            if (!granted) SecondaryButton(label: 'Grant', onPressed: onGrant),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dots() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var i = 0; i <= _lastPage; i++)
+          Container(
+            width: 7,
+            height: 7,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              color: i == _page ? RiseColors.primary : RiseColors.border,
+              shape: BoxShape.circle,
+            ),
+          ),
+      ],
+    );
+  }
+}
+```
+
+- [ ] **Step 4: Run it to verify it passes**
+
+```bash
+flutter test test/ui/screens/onboarding_screen_test.dart
+```
+Expected: PASS — 5 tests green.
+
+- [ ] **Step 5: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add lib/ui/screens/onboarding_screen.dart test/ui/screens/onboarding_screen_test.dart
+git commit -m "feat(ui): add onboarding with permission requests"
+```
+
+---
+
+## Remaining tasks (Tasks 12–14 — screens; full code just before execution)
+
+Tasks 1–11 above are complete. The remaining screens build on the same components/providers and get full code just before execution: **Task 12** Profile/Settings (introduces a small local settings store — including the `onboardingComplete` flag the host reads on launch), **Task 13** the tab-bar app shell (wires Home ↔ Create/Edit navigation and the ToastHost), **Task 14** `main.dart` wiring (swap `DevRingPage`→`RingScreen` with `missionBuilder: buildMission`, `DevHomePage`→`AppShell`, gate Onboarding on the stored flag) + delete dev screens + device verification.
 
 **Task 7 — Home screen.** Header (greeting + first name + streak pill, avatar), the next-alarm hero card (NEXT ALARM label, big mono time + AM/PM, "{label} · rings in Xh Ym" live countdown via a 1s ticker, animated bell, full-width Preview button that opens the ring screen), and the "Your alarms" list (rows: mono time + AM/PM, "{label} · {repeat}", `DayChips` compact, `RiseSwitch`; tap row → edit). The Crew·live strip is omitted this plan (empty region). Reads `alarmsProvider`; toggling a row calls the mutation. Widget-tested for rendering alarms and the toggle.
 
