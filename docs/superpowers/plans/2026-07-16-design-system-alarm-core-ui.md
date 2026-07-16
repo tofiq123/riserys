@@ -4773,9 +4773,354 @@ git commit -m "feat(ui): add Profile, settings store, and shared permissions sec
 
 ---
 
-## Remaining tasks (Tasks 13–14 — full code just before execution)
+### Task 13: Tab-bar app shell
 
-Tasks 1–12 above are complete. **Task 13** the tab-bar app shell (Home / Create-Edit navigation via `draftProvider`, Profile tab, Crew/Sleep tabs stubbed, ToastHost wiring). **Task 14** `main.dart` wiring (wrap in `ProviderScope`; override `alarmSyncServiceProvider` + `appSettingsProvider`; swap `DevRingPage`→`RingScreen` with `missionBuilder: buildMission`; swap `DevHomePage`→`AppShell`; gate `OnboardingScreen` on `appSettings.onboardingComplete`, setting it on completion) + delete the dev screens + on-device verification.
+**Files:**
+- Create: `lib/ui/screens/app_shell.dart`
+- Test: `test/ui/screens/app_shell_test.dart`
+
+**Interfaces:**
+- Consumes: `HomeScreen`, `CreateEditScreen`, `ProfileScreen`, `RingScreen` + `buildMission`; `draftProvider`/`alarmsProvider`/`nextOccurrenceProvider`/`toastProvider`; `ToastHost`/`RiseToast`; `PermissionGateway`/`NativePermissionGateway`; tokens/typography; `Alarm`.
+- Produces:
+  - `class AppShell extends ConsumerStatefulWidget` — `AppShell({PermissionGateway permissions = const NativePermissionGateway()})`. A 4-tab shell (Alarms / Crew / Sleep / Profile) that opens the editor as a `draftProvider`-driven overlay, pushes a ring preview, and hosts toasts.
+
+> The editor is an overlay gated on `draftProvider` (not a route): `HomeScreen.onNew`/`onEdit` set the draft, `CreateEditScreen` clears it on done → overlay closes. `PopScope` makes Android back close the editor instead of the app. Only the active tab is built (defers `ProfileScreen`'s permission check until the tab is visited and keeps tab-switching testable). Crew/Sleep are honest "coming soon" stubs (Plans 5–7). Preview pushes a real `RingScreen` with a no-op `dismissAlarm` (nothing is actually ringing) so the user can rehearse the wake + mission.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/ui/screens/app_shell_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/native/alarm_api.g.dart';
+import 'package:rise/data/permission_gateway.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/domain/scheduled_occurrence.dart';
+import 'package:rise/ui/components/toast.dart';
+import 'package:rise/ui/screens/app_shell.dart';
+import 'package:rise/ui/screens/create_edit_screen.dart';
+import 'package:rise/ui/screens/home_screen.dart';
+import 'package:rise/ui/screens/profile_screen.dart';
+import 'package:rise/ui/screens/ring_screen.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+class _FakeGateway implements PermissionGateway {
+  @override
+  Future<AlarmPermissions> status() async => AlarmPermissions(
+      notifications: true,
+      exactAlarm: true,
+      fullScreenIntent: true,
+      batteryUnrestricted: true);
+  @override
+  Future<void> requestNotifications() async {}
+  @override
+  Future<void> openExactAlarm() async {}
+  @override
+  Future<void> openFullScreenIntent() async {}
+  @override
+  Future<void> openBattery() async {}
+}
+
+List<Override> _overrides(List<Alarm> alarms, ScheduledOccurrence? next) => [
+      alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
+      nextOccurrenceProvider.overrideWith((ref) async => next),
+    ];
+
+Widget _host(ProviderContainer c) => UncontrolledProviderScope(
+      container: c,
+      child: MaterialApp(home: AppShell(permissions: _FakeGateway())),
+    );
+
+ProviderContainer _container(
+    {List<Alarm> alarms = const [], ScheduledOccurrence? next}) {
+  final c = ProviderContainer(overrides: _overrides(alarms, next));
+  addTearDown(c.dispose);
+  return c;
+}
+
+void main() {
+  testWidgets('starts on the alarms tab', (t) async {
+    await t.pumpWidget(_host(_container()));
+    await t.pump();
+    expect(find.byType(HomeScreen), findsOneWidget);
+  });
+
+  testWidgets('tapping New opens the editor; Cancel closes it', (t) async {
+    await t.pumpWidget(_host(_container()));
+    await t.pump();
+    expect(find.byType(CreateEditScreen), findsNothing);
+    await t.tap(find.text('+ New'));
+    await t.pump();
+    expect(find.byType(CreateEditScreen), findsOneWidget);
+    expect(find.text('New alarm'), findsOneWidget);
+    await t.tap(find.text('Cancel'));
+    await t.pump();
+    expect(find.byType(CreateEditScreen), findsNothing);
+  });
+
+  testWidgets('switching to the Profile tab shows the profile', (t) async {
+    await t.pumpWidget(_host(_container()));
+    await t.pump();
+    await t.tap(find.text('Profile'));
+    await t.pump();
+    expect(find.byType(ProfileScreen), findsOneWidget);
+    expect(find.byType(HomeScreen), findsNothing);
+  });
+
+  testWidgets('a toast message renders then is cleared', (t) async {
+    final c = _container();
+    await t.pumpWidget(_host(c));
+    await t.pump();
+    c.read(toastProvider.notifier).state = 'Saved';
+    await t.pump();
+    expect(find.byType(RiseToast), findsOneWidget);
+    expect(find.text('Saved'), findsOneWidget);
+  });
+
+  testWidgets('preview opens the ring screen', (t) async {
+    final occ = ScheduledOccurrence(
+      alarmId: 1,
+      fireAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
+      label: 'Run',
+      soundAsset: '',
+      vibrate: true,
+      hour: 6,
+      minute: 30,
+    );
+    await t.pumpWidget(_host(_container(
+        alarms: const [Alarm(id: 1, hour: 6, minute: 30, label: 'Run')],
+        next: occ)));
+    await t.pump();
+    await t.tap(find.text('Preview alarm'));
+    await t.pump();
+    await t.pump();
+    expect(find.byType(RingScreen), findsOneWidget);
+  });
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+```bash
+flutter test test/ui/screens/app_shell_test.dart
+```
+Expected: FAIL — `app_shell.dart` not found.
+
+- [ ] **Step 3: Write the app shell**
+
+Create `lib/ui/screens/app_shell.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../data/permission_gateway.dart';
+import '../../domain/alarm.dart';
+import '../components/toast.dart';
+import '../missions/mission_host.dart';
+import '../state/alarm_providers.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+import 'create_edit_screen.dart';
+import 'home_screen.dart';
+import 'profile_screen.dart';
+import 'ring_screen.dart';
+
+class AppShell extends ConsumerStatefulWidget {
+  const AppShell({super.key, this.permissions = const NativePermissionGateway()});
+
+  final PermissionGateway permissions;
+
+  @override
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
+  int _tab = 0;
+
+  void _openNew() => ref.read(draftProvider.notifier).startNew();
+  void _openEdit(Alarm a) => ref.read(draftProvider.notifier).startEdit(a);
+
+  void _preview() {
+    final alarms = ref.read(alarmsProvider).value ?? const <Alarm>[];
+    final id = alarms.isEmpty ? 0 : alarms.first.id;
+    final navigator = Navigator.of(context);
+    navigator.push(MaterialPageRoute<void>(
+      builder: (_) => RingScreen(
+        alarmId: id,
+        dismissAlarm: (_) async {}, // preview only — nothing is actually ringing
+        missionBuilder: buildMission,
+        onDismissed: navigator.maybePop,
+      ),
+    ));
+  }
+
+  Widget _activeTab() {
+    switch (_tab) {
+      case 1:
+        return const _ComingSoon(
+            icon: Icons.groups_outlined,
+            title: 'Crew',
+            body: 'Wake up with friends and keep each other honest. Coming soon.');
+      case 2:
+        return const _ComingSoon(
+            icon: Icons.bedtime_outlined,
+            title: 'Sleep',
+            body: 'Sleep insights and smart wake windows. Coming soon.');
+      case 3:
+        return ProfileScreen(permissions: widget.permissions);
+      default:
+        return HomeScreen(
+            onNew: _openNew, onEdit: _openEdit, onPreview: _preview);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final editing = ref.watch(draftProvider) != null;
+    final toast = ref.watch(toastProvider);
+
+    return PopScope(
+      canPop: !editing,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && editing) ref.read(draftProvider.notifier).clear();
+      },
+      child: Scaffold(
+        backgroundColor: RiseColors.appBg,
+        body: ToastHost(
+          message: toast,
+          onHide: () => ref.read(toastProvider.notifier).state = null,
+          child: Stack(
+            children: [
+              _activeTab(),
+              if (editing)
+                Positioned.fill(
+                  child: Material(
+                    color: RiseColors.appBg,
+                    child: CreateEditScreen(onDone: () {}),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        bottomNavigationBar: editing ? null : _tabBar(),
+      ),
+    );
+  }
+
+  Widget _tabBar() {
+    const items = [
+      (icon: Icons.alarm, label: 'Alarms'),
+      (icon: Icons.groups_outlined, label: 'Crew'),
+      (icon: Icons.bedtime_outlined, label: 'Sleep'),
+      (icon: Icons.person_outline, label: 'Profile'),
+    ];
+    return Container(
+      decoration: const BoxDecoration(
+        color: RiseColors.card,
+        border: Border(top: BorderSide(color: RiseColors.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 60,
+          child: Row(
+            children: [
+              for (var i = 0; i < items.length; i++)
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _tab = i),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(items[i].icon,
+                            size: 22,
+                            color: i == _tab
+                                ? RiseColors.primary
+                                : RiseColors.textFaint),
+                        const SizedBox(height: 3),
+                        Text(items[i].label,
+                            style: RiseText.caption.copyWith(
+                                fontSize: 11,
+                                color: i == _tab
+                                    ? RiseColors.primary
+                                    : RiseColors.textFaint,
+                                fontWeight: i == _tab
+                                    ? FontWeight.w600
+                                    : FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ComingSoon extends StatelessWidget {
+  const _ComingSoon(
+      {required this.icon, required this.title, required this.body});
+
+  final IconData icon;
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 44, color: RiseColors.textFaint),
+            const SizedBox(height: 16),
+            Text(title, style: RiseText.title),
+            const SizedBox(height: 8),
+            Text(body,
+                textAlign: TextAlign.center,
+                style: RiseText.body.copyWith(color: RiseColors.textDim)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 4: Run it to verify it passes**
+
+```bash
+flutter test test/ui/screens/app_shell_test.dart
+```
+Expected: PASS — 5 tests green. (Uses `pump`; the preview ring screen has a repeating animation, so avoid `pumpAndSettle`.)
+
+- [ ] **Step 5: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add lib/ui/screens/app_shell.dart test/ui/screens/app_shell_test.dart
+git commit -m "feat(ui): add the tab-bar app shell wiring home, editor, profile, and toasts"
+```
+
+---
+
+## Remaining task (Task 14 — full code just before execution)
+
+Tasks 1–13 above are complete. **Task 14** `main.dart` wiring: wrap the app in `ProviderScope`; override `alarmSyncServiceProvider` (with the configured service) + `appSettingsProvider` (with the loaded settings); swap `DevRingPage`→`RingScreen` (with `missionBuilder: buildMission`) in the ring-reconcile path; swap `DevHomePage`→`AppShell`; gate `OnboardingScreen` on `appSettings.onboardingComplete`, calling `setOnboardingComplete(true)` on completion; delete `dev_home_page.dart` + `dev_ring_page.dart`; then on-device verification (build, run, create an alarm, ring, mission, dismiss).
 
 **Task 7 — Home screen.** Header (greeting + first name + streak pill, avatar), the next-alarm hero card (NEXT ALARM label, big mono time + AM/PM, "{label} · rings in Xh Ym" live countdown via a 1s ticker, animated bell, full-width Preview button that opens the ring screen), and the "Your alarms" list (rows: mono time + AM/PM, "{label} · {repeat}", `DayChips` compact, `RiseSwitch`; tap row → edit). The Crew·live strip is omitted this plan (empty region). Reads `alarmsProvider`; toggling a row calls the mutation. Widget-tested for rendering alarms and the toggle.
 
