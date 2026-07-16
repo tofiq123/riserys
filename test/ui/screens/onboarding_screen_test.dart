@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/native/alarm_api.g.dart';
+import 'package:rise/data/permission_gateway.dart';
 import 'package:rise/ui/screens/onboarding_screen.dart';
 
 AlarmPermissions _perms({
