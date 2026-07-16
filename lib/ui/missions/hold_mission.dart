@@ -34,6 +34,7 @@ class HoldMission extends StatefulWidget {
 class _HoldMissionState extends State<HoldMission>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c;
+  bool _solved = false;
 
   @override
   void initState() {
@@ -42,7 +43,10 @@ class _HoldMissionState extends State<HoldMission>
       vsync: this,
       duration: widget.holdDuration ?? holdDurationFor(widget.diff),
     )..addStatusListener((s) {
-        if (s == AnimationStatus.completed) widget.onSolved();
+        if (s == AnimationStatus.completed && !_solved) {
+          _solved = true;
+          widget.onSolved();
+        }
       });
   }
 
@@ -52,7 +56,10 @@ class _HoldMissionState extends State<HoldMission>
     super.dispose();
   }
 
-  void _down() => _c.forward();
+  void _down() {
+    if (_solved) return;
+    _c.forward();
+  }
   void _up() {
     if (_c.status != AnimationStatus.completed) _c.reverse();
   }

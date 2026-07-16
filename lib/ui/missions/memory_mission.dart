@@ -97,7 +97,7 @@ class _MemoryMissionState extends State<MemoryMission> {
   }
 
   void _tap(int pad) {
-    if (!_accepting) return;
+    if (!_accepting || _inputPos >= _seq.length) return;
     if (pad == _seq[_inputPos]) {
       _inputPos++;
       if (_inputPos >= _seq.length) widget.onSolved();

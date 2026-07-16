@@ -42,13 +42,32 @@ void main() {
       expect(solved, isFalse);
       expect(find.text('Try again'), findsOneWidget);
     });
+
+    testWidgets('tapping Check again after solving does not re-fire onSolved', (t) async {
+      var solves = 0;
+      await t.pumpWidget(_wrap(MathMission(
+        diff: 'easy',
+        onSolved: () => solves++,
+        problem: (prompt: '2 + 3', answer: 5),
+      )));
+      await t.enterText(find.byType(TextField), '5');
+      await t.tap(find.text('Check'));
+      await t.pump();
+      expect(solves, 1);
+      await t.tap(find.text('Check')); // text still '5', already solved
+      await t.pump();
+      expect(solves, 1);
+    });
   });
 
-  test('generateMathProblem answer is consistent with its operands', () {
+  test('generateMathProblem answer matches its printed operands', () {
     for (final d in ['easy', 'medium', 'hard']) {
       final p = generateMathProblem(d);
-      expect(p.answer, greaterThan(0));
-      expect(p.prompt, isNotEmpty);
+      final parts = p.prompt.split(' '); // "a + b" or "a × b"
+      final a = int.parse(parts[0]);
+      final b = int.parse(parts[2]);
+      final expected = parts[1] == '×' ? a * b : a + b;
+      expect(p.answer, expected, reason: 'diff $d: ${p.prompt}');
     }
   });
 
@@ -80,6 +99,25 @@ void main() {
       await g.up();
       await t.pump(const Duration(milliseconds: 200));
       expect(solved, isFalse);
+    });
+
+    testWidgets('holding again after completion does not re-fire onSolved', (t) async {
+      var solves = 0;
+      await t.pumpWidget(_wrap(HoldMission(
+        diff: 'easy',
+        onSolved: () => solves++,
+        holdDuration: const Duration(milliseconds: 100),
+      )));
+      final g = await t.startGesture(t.getCenter(find.text('HOLD')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 130));
+      await g.up();
+      expect(solves, 1);
+      final g2 = await t.startGesture(t.getCenter(find.text('HOLD')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 130));
+      await g2.up();
+      expect(solves, 1);
     });
   });
 
@@ -128,6 +166,26 @@ void main() {
       await t.tap(find.byKey(const ValueKey('mem-pad-3'))); // wrong first pad
       await t.pump();
       expect(solved, isFalse);
+    });
+
+    testWidgets('extra taps after solving do not crash or re-solve', (t) async {
+      var solves = 0;
+      await t.pumpWidget(_wrap(MemoryMission(
+        diff: 'easy',
+        onSolved: () => solves++,
+        sequence: const [0, 1, 2],
+      )));
+      await t.pump();
+      await t.pump(const Duration(seconds: 2));
+      await t.tap(find.byKey(const ValueKey('mem-pad-0')));
+      await t.tap(find.byKey(const ValueKey('mem-pad-1')));
+      await t.tap(find.byKey(const ValueKey('mem-pad-2')));
+      await t.pump();
+      expect(solves, 1);
+      await t.tap(find.byKey(const ValueKey('mem-pad-3'))); // stray tap after solve
+      await t.pump();
+      expect(t.takeException(), isNull); // no RangeError
+      expect(solves, 1);
     });
   });
 

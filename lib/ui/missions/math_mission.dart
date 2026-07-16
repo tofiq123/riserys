@@ -49,6 +49,7 @@ class _MathMissionState extends State<MathMission> {
   late MathProblem _p;
   final _controller = TextEditingController();
   bool _wrong = false;
+  bool _solved = false;
 
   @override
   void initState() {
@@ -63,7 +64,9 @@ class _MathMissionState extends State<MathMission> {
   }
 
   void _submit() {
+    if (_solved) return;
     if (int.tryParse(_controller.text.trim()) == _p.answer) {
+      _solved = true;
       widget.onSolved();
       return;
     }
