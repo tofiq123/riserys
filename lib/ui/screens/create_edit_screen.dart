@@ -139,7 +139,7 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
           )),
           _section('Wake mission', SoundChips(
             sounds: _missionLabels.values.toList(),
-            selected: _missionLabels[draft.mission]!,
+            selected: _missionLabels[draft.mission] ?? _missionLabels['none']!,
             onChanged: (label) {
               final key = _missionLabels.entries
                   .firstWhere((e) => e.value == label)
