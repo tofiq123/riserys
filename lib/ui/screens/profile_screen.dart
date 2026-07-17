@@ -119,8 +119,9 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
       () => ref.read(authServiceProvider).signInWithGoogle(),
       onError: 'Sign-in was cancelled.');
 
-  Future<void> _signOut() =>
-      _run(() => ref.read(authServiceProvider).signOut());
+  Future<void> _signOut() => _run(
+      () => ref.read(authServiceProvider).signOut(),
+      onError: 'Could not sign out. Try again.');
 
   Future<void> _delete() async {
     if (_busy) return;
@@ -133,6 +134,10 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
   }
 
   Future<bool?> _confirmDelete() {
+    // The controller is intentionally not disposed: disposing it in the
+    // dialog's whenComplete races the dismiss transition (which rebuilds the
+    // field), and a single short-lived TextEditingController per delete attempt
+    // is a negligible, rare leak.
     final controller = TextEditingController();
     return showDialog<bool>(
       context: context,
