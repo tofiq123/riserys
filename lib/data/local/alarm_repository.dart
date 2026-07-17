@@ -10,6 +10,10 @@ class AlarmRepository {
 
   final RiseDatabase _db;
 
+  /// The underlying database, so a sibling repository (e.g. WakeEventRepository)
+  /// can be built over the SAME handle — two handles to the file would drift.
+  RiseDatabase get database => _db;
+
   static String encodeDays(Set<int> days) {
     final sorted = days.toList()..sort();
     return sorted.join(',');
