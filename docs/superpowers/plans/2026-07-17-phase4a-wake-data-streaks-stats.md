@@ -1600,9 +1600,382 @@ git commit -m "feat(ui): make the Home streak pill live and tappable"
 
 ---
 
-## Remaining tasks (Tasks 8–9 — full code written just before each is executed)
+### Task 8: Stats screen
 
-Each gets its complete code just before dispatch (same flow used for Plan 3). Summary + interfaces:
+**Files:**
+- Create: `lib/ui/screens/stats_screen.dart`
+- Test: `test/ui/screens/stats_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `streakProvider` + `wakeEventsProvider` (Task 5), `StreakStats`/`DayOutcome` (Task 2), `WakeEvent` (Task 1); `RiseCard`, `SectionLabel`, tokens/typography.
+- Produces:
+  - Top-level pure helpers `List<DayWake> weekWakes(List<WakeEvent> events, DateTime now)` and `String consistencyLine(List<WakeEvent> events, DateTime now)`; `class DayWake { final DateTime day; final int? deltaMinutes; final bool onTime; final bool hasEvent; }`.
+  - `class StatsScreen extends ConsumerWidget` — a streak card (current/best/freezes), a 30-day on-time calendar, a "this week" consistency line + 7-bar wake-vs-set chart; an empty state when there are no events.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/ui/screens/stats_screen_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/streak.dart';
+import 'package:rise/domain/wake_event.dart';
+import 'package:rise/ui/screens/stats_screen.dart';
+import 'package:rise/ui/state/wake_providers.dart';
+
+WakeEvent evOn(DateTime day, {bool onTime = true}) {
+  final ring = DateTime(day.year, day.month, day.day, 6);
+  return WakeEvent(
+    id: 0,
+    alarmId: 1,
+    scheduledAt: ring,
+    firstRingAt: ring,
+    dismissedAt: ring.add(Duration(minutes: onTime ? 3 : 30)),
+    onTime: onTime,
+    label: 'Run',
+  );
+}
+
+Future<void> _pump(WidgetTester t, Widget w) async {
+  t.view.physicalSize = const Size(1200, 4000);
+  t.view.devicePixelRatio = 1.0;
+  addTearDown(t.view.reset);
+  await t.pumpWidget(w);
+}
+
+Widget _host({List<WakeEvent> events = const [], StreakStats streak = StreakStats.empty}) {
+  return ProviderScope(
+    overrides: [
+      wakeEventsProvider.overrideWith((ref) => Stream.value(events)),
+      streakProvider.overrideWithValue(streak),
+    ],
+    child: const MaterialApp(home: Scaffold(body: StatsScreen())),
+  );
+}
+
+void main() {
+  testWidgets('shows an empty state when there are no wake events', (t) async {
+    await _pump(t, _host());
+    await t.pump();
+    expect(find.textContaining('No wake data'), findsOneWidget);
+  });
+
+  testWidgets('renders the streak card and section headers with data', (t) async {
+    final today = DateTime.now();
+    await _pump(t, _host(
+      events: [evOn(today)],
+      streak: const StreakStats(current: 4, best: 9, freezesRemaining: 1, byDay: {}),
+    ));
+    await t.pump();
+    expect(find.text('4'), findsOneWidget); // current streak
+    expect(find.text('9'), findsOneWidget); // best
+    expect(find.text('LAST 30 DAYS'), findsOneWidget); // SectionLabel uppercases
+    expect(find.text('THIS WEEK'), findsOneWidget);
+  });
+
+  test('consistencyLine reports the on-time count for the week', () {
+    final now = DateTime(2026, 7, 20, 12);
+    final events = [
+      evOn(DateTime(2026, 7, 18)),
+      evOn(DateTime(2026, 7, 19), onTime: false),
+      evOn(DateTime(2026, 7, 20)),
+    ];
+    expect(consistencyLine(events, now), 'On time 2 of 3 this week.');
+  });
+
+  test('consistencyLine handles a week with no wake-ups', () {
+    expect(consistencyLine(const [], DateTime(2026, 7, 20, 12)),
+        'No wake-ups yet this week.');
+  });
+
+  test('weekWakes returns 7 days ending today, with per-day deltas', () {
+    final now = DateTime(2026, 7, 20, 12);
+    final wakes = weekWakes([evOn(DateTime(2026, 7, 20))], now);
+    expect(wakes, hasLength(7));
+    expect(wakes.last.day, DateTime(2026, 7, 20));
+    expect(wakes.last.hasEvent, isTrue);
+    expect(wakes.last.deltaMinutes, 3);
+    expect(wakes.first.hasEvent, isFalse); // 6 days ago: no event
+  });
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+```bash
+flutter test test/ui/screens/stats_screen_test.dart
+```
+Expected: FAIL — `stats_screen.dart` not found.
+
+- [ ] **Step 3: Write the Stats screen**
+
+Create `lib/ui/screens/stats_screen.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../domain/streak.dart';
+import '../../domain/wake_event.dart';
+import '../components/rise_card.dart';
+import '../components/section_label.dart';
+import '../state/wake_providers.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+DateTime _todayLocal(DateTime now) {
+  final l = now.toLocal();
+  return DateTime(l.year, l.month, l.day);
+}
+
+DateTime _dayOf(DateTime t) {
+  final l = t.toLocal();
+  return DateTime(l.year, l.month, l.day);
+}
+
+/// The representative wake for one local day.
+class DayWake {
+  const DayWake(this.day,
+      {this.deltaMinutes, required this.onTime, required this.hasEvent});
+
+  final DateTime day;
+
+  /// dismissed − scheduled, in minutes; null when the day had no dismissal.
+  final int? deltaMinutes;
+  final bool onTime;
+  final bool hasEvent;
+}
+
+/// The last 7 local days (oldest first), each with its representative wake:
+/// the on-time event if any, else the latest event.
+List<DayWake> weekWakes(List<WakeEvent> events, DateTime now) {
+  final today = _todayLocal(now);
+  final byDay = <DateTime, WakeEvent>{};
+  for (final e in events) {
+    final d = _dayOf(e.firstRingAt);
+    final cur = byDay[d];
+    final better = cur == null ||
+        (e.onTime && !cur.onTime) ||
+        (e.onTime == cur.onTime && e.firstRingAt.isAfter(cur.firstRingAt));
+    if (better) byDay[d] = e;
+  }
+  return [
+    for (var i = 6; i >= 0; i--)
+      () {
+        final day = today.subtract(Duration(days: i));
+        final e = byDay[day];
+        if (e == null) return DayWake(day, onTime: false, hasEvent: false);
+        final delta = e.dismissedAt?.difference(e.scheduledAt).inMinutes;
+        return DayWake(day,
+            deltaMinutes: delta, onTime: e.onTime, hasEvent: true);
+      }(),
+  ];
+}
+
+/// "On time X of Y this week", or a no-data line.
+String consistencyLine(List<WakeEvent> events, DateTime now) {
+  final wakes = weekWakes(events, now);
+  final rang = wakes.where((w) => w.hasEvent).length;
+  final onTime = wakes.where((w) => w.onTime).length;
+  if (rang == 0) return 'No wake-ups yet this week.';
+  return 'On time $onTime of $rang this week.';
+}
+
+class StatsScreen extends ConsumerWidget {
+  const StatsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final streak = ref.watch(streakProvider);
+    final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
+    final now = DateTime.now();
+
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+            RiseSpacing.screen, 8, RiseSpacing.screen, 40),
+        children: [
+          Text('Stats', style: RiseText.display),
+          const SizedBox(height: 16),
+          if (events.isEmpty)
+            _empty()
+          else ...[
+            _streakCard(streak),
+            const SizedBox(height: 24),
+            const SectionLabel('Last 30 days'),
+            const SizedBox(height: 12),
+            _calendar(streak.byDay, now),
+            const SizedBox(height: 24),
+            const SectionLabel('This week'),
+            const SizedBox(height: 6),
+            Text(consistencyLine(events, now), style: RiseText.caption),
+            const SizedBox(height: 14),
+            _weekChart(weekWakes(events, now)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _empty() => RiseCard(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
+          child: Column(
+            children: [
+              const Icon(Icons.local_fire_department,
+                  size: 40, color: RiseColors.textFaint),
+              const SizedBox(height: 12),
+              Text('No wake data yet',
+                  style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text('Set an alarm and wake up on time to start your streak.',
+                  textAlign: TextAlign.center, style: RiseText.caption),
+            ],
+          ),
+        ),
+      );
+
+  Widget _streakCard(StreakStats s) => RiseCard(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 6),
+                  child: Icon(Icons.local_fire_department,
+                      color: RiseColors.waking, size: 30),
+                ),
+                const SizedBox(width: 8),
+                Text('${s.current}',
+                    style: RiseText.mono(size: 52, weight: FontWeight.w600)),
+                const SizedBox(width: 8),
+                Text(s.current == 1 ? 'day' : 'days',
+                    style: RiseText.body.copyWith(color: RiseColors.textDim)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text('current streak', style: RiseText.caption),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _miniStat('Best', '${s.best}'),
+                Container(width: 1, height: 32, color: RiseColors.divider),
+                _miniStat('Freezes', '${s.freezesRemaining}'),
+              ],
+            ),
+          ],
+        ),
+      );
+
+  Widget _miniStat(String label, String value) => Column(
+        children: [
+          Text(value, style: RiseText.mono(size: 22, weight: FontWeight.w600)),
+          const SizedBox(height: 2),
+          Text(label, style: RiseText.caption),
+        ],
+      );
+
+  Widget _calendar(Map<DateTime, DayOutcome> byDay, DateTime now) {
+    final today = _todayLocal(now);
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (var i = 29; i >= 0; i--)
+          Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              color: _cellColor(byDay[today.subtract(Duration(days: i))]),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: RiseColors.border),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Color _cellColor(DayOutcome? o) => switch (o) {
+        DayOutcome.success => RiseColors.positive,
+        DayOutcome.miss => RiseColors.danger,
+        DayOutcome.pending => RiseColors.waking,
+        DayOutcome.neutral || null => RiseColors.surface2,
+      };
+
+  Widget _weekChart(List<DayWake> wakes) {
+    const maxMin = 30.0;
+    const maxH = 64.0;
+    return SizedBox(
+      height: 100,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (final w in wakes)
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Container(
+                    width: 18,
+                    height: w.deltaMinutes == null
+                        ? 4
+                        : 6 +
+                            (w.deltaMinutes!.clamp(0, maxMin) / maxMin) * maxH,
+                    decoration: BoxDecoration(
+                      color: w.hasEvent
+                          ? (w.onTime ? RiseColors.positive : RiseColors.danger)
+                          : RiseColors.border,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(_weekdayLetter(w.day),
+                      style: RiseText.caption.copyWith(fontSize: 10)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static String _weekdayLetter(DateTime day) {
+    const letters = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Mon..Sun
+    return letters[(day.weekday - 1) % 7];
+  }
+}
+```
+
+- [ ] **Step 4: Run the stats test to verify it passes**
+
+```bash
+flutter test test/ui/screens/stats_screen_test.dart
+```
+Expected: PASS — 5 tests green (2 widget, 3 pure).
+
+- [ ] **Step 5: Whole suite, analyze, commit**
+
+```bash
+flutter test
+flutter analyze
+git add lib/ui/screens/stats_screen.dart test/ui/screens/stats_screen_test.dart
+git commit -m "feat(ui): add the Stats screen (streak, calendar, week chart)"
+```
+
+---
+
+### Task 9: App shell Sleep→Stats + deep-link + device verify
+
+Full code written just before dispatch. Summary + interfaces:
+- Modify `lib/ui/screens/app_shell.dart`: rename the stubbed **Sleep** tab to **Stats** (chart/flame icon) hosting `StatsScreen`; wire `HomeScreen`'s `onStreak` → switch `_tab` to the Stats index. Keep the Crew stub. Update `app_shell_test.dart`: a test that tapping the Home streak pill switches to the Stats tab (shows `StatsScreen`), and that the Stats tab renders `StatsScreen`.
+- Then the **on-device verification** protocol on the Samsung: create an alarm → ring → dismiss on time → the Home streak pill increments and the Stats screen shows the day on-time; a late/skipped dismissal shows as a miss. Record results in `docs/superpowers/reliability/2026-07-17-phase4a-device-results.md`. This is the increment's finish line before merge.
 
 - **Task 4 — WakeEventRepository** (`wake_event_repository.dart`): `openRing({alarmId, scheduledAt, firstRingAt, label}) → Future<int>` (reuse an open event for the alarm within 6 h, else insert); `finalizeDismiss({alarmId, dismissedAt, method}) → Future<void>` (find open event, set `dismissedAt`/`method`/`onTime = dismissedAt−firstRingAt ≤ 15 min`; no-op if none); `watchAll() → Stream<List<WakeEvent>>`. Tests: reuse-window, onTime boundary 14:59/15:01, no-op on closed/missing.
 - **Task 5 — WakeRecorder + providers** (`wake_recorder.dart`, `wake_providers.dart`; expose `RiseDatabase` on `AlarmSyncService`): `WakeRecorder(repo, alarmRepo)` with `openRing(int alarmId)` (looks up the alarm → label + `scheduledAt` = today's local h:m→UTC) and `finalizeDismiss(int alarmId, {String? method})`; providers `wakeEventRepositoryProvider`, `wakeRecorderProvider`, `wakeEventsProvider`, `streakProvider = computeStreak(events, DateTime.now())`.
