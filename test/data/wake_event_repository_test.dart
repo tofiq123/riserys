@@ -98,4 +98,39 @@ void main() {
     expect(all.where((e) => e.isOpen), isEmpty);
     expect(all.map((e) => e.method).toSet(), {'mission', 'slide'});
   });
+
+  test('finalizeDismiss exactly at the grace boundary (15:00) is on time', () async {
+    await repo.openRing(alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    await repo.finalizeDismiss(
+        alarmId: 1, dismissedAt: ring.add(const Duration(minutes: 15)), method: 'slide');
+    expect((await repo.all()).single.onTime, isTrue); // <= grace: exactly 15:00 counts
+  });
+
+  test('a closed event within the reuse window is NOT reused', () async {
+    final first = await repo.openRing(
+        alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    await repo.finalizeDismiss(
+        alarmId: 1, dismissedAt: ring.add(const Duration(minutes: 3)), method: 'mission');
+    // A new firing ~1h later (well inside 6h) must start a FRESH event, because
+    // reuse only considers still-open events.
+    final second = await repo.openRing(
+        alarmId: 1,
+        scheduledAt: ring,
+        firstRingAt: ring.add(const Duration(hours: 1)),
+        label: 'Run');
+    expect(second, isNot(first));
+    expect(await repo.all(), hasLength(2));
+  });
+
+  test('openRing reuses at exactly the 6h reuse-window boundary', () async {
+    final id1 = await repo.openRing(
+        alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    final id2 = await repo.openRing(
+        alarmId: 1,
+        scheduledAt: ring,
+        firstRingAt: ring.add(const Duration(hours: 6)),
+        label: 'Run');
+    expect(id2, id1); // <= reuseWindow: exactly 6h still the same firing
+    expect(await repo.all(), hasLength(1));
+  });
 }
