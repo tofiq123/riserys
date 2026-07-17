@@ -341,10 +341,272 @@ git commit -m "feat(data): add snoozed_until column (schema v4) + repository sno
 
 ---
 
-## Remaining tasks (Tasks 3–10 — full code written just before each is executed)
+### Task 3: Settings model (RiseSettings + AppSettings + settingsProvider)
 
-Each gets its complete code just before dispatch (same flow used for Plans 3/4a). Summary + interfaces:
-- **Task 3 — Settings model** (`rise_settings.dart`: `RiseSettings{snoozeMaxCount, snoozeFlatMinutes, wakeCheckEnabled, wakeCheckDelayMinutes}` + `snoozeDurationMinutes(int index)`; `app_settings.dart` getters/setters; `settingsProvider` = `StateNotifierProvider<SettingsController, RiseSettings>` loading from + persisting to SharedPreferences). Round-trip tests.
+**Files:**
+- Create: `lib/domain/rise_settings.dart`
+- Modify: `lib/data/app_settings.dart`
+- Modify: `lib/ui/state/settings_providers.dart`
+- Test: `test/domain/rise_settings_test.dart`, `test/data/app_settings_test.dart` (add), `test/ui/state/settings_providers_test.dart`
+
+**Interfaces:**
+- Produces: `RiseSettings{snoozeMaxCount, snoozeFlatMinutes, wakeCheckEnabled, wakeCheckDelayMinutes}` + `int snoozeDurationMinutes(int index)` + `copyWith`/`==`/`hashCode`; `AppSettings` getters/setters for the four keys + `RiseSettings get settings`; `settingsProvider` (`StateNotifierProvider<SettingsController, RiseSettings>`) with `SettingsController.setSnoozeMaxCount/setSnoozeFlatMinutes/setWakeCheckEnabled/setWakeCheckDelayMinutes`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `test/domain/rise_settings_test.dart`:
+
+```dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/rise_settings.dart';
+
+void main() {
+  test('defaults', () {
+    const s = RiseSettings();
+    expect(s.snoozeMaxCount, 3);
+    expect(s.snoozeFlatMinutes, 0);
+    expect(s.wakeCheckEnabled, isTrue);
+    expect(s.wakeCheckDelayMinutes, 5);
+  });
+
+  test('snoozeDurationMinutes uses the shrinking schedule by default', () {
+    const s = RiseSettings();
+    expect(s.snoozeDurationMinutes(0), 9);
+    expect(s.snoozeDurationMinutes(1), 5);
+    expect(s.snoozeDurationMinutes(2), 3);
+    expect(s.snoozeDurationMinutes(3), 2);
+    expect(s.snoozeDurationMinutes(4), 1);
+    expect(s.snoozeDurationMinutes(9), 1); // clamps to the last value
+  });
+
+  test('snoozeDurationMinutes uses a flat value when set', () {
+    const s = RiseSettings(snoozeFlatMinutes: 10);
+    expect(s.snoozeDurationMinutes(0), 10);
+    expect(s.snoozeDurationMinutes(3), 10);
+  });
+
+  test('copyWith and equality', () {
+    const s = RiseSettings();
+    expect(s.copyWith(snoozeMaxCount: 5).snoozeMaxCount, 5);
+    expect(s.copyWith(), s);
+    expect(const RiseSettings(wakeCheckEnabled: false) == const RiseSettings(),
+        isFalse);
+  });
+}
+```
+
+Add to `test/data/app_settings_test.dart` (inside `main()`):
+
+```dart
+  test('snooze + wake-check settings default and round-trip', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.snoozeMaxCount, 3);
+    expect(s.snoozeFlatMinutes, 0);
+    expect(s.wakeCheckEnabled, isTrue);
+    expect(s.wakeCheckDelayMinutes, 5);
+
+    await s.setSnoozeMaxCount(2);
+    await s.setSnoozeFlatMinutes(10);
+    await s.setWakeCheckEnabled(false);
+    await s.setWakeCheckDelayMinutes(15);
+
+    final s2 = await AppSettings.load();
+    expect(s2.snoozeMaxCount, 2);
+    expect(s2.snoozeFlatMinutes, 10);
+    expect(s2.wakeCheckEnabled, isFalse);
+    expect(s2.wakeCheckDelayMinutes, 15);
+    expect(s2.settings.snoozeMaxCount, 2); // snapshot
+  });
+```
+
+Create `test/ui/state/settings_providers_test.dart`:
+
+```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/app_settings.dart';
+import 'package:rise/ui/state/settings_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('SettingsController persists a change and updates state', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    final c = ProviderContainer(
+        overrides: [appSettingsProvider.overrideWithValue(store)]);
+    addTearDown(c.dispose);
+
+    expect(c.read(settingsProvider).snoozeMaxCount, 3);
+    await c.read(settingsProvider.notifier).setSnoozeMaxCount(1);
+    expect(c.read(settingsProvider).snoozeMaxCount, 1); // state updated
+    expect((await AppSettings.load()).snoozeMaxCount, 1); // persisted
+  });
+
+  test('SettingsController toggles the wake-check', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    final c = ProviderContainer(
+        overrides: [appSettingsProvider.overrideWithValue(store)]);
+    addTearDown(c.dispose);
+    await c.read(settingsProvider.notifier).setWakeCheckEnabled(false);
+    expect(c.read(settingsProvider).wakeCheckEnabled, isFalse);
+  });
+}
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+```bash
+flutter test test/domain/rise_settings_test.dart test/ui/state/settings_providers_test.dart
+```
+Expected: FAIL — `rise_settings.dart` / `SettingsController` don't exist.
+
+- [ ] **Step 3: Create `RiseSettings`**
+
+Create `lib/domain/rise_settings.dart`:
+
+```dart
+/// Immutable snapshot of the user's app-level preferences (snooze budget + the
+/// wake-up check). Persisted by `AppSettings`; edited via `settingsProvider`.
+class RiseSettings {
+  const RiseSettings({
+    this.snoozeMaxCount = 3,
+    this.snoozeFlatMinutes = 0,
+    this.wakeCheckEnabled = true,
+    this.wakeCheckDelayMinutes = 5,
+  });
+
+  /// Max snoozes before the button hides (0 disables snooze).
+  final int snoozeMaxCount;
+
+  /// A flat snooze length in minutes, or 0 to use the shrinking schedule.
+  final int snoozeFlatMinutes;
+
+  final bool wakeCheckEnabled;
+
+  /// Minutes after dismissal before the "still up?" check.
+  final int wakeCheckDelayMinutes;
+
+  static const _shrinking = [9, 5, 3, 2, 1];
+
+  /// The duration (minutes) of the [index]-th snooze (0-based): a flat value
+  /// if configured, else the shrinking schedule (clamped to its last value).
+  int snoozeDurationMinutes(int index) {
+    if (snoozeFlatMinutes > 0) return snoozeFlatMinutes;
+    return _shrinking[index.clamp(0, _shrinking.length - 1)];
+  }
+
+  RiseSettings copyWith({
+    int? snoozeMaxCount,
+    int? snoozeFlatMinutes,
+    bool? wakeCheckEnabled,
+    int? wakeCheckDelayMinutes,
+  }) =>
+      RiseSettings(
+        snoozeMaxCount: snoozeMaxCount ?? this.snoozeMaxCount,
+        snoozeFlatMinutes: snoozeFlatMinutes ?? this.snoozeFlatMinutes,
+        wakeCheckEnabled: wakeCheckEnabled ?? this.wakeCheckEnabled,
+        wakeCheckDelayMinutes:
+            wakeCheckDelayMinutes ?? this.wakeCheckDelayMinutes,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is RiseSettings &&
+      other.snoozeMaxCount == snoozeMaxCount &&
+      other.snoozeFlatMinutes == snoozeFlatMinutes &&
+      other.wakeCheckEnabled == wakeCheckEnabled &&
+      other.wakeCheckDelayMinutes == wakeCheckDelayMinutes;
+
+  @override
+  int get hashCode => Object.hash(snoozeMaxCount, snoozeFlatMinutes,
+      wakeCheckEnabled, wakeCheckDelayMinutes);
+}
+```
+
+- [ ] **Step 4: Extend `AppSettings`**
+
+In `lib/data/app_settings.dart`, add `import '../domain/rise_settings.dart';` at the top, and inside the class (after the onboarding members):
+
+```dart
+  static const _kSnoozeMaxCount = 'snoozeMaxCount';
+  static const _kSnoozeFlatMinutes = 'snoozeFlatMinutes';
+  static const _kWakeCheckEnabled = 'wakeCheckEnabled';
+  static const _kWakeCheckDelayMinutes = 'wakeCheckDelayMinutes';
+
+  int get snoozeMaxCount => _prefs.getInt(_kSnoozeMaxCount) ?? 3;
+  Future<void> setSnoozeMaxCount(int v) => _prefs.setInt(_kSnoozeMaxCount, v);
+
+  int get snoozeFlatMinutes => _prefs.getInt(_kSnoozeFlatMinutes) ?? 0;
+  Future<void> setSnoozeFlatMinutes(int v) =>
+      _prefs.setInt(_kSnoozeFlatMinutes, v);
+
+  bool get wakeCheckEnabled => _prefs.getBool(_kWakeCheckEnabled) ?? true;
+  Future<void> setWakeCheckEnabled(bool v) =>
+      _prefs.setBool(_kWakeCheckEnabled, v);
+
+  int get wakeCheckDelayMinutes => _prefs.getInt(_kWakeCheckDelayMinutes) ?? 5;
+  Future<void> setWakeCheckDelayMinutes(int v) =>
+      _prefs.setInt(_kWakeCheckDelayMinutes, v);
+
+  /// A snapshot of the mutable settings (snooze + wake-check).
+  RiseSettings get settings => RiseSettings(
+        snoozeMaxCount: snoozeMaxCount,
+        snoozeFlatMinutes: snoozeFlatMinutes,
+        wakeCheckEnabled: wakeCheckEnabled,
+        wakeCheckDelayMinutes: wakeCheckDelayMinutes,
+      );
+```
+
+- [ ] **Step 5: Add the controller + provider**
+
+In `lib/ui/state/settings_providers.dart`, add `import '../../domain/rise_settings.dart';` (and ensure `flutter_riverpod` + `app_settings` are imported), and append:
+
+```dart
+/// Editable snooze + wake-check settings, backed by [AppSettings].
+class SettingsController extends StateNotifier<RiseSettings> {
+  SettingsController(this._store) : super(_store.settings);
+
+  final AppSettings _store;
+
+  Future<void> setSnoozeMaxCount(int v) async {
+    await _store.setSnoozeMaxCount(v);
+    state = state.copyWith(snoozeMaxCount: v);
+  }
+
+  Future<void> setSnoozeFlatMinutes(int v) async {
+    await _store.setSnoozeFlatMinutes(v);
+    state = state.copyWith(snoozeFlatMinutes: v);
+  }
+
+  Future<void> setWakeCheckEnabled(bool v) async {
+    await _store.setWakeCheckEnabled(v);
+    state = state.copyWith(wakeCheckEnabled: v);
+  }
+
+  Future<void> setWakeCheckDelayMinutes(int v) async {
+    await _store.setWakeCheckDelayMinutes(v);
+    state = state.copyWith(wakeCheckDelayMinutes: v);
+  }
+}
+
+final settingsProvider =
+    StateNotifierProvider<SettingsController, RiseSettings>(
+        (ref) => SettingsController(ref.watch(appSettingsProvider)));
+```
+
+- [ ] **Step 6: Run tests, whole suite, analyze, commit**
+
+```bash
+flutter test test/domain/rise_settings_test.dart test/data/app_settings_test.dart test/ui/state/settings_providers_test.dart
+flutter test
+flutter analyze
+git add lib/domain/rise_settings.dart lib/data/app_settings.dart lib/ui/state/settings_providers.dart test/domain/rise_settings_test.dart test/data/app_settings_test.dart test/ui/state/settings_providers_test.dart
+git commit -m "feat(settings): add RiseSettings + settingsProvider for snooze/wake-check config"
+```
 - **Task 4 — Snooze orchestration** (`wake_event_repository.dart` `bumpSnooze(alarmId)`; `lib/data/snooze.dart` `snoozeAlarm(alarmId, Duration)` = bump snooze on the open event → set `snoozedUntil` → `stopRinging` → `reconcileNow`, best-effort ordering like `dismissRingingAlarm`). Repo + orchestration tests (fake platform).
 - **Task 5 — Ring-screen Snooze button** (`ring_screen.dart`: reads `settingsProvider` + the open event's `snoozeCount`; shows "Snooze N min" while under budget; injectable `snoozeAlarm`; on snooze, pop). Widget tests: shows/hides per budget; snooze calls the action with the right duration; `maxCount==0` hides it.
 - **Task 6 — Settings screen** (`settings_screen.dart`: Snooze section — max-count stepper 0–5, length mode Shrinking/5/10/15; Wake-up-check section — toggle + delay stepper 1–30; all via `settingsProvider`. `profile_screen.dart` gains a "Settings" row; `app_shell.dart` routes to it). Widget tests: renders values, edits persist.
