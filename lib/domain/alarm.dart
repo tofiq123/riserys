@@ -95,7 +95,9 @@ class Alarm {
       lastDismissedAt: clearLastDismissedAt
           ? null
           : (lastDismissedAt ?? this.lastDismissedAt),
-      snoozedUntil: clearSnoozedUntil ? null : (snoozedUntil ?? this.snoozedUntil),
+      snoozedUntil: clearSnoozedUntil
+          ? null
+          : (snoozedUntil ?? this.snoozedUntil),
     );
   }
 
