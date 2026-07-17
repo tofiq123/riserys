@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/domain/alarm.dart';
+import 'package:rise/domain/rise_settings.dart';
+import 'package:rise/domain/wake_event.dart';
 import 'package:rise/ui/components/slide_to_wake.dart';
 import 'package:rise/ui/missions/hold_mission.dart';
 import 'package:rise/ui/missions/math_mission.dart';
@@ -10,6 +12,8 @@ import 'package:rise/ui/missions/mission_host.dart';
 import 'package:rise/ui/missions/tap_mission.dart';
 import 'package:rise/ui/screens/ring_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
+import 'package:rise/ui/state/settings_providers.dart';
+import 'package:rise/ui/state/wake_providers.dart';
 
 Widget _wrap(Widget child) =>
     MaterialApp(home: Scaffold(body: Center(child: child)));
@@ -229,6 +233,8 @@ void main() {
         overrides: [
           alarmsProvider.overrideWith((ref) => Stream.value(
               const [Alarm(id: 7, hour: 6, minute: 30, mission: 'tap')])),
+          currentSettingsProvider.overrideWithValue(const RiseSettings()),
+          wakeEventsProvider.overrideWith((ref) => Stream.value(const <WakeEvent>[])),
         ],
         child: MaterialApp(
           home: RingScreen(

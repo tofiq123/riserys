@@ -39,3 +39,8 @@ class SettingsController extends StateNotifier<RiseSettings> {
 final settingsProvider =
     StateNotifierProvider<SettingsController, RiseSettings>(
         (ref) => SettingsController(ref.watch(appSettingsProvider)));
+
+/// Read-only view of the current settings, for consumers that only read (e.g.
+/// the ring screen). Trivially overridable with a fixed value in tests.
+final currentSettingsProvider =
+    Provider<RiseSettings>((ref) => ref.watch(settingsProvider));

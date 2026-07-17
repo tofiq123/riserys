@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/native/alarm_api.g.dart';
 import 'package:rise/data/permission_gateway.dart';
 import 'package:rise/domain/alarm.dart';
+import 'package:rise/domain/rise_settings.dart';
 import 'package:rise/domain/scheduled_occurrence.dart';
 import 'package:rise/domain/wake_event.dart';
 import 'package:rise/ui/components/toast.dart';
@@ -15,6 +16,7 @@ import 'package:rise/ui/screens/ring_screen.dart';
 import 'package:rise/ui/screens/stats_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
 import 'package:rise/domain/streak.dart';
+import 'package:rise/ui/state/settings_providers.dart';
 import 'package:rise/ui/state/wake_providers.dart';
 
 class _FakeGateway implements PermissionGateway {
@@ -39,6 +41,7 @@ List<Override> _overrides(List<Alarm> alarms, ScheduledOccurrence? next) => [
       nextOccurrenceProvider.overrideWith((ref) async => next),
       streakProvider.overrideWithValue(StreakStats.empty),
       wakeEventsProvider.overrideWith((ref) => Stream.value(const <WakeEvent>[])),
+      currentSettingsProvider.overrideWithValue(const RiseSettings()),
     ];
 
 Widget _host(ProviderContainer c) => UncontrolledProviderScope(

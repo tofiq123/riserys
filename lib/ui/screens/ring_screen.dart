@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/alarm_sync_service.dart';
 import '../../data/native/alarm_api.g.dart';
+import '../../data/snooze.dart';
 import '../../domain/alarm.dart';
 import '../components/slide_to_wake.dart';
 import '../state/alarm_providers.dart';
+import '../state/settings_providers.dart';
 import '../state/wake_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
@@ -54,6 +56,7 @@ class RingScreen extends ConsumerStatefulWidget {
     this.dismissAlarm = dismissRingingAlarm,
     this.missionBuilder,
     this.record = false,
+    this.snooze = snoozeAlarm,
   });
 
   final int alarmId;
@@ -71,6 +74,10 @@ class RingScreen extends ConsumerStatefulWidget {
   /// mount, finalised on dismiss. Off for previews. Best-effort: a wake-log
   /// failure is logged, never thrown into the ring.
   final bool record;
+
+  /// Snooze action (silence + defer). Injectable for tests; defaults to
+  /// [snoozeAlarm].
+  final Future<void> Function(int alarmId, Duration duration) snooze;
 
   @override
   ConsumerState<RingScreen> createState() => _RingScreenState();
@@ -141,12 +148,51 @@ class _RingScreenState extends ConsumerState<RingScreen>
     widget.onDismissed?.call();
   }
 
+  Future<void> _snooze(Duration d) async {
+    if (_dismissing) return; // shares the dismiss guard
+    setState(() => _dismissing = true);
+    try {
+      await widget.snooze(widget.alarmId, d);
+    } catch (e) {
+      debugPrint('Rise: snooze failed for ${widget.alarmId}: $e');
+      if (mounted) {
+        setState(() {
+          _dismissing = false;
+          _attempt++;
+        });
+      }
+      return;
+    }
+    if (!mounted) return;
+    widget.onDismissed?.call(); // close the ring screen
+  }
+
+  Widget _snoozeButton(int minutes) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _snooze(Duration(minutes: minutes)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text('Snooze $minutes min',
+              style: RiseText.body.copyWith(
+                  color: RiseColors.textDim, fontWeight: FontWeight.w600)),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final alarm = ref
         .watch(alarmsProvider)
         .value
         ?.firstWhereOrNull((a) => a.id == widget.alarmId);
+    final settings = ref.watch(currentSettingsProvider);
+    final snoozeCount = ref
+            .watch(wakeEventsProvider)
+            .value
+            ?.firstWhereOrNull((e) => e.alarmId == widget.alarmId && e.isOpen)
+            ?.snoozeCount ??
+        0;
+    final canSnooze = snoozeCount < settings.snoozeMaxCount;
+    final snoozeMinutes = settings.snoozeDurationMinutes(snoozeCount);
     final label = alarm?.label ?? 'Alarm';
     final now = DateTime.now();
     final hour12 = now.hour % 12 == 0 ? 12 : now.hour % 12;
@@ -200,6 +246,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
               Text(label, style: RiseText.title.copyWith(color: RiseColors.textDim)),
               const Spacer(),
               gate,
+              if (canSnooze) _snoozeButton(snoozeMinutes),
             ],
           ),
         ),
