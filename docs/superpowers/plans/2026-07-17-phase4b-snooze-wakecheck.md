@@ -607,7 +607,132 @@ flutter analyze
 git add lib/domain/rise_settings.dart lib/data/app_settings.dart lib/ui/state/settings_providers.dart test/domain/rise_settings_test.dart test/data/app_settings_test.dart test/ui/state/settings_providers_test.dart
 git commit -m "feat(settings): add RiseSettings + settingsProvider for snooze/wake-check config"
 ```
-- **Task 4 — Snooze orchestration** (`wake_event_repository.dart` `bumpSnooze(alarmId)`; `lib/data/snooze.dart` `snoozeAlarm(alarmId, Duration)` = bump snooze on the open event → set `snoozedUntil` → `stopRinging` → `reconcileNow`, best-effort ordering like `dismissRingingAlarm`). Repo + orchestration tests (fake platform).
+### Task 4: Snooze orchestration
+
+**Files:**
+- Modify: `lib/data/local/wake_event_repository.dart`
+- Create: `lib/data/snooze.dart`
+- Test: `test/data/wake_event_repository_test.dart` (add)
+
+**Interfaces:**
+- Consumes: `WakeEventRepository._openRowFor`, `AlarmHostApi().stopRinging`, `AlarmSyncService.instance` (`repository.setSnoozedUntil`/`repository.database`, `reconcileNow`).
+- Produces: `WakeEventRepository.bumpSnooze(int alarmId)`; top-level `Future<void> snoozeAlarm(int alarmId, Duration duration)`.
+
+- [ ] **Step 1: Write the failing `bumpSnooze` tests**
+
+Add to `test/data/wake_event_repository_test.dart` (reuse its `ring`/`repo` setUp):
+
+```dart
+  test('bumpSnooze increments the open event\'s snooze count', () async {
+    await repo.openRing(
+        alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    await repo.bumpSnooze(1);
+    await repo.bumpSnooze(1);
+    expect((await repo.all()).single.snoozeCount, 2);
+  });
+
+  test('bumpSnooze is a no-op when nothing is open', () async {
+    await repo.bumpSnooze(99);
+    expect(await repo.all(), isEmpty);
+  });
+
+  test('bumpSnooze only touches the open event, not a closed one', () async {
+    await repo.openRing(
+        alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    await repo.finalizeDismiss(
+        alarmId: 1, dismissedAt: ring.add(const Duration(minutes: 3)), method: 'slide');
+    await repo.openRing(
+        alarmId: 1,
+        scheduledAt: ring,
+        firstRingAt: ring.add(const Duration(hours: 24)),
+        label: 'Run');
+    await repo.bumpSnooze(1);
+    final all = await repo.all();
+    expect(all.firstWhere((e) => e.isOpen).snoozeCount, 1);
+    expect(all.firstWhere((e) => !e.isOpen).snoozeCount, 0);
+  });
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+```bash
+flutter test test/data/wake_event_repository_test.dart
+```
+Expected: FAIL — `bumpSnooze` doesn't exist.
+
+- [ ] **Step 3: Add `bumpSnooze`**
+
+In `lib/data/local/wake_event_repository.dart`, after `finalizeDismiss`:
+
+```dart
+  /// Increments the open event's snooze count (called when the user snoozes).
+  /// No-op if none is open.
+  Future<void> bumpSnooze(int alarmId) async {
+    final open = await _openRowFor(alarmId);
+    if (open == null) return;
+    await (_db.update(_db.wakeEvents)..where((t) => t.id.equals(open.id)))
+        .write(WakeEventsCompanion(snoozeCount: Value(open.snoozeCount + 1)));
+  }
+```
+
+- [ ] **Step 4: Run to verify they pass**
+
+```bash
+flutter test test/data/wake_event_repository_test.dart
+```
+Expected: PASS.
+
+- [ ] **Step 5: Create the snooze orchestration**
+
+Create `lib/data/snooze.dart`:
+
+```dart
+import 'package:flutter/foundation.dart';
+
+import 'alarm_sync_service.dart';
+import 'local/wake_event_repository.dart';
+import 'native/alarm_api.g.dart';
+
+/// Defers the ringing alarm by [duration] (a snooze). The order mirrors
+/// [dismissRingingAlarm]: silence FIRST and unconditionally (a snooze must
+/// quiet the alarm immediately), then record + reconcile best-effort. Setting
+/// `snoozedUntil` makes the ordinary reconcile arm the alarm for that instant —
+/// no parallel scheduler.
+///
+/// If `stopRinging` throws (the alarm may still be sounding), the throw
+/// propagates so the ring screen keeps the screen up rather than falsely
+/// reporting the snooze succeeded.
+Future<void> snoozeAlarm(int alarmId, Duration duration) async {
+  await AlarmHostApi().stopRinging(alarmId);
+  try {
+    final sync = AlarmSyncService.instance;
+    final at = DateTime.now().toUtc().add(duration);
+    await sync.repository.setSnoozedUntil(alarmId, at);
+    await WakeEventRepository(sync.repository.database).bumpSnooze(alarmId);
+    await sync.reconcileNow();
+  } catch (e) {
+    debugPrint('Rise: could not snooze alarm $alarmId: $e');
+  }
+}
+```
+
+> `snoozeAlarm`, like `dismissRingingAlarm`, orchestrates the native channel + the singleton service, so it is not unit-tested here (it is device-verified in Task 10 and exercised through the ring screen's injectable snooze in Task 5). Only `bumpSnooze` gets unit coverage.
+
+- [ ] **Step 6: Whole suite, analyze, commit**
+
+```bash
+flutter test
+flutter analyze
+git add lib/data/local/wake_event_repository.dart lib/data/snooze.dart test/data/wake_event_repository_test.dart
+git commit -m "feat(data): add snooze orchestration (bumpSnooze + snoozeAlarm)"
+```
+
+---
+
+## Remaining tasks (Tasks 5–10 — full code written just before each is executed)
+
+Each gets its complete code just before dispatch. Summary + interfaces:
+- **Task 5 — Ring-screen Snooze button** (`ring_screen.dart`: reads `settingsProvider` + the open event's `snoozeCount`; shows "Snooze N min" while under budget; injectable `snoozeAlarm`; on snooze, pop). Widget tests: shows/hides per budget; snooze calls the action with the right duration; `maxCount==0` hides it.
 - **Task 5 — Ring-screen Snooze button** (`ring_screen.dart`: reads `settingsProvider` + the open event's `snoozeCount`; shows "Snooze N min" while under budget; injectable `snoozeAlarm`; on snooze, pop). Widget tests: shows/hides per budget; snooze calls the action with the right duration; `maxCount==0` hides it.
 - **Task 6 — Settings screen** (`settings_screen.dart`: Snooze section — max-count stepper 0–5, length mode Shrinking/5/10/15; Wake-up-check section — toggle + delay stepper 1–30; all via `settingsProvider`. `profile_screen.dart` gains a "Settings" row; `app_shell.dart` routes to it). Widget tests: renders values, edits persist.
 - **Task 7 — Pigeon contract** (`pigeons/alarm_api.dart`: `void scheduleWakeCheck(NativeAlarm alarm, int checkAtEpochMs)`, `void cancelWakeCheck(int alarmId)`; regenerate `alarm_api.g.dart`/`AlarmApi.g.kt`/`AlarmApi.g.swift` via `dart run pigeon`). Compile check (analyze + build).
