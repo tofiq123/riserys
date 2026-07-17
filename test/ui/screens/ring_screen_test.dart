@@ -40,12 +40,16 @@ Widget _host({
   RiseSettings settings = const RiseSettings(),
   List<WakeEvent> wakeEvents = const [],
   Future<void> Function(int, Duration)? snooze,
+  bool record = false,
+  WakeRecorder? recorder,
+  Future<void> Function(Alarm, Duration)? armWakeCheck,
 }) {
   return ProviderScope(
     overrides: [
       alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
       currentSettingsProvider.overrideWithValue(settings),
       wakeEventsProvider.overrideWith((ref) => Stream.value(wakeEvents)),
+      if (recorder != null) wakeRecorderProvider.overrideWithValue(recorder),
     ],
     child: MaterialApp(
       home: RingScreen(
@@ -54,6 +58,8 @@ Widget _host({
         dismissAlarm: dismissAlarm ?? (_) async {},
         missionBuilder: missionBuilder,
         snooze: snooze ?? (_, __) async {},
+        record: record,
+        armWakeCheck: armWakeCheck ?? (_, __) async {},
       ),
     ),
   );
@@ -189,7 +195,12 @@ void main() {
         wakeEventsProvider.overrideWith((ref) => Stream.value(const <WakeEvent>[])),
       ],
       child: MaterialApp(
-        home: RingScreen(alarmId: 5, record: true, dismissAlarm: (_) async {}),
+        home: RingScreen(
+          alarmId: 5,
+          record: true,
+          dismissAlarm: (_) async {},
+          armWakeCheck: (_, __) async {},
+        ),
       ),
     ));
     await t.pump();
@@ -218,6 +229,7 @@ void main() {
           dismissAlarm: (_) async {},
           missionBuilder: (context, alarm, onSolved) =>
               TextButton(onPressed: onSolved, child: const Text('SOLVE')),
+          armWakeCheck: (_, __) async {},
         ),
       ),
     ));
@@ -267,6 +279,7 @@ void main() {
           record: true,
           dismissAlarm: (_) async {},
           onDismissed: () => done = true,
+          armWakeCheck: (_, __) async {},
         ),
       ),
     ));
@@ -340,5 +353,66 @@ void main() {
     ));
     await t.pump();
     expect(find.textContaining('Snooze'), findsNothing);
+  });
+
+  testWidgets('record + wake-check enabled arms the check on dismiss', (t) async {
+    Alarm? armed;
+    Duration? delay;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      record: true,
+      recorder: _RecordingRecorder(),
+      settings: const RiseSettings(wakeCheckEnabled: true, wakeCheckDelayMinutes: 5),
+      armWakeCheck: (a, d) async {
+        armed = a;
+        delay = d;
+      },
+      onDismissed: () {},
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(armed?.id, 5);
+    expect(delay, const Duration(minutes: 5));
+  });
+
+  testWidgets('wake-check disabled does not arm the check', (t) async {
+    var armedCount = 0;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      record: true,
+      recorder: _RecordingRecorder(),
+      settings: const RiseSettings(wakeCheckEnabled: false),
+      armWakeCheck: (_, __) async {
+        armedCount++;
+      },
+      onDismissed: () {},
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(armedCount, 0);
+  });
+
+  testWidgets('a preview dismissal (record false) does not arm the check', (t) async {
+    var armedCount = 0;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(wakeCheckEnabled: true),
+      armWakeCheck: (_, __) async {
+        armedCount++;
+      },
+      onDismissed: () {},
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(armedCount, 0);
   });
 }

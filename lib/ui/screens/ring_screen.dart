@@ -48,6 +48,26 @@ Future<void> dismissRingingAlarm(int alarmId) async {
   }
 }
 
+/// Arms the post-dismissal wake-up check for [alarm] at now + [delay]. The
+/// re-fire time (checkAt + 100s) is computed natively, so [NativeAlarm.fireAtEpochMs]
+/// is unused here; the label/sound/vibrate carry so the re-fire rings correctly.
+Future<void> defaultArmWakeCheck(Alarm alarm, Duration delay) async {
+  final checkAt = DateTime.now().toUtc().add(delay).millisecondsSinceEpoch;
+  await AlarmHostApi().scheduleWakeCheck(
+    NativeAlarm(
+      id: alarm.id,
+      fireAtEpochMs: 0,
+      label: alarm.label,
+      soundAsset: alarm.soundAsset,
+      vibrate: alarm.vibrate,
+      hour: alarm.hour,
+      minute: alarm.minute,
+      weekdays: alarm.days.toList(),
+    ),
+    checkAt,
+  );
+}
+
 class RingScreen extends ConsumerStatefulWidget {
   const RingScreen({
     super.key,
@@ -57,6 +77,7 @@ class RingScreen extends ConsumerStatefulWidget {
     this.missionBuilder,
     this.record = false,
     this.snooze = snoozeAlarm,
+    this.armWakeCheck = defaultArmWakeCheck,
   });
 
   final int alarmId;
@@ -78,6 +99,10 @@ class RingScreen extends ConsumerStatefulWidget {
   /// Snooze action (silence + defer). Injectable for tests; defaults to
   /// [snoozeAlarm].
   final Future<void> Function(int alarmId, Duration duration) snooze;
+
+  /// Arms the "still up?" check after a real dismissal. Injectable for tests;
+  /// defaults to [defaultArmWakeCheck].
+  final Future<void> Function(Alarm alarm, Duration delay) armWakeCheck;
 
   @override
   ConsumerState<RingScreen> createState() => _RingScreenState();
@@ -142,6 +167,21 @@ class _RingScreenState extends ConsumerState<RingScreen>
             .finalizeDismiss(widget.alarmId, method: method);
       } catch (e) {
         debugPrint('Rise: wake-finalize failed for ${widget.alarmId}: $e');
+      }
+      final settings = ref.read(currentSettingsProvider);
+      if (settings.wakeCheckEnabled) {
+        final alarm = ref
+            .read(alarmsProvider)
+            .value
+            ?.firstWhereOrNull((a) => a.id == widget.alarmId);
+        if (alarm != null) {
+          try {
+            await widget.armWakeCheck(
+                alarm, Duration(minutes: settings.wakeCheckDelayMinutes));
+          } catch (e) {
+            debugPrint('Rise: wake-check schedule failed for ${widget.alarmId}: $e');
+          }
+        }
       }
     }
     if (!mounted) return;
