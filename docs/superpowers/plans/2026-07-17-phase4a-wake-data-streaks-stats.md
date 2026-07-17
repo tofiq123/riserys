@@ -455,11 +455,212 @@ git commit -m "feat(domain): add pure streak engine"
 
 ---
 
-## Remaining tasks (Tasks 3–9 — full code written just before each is executed)
+### Task 3: WakeEvents Drift table + v2→v3 migration
+
+**Files:**
+- Modify: `lib/data/local/database.dart`
+- Regenerate: `lib/data/local/database.g.dart` (via build_runner)
+- Modify: `test/data/migration_test.dart` (update the schemaVersion assertion + add v3 tests)
+
+**Interfaces:**
+- Produces: a Drift table `WakeEvents` (row class `WakeEventRow`) with columns `id`, `alarmId`, `scheduledAt`, `firstRingAt`, `dismissedAt?`, `method?`, `snoozeCount`, `missionFailures`, `onTime`, `label`; accessible as `db.wakeEvents` with `WakeEventsCompanion.insert(alarmId:, scheduledAt:, firstRingAt:, ...)`. `schemaVersion == 3`.
+
+- [ ] **Step 1: Add the table + migration to `database.dart`**
+
+In `lib/data/local/database.dart`, add the table class after the `Alarms` class (before `@DriftDatabase`):
+
+```dart
+/// One logical firing of an alarm — opened when the ring starts, finalised on
+/// dismissal (added in schema v3). Independent of [Alarms]: deleting an alarm
+/// does not delete its history.
+@DataClassName('WakeEventRow')
+class WakeEvents extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get alarmId => integer()();
+  DateTimeColumn get scheduledAt => dateTime()();
+  DateTimeColumn get firstRingAt => dateTime()();
+  DateTimeColumn get dismissedAt => dateTime().nullable()();
+  TextColumn get method => text().nullable()();
+  IntColumn get snoozeCount => integer().withDefault(const Constant(0))();
+  IntColumn get missionFailures => integer().withDefault(const Constant(0))();
+  BoolColumn get onTime => boolean().withDefault(const Constant(false))();
+  TextColumn get label => text().withDefault(const Constant('Alarm'))();
+}
+```
+
+Change the annotation to register it:
+
+```dart
+@DriftDatabase(tables: [Alarms, WakeEvents])
+```
+
+Bump the version:
+
+```dart
+  @override
+  int get schemaVersion => 3;
+```
+
+Add the `from < 3` branch to `onUpgrade` (AFTER the existing `if (from < 2)` block, still inside the same `onUpgrade` closure):
+
+```dart
+          // v2 -> v3: the wake_events table. Idempotent like the column
+          // migration above — a losing isolate (or a partial prior run) that
+          // finds the table already present skips the create rather than
+          // crashing on "table wake_events already exists".
+          if (from < 3) {
+            if (!await _tableExists('wake_events')) {
+              await m.createTable(wakeEvents);
+            }
+          }
+```
+
+Add the helper next to `_columnNames`:
+
+```dart
+  /// Whether [table] exists, read from sqlite's own schema. Keeps the v3
+  /// table-create migration idempotent under the app's multi-isolate DB opens.
+  Future<bool> _tableExists(String table) async {
+    final rows = await customSelect(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+      variables: [Variable<String>(table)],
+    ).get();
+    return rows.isNotEmpty;
+  }
+```
+
+- [ ] **Step 2: Regenerate the Drift code**
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
+Expected: succeeds; `lib/data/local/database.g.dart` now contains `WakeEvents`/`WakeEventRow`/`WakeEventsCompanion`. (If `dart run build_runner` isn't found, use `flutter pub run build_runner build --delete-conflicting-outputs`.)
+
+- [ ] **Step 3: Update the existing migration test's version assertion**
+
+In `test/data/migration_test.dart`, the first test (`upgrading a v1 database adds mission columns…`) asserts `expect(db.schemaVersion, 2);` — change it to:
+
+```dart
+    expect(db.schemaVersion, 3);
+```
+(The v1 DB now upgrades straight to v3; that test still only checks the alarms columns, which the v2 branch still adds.)
+
+- [ ] **Step 4: Add the v3 migration tests**
+
+Append these three tests inside `main()` in `test/data/migration_test.dart`:
+
+```dart
+  test('upgrading a v2 database adds wake_events and keeps existing alarms', () async {
+    final raw = sqlite3.openInMemory();
+    raw.execute('''
+      CREATE TABLE alarms (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        hour INTEGER NOT NULL, minute INTEGER NOT NULL,
+        days TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1,
+        label TEXT NOT NULL DEFAULT 'Alarm',
+        sound_asset TEXT NOT NULL DEFAULT 'sounds/default_alarm.mp3',
+        vibrate INTEGER NOT NULL DEFAULT 1, last_dismissed_at INTEGER,
+        mission TEXT NOT NULL DEFAULT 'none', mission_diff TEXT NOT NULL DEFAULT 'easy',
+        CHECK (hour BETWEEN 0 AND 23), CHECK (minute BETWEEN 0 AND 59)
+      );
+    ''');
+    raw.execute("INSERT INTO alarms (hour, minute, label) VALUES (6, 30, 'Run');");
+    raw.execute('PRAGMA user_version = 2;');
+
+    final db = RiseDatabase(NativeDatabase.opened(raw));
+    addTearDown(db.close);
+
+    final alarms = await db.select(db.alarms).get();
+    expect(alarms.single.label, 'Run', reason: 'alarms survive the upgrade');
+
+    final id = await db.into(db.wakeEvents).insert(WakeEventsCompanion.insert(
+      alarmId: 1,
+      scheduledAt: DateTime.utc(2026, 7, 17, 6),
+      firstRingAt: DateTime.utc(2026, 7, 17, 6),
+    ));
+    final ev = await (db.select(db.wakeEvents)..where((t) => t.id.equals(id))).getSingle();
+    expect(ev.alarmId, 1);
+    expect(ev.snoozeCount, 0, reason: 'new-column defaults');
+    expect(ev.onTime, isFalse);
+    expect(db.schemaVersion, 3);
+  });
+
+  test('upgrading to v3 is idempotent when wake_events already exists', () async {
+    final raw = sqlite3.openInMemory();
+    raw.execute('''
+      CREATE TABLE alarms (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        hour INTEGER NOT NULL, minute INTEGER NOT NULL,
+        days TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1,
+        label TEXT NOT NULL DEFAULT 'Alarm',
+        sound_asset TEXT NOT NULL DEFAULT 'sounds/default_alarm.mp3',
+        vibrate INTEGER NOT NULL DEFAULT 1, last_dismissed_at INTEGER,
+        mission TEXT NOT NULL DEFAULT 'none', mission_diff TEXT NOT NULL DEFAULT 'easy',
+        CHECK (hour BETWEEN 0 AND 23), CHECK (minute BETWEEN 0 AND 59)
+      );
+    ''');
+    // wake_events already present (a losing isolate / partial prior run), but
+    // user_version still says 2, so onUpgrade(2 -> 3) will run.
+    raw.execute('''
+      CREATE TABLE wake_events (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        alarm_id INTEGER NOT NULL,
+        scheduled_at INTEGER NOT NULL,
+        first_ring_at INTEGER NOT NULL,
+        dismissed_at INTEGER,
+        method TEXT,
+        snooze_count INTEGER NOT NULL DEFAULT 0,
+        mission_failures INTEGER NOT NULL DEFAULT 0,
+        on_time INTEGER NOT NULL DEFAULT 0,
+        label TEXT NOT NULL DEFAULT 'Alarm'
+      );
+    ''');
+    raw.execute("INSERT INTO wake_events (alarm_id, scheduled_at, first_ring_at) VALUES (5, 0, 0);");
+    raw.execute('PRAGMA user_version = 2;');
+
+    final db = RiseDatabase(NativeDatabase.opened(raw));
+    addTearDown(db.close);
+
+    // Must not throw "table wake_events already exists"; the row is intact.
+    final rows = await db.select(db.wakeEvents).get();
+    expect(rows.single.alarmId, 5);
+  });
+
+  test('a fresh database is created at v3 with wake_events', () async {
+    final db = RiseDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final id = await db.into(db.wakeEvents).insert(WakeEventsCompanion.insert(
+      alarmId: 2,
+      scheduledAt: DateTime.utc(2026, 7, 17, 6),
+      firstRingAt: DateTime.utc(2026, 7, 17, 6),
+    ));
+    final ev = await (db.select(db.wakeEvents)..where((t) => t.id.equals(id))).getSingle();
+    expect(ev.alarmId, 2);
+  });
+```
+
+- [ ] **Step 5: Run the migration tests, whole suite, analyze**
+
+```bash
+flutter test test/data/migration_test.dart
+flutter test
+flutter analyze
+```
+Expected: migration tests green (the original 3 updated + 3 new); whole suite green; `No issues found!`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add lib/data/local/database.dart lib/data/local/database.g.dart test/data/migration_test.dart
+git commit -m "feat(data): add wake_events table with idempotent v3 migration"
+```
+
+---
+
+## Remaining tasks (Tasks 4–9 — full code written just before each is executed)
 
 Each gets its complete code just before dispatch (same flow used for Plan 3). Summary + interfaces:
 
-- **Task 3 — WakeEvents table** (modify `database.dart`): `@DataClassName('WakeEventRow')` table `WakeEvents` mirroring the entity columns; `schemaVersion` 3; idempotent `from < 3` migration guarded by a new `_tableExists(name)` helper; register in `@DriftDatabase(tables: [Alarms, WakeEvents])`. Migration-idempotency test.
 - **Task 4 — WakeEventRepository** (`wake_event_repository.dart`): `openRing({alarmId, scheduledAt, firstRingAt, label}) → Future<int>` (reuse an open event for the alarm within 6 h, else insert); `finalizeDismiss({alarmId, dismissedAt, method}) → Future<void>` (find open event, set `dismissedAt`/`method`/`onTime = dismissedAt−firstRingAt ≤ 15 min`; no-op if none); `watchAll() → Stream<List<WakeEvent>>`. Tests: reuse-window, onTime boundary 14:59/15:01, no-op on closed/missing.
 - **Task 5 — WakeRecorder + providers** (`wake_recorder.dart`, `wake_providers.dart`; expose `RiseDatabase` on `AlarmSyncService`): `WakeRecorder(repo, alarmRepo)` with `openRing(int alarmId)` (looks up the alarm → label + `scheduledAt` = today's local h:m→UTC) and `finalizeDismiss(int alarmId, {String? method})`; providers `wakeEventRepositoryProvider`, `wakeRecorderProvider`, `wakeEventsProvider`, `streakProvider = computeStreak(events, DateTime.now())`.
 - **Task 6 — Wire recording into the ring flow** (modify `ring_screen.dart` + `main.dart`): add `bool record = false`; when `record`, `initState` opens (`ref.read(wakeRecorderProvider).openRing`) and a successful `_dismiss(method)` finalizes — both wrapped best-effort; `_dismiss` takes the method ('mission' vs 'slide'); `main._showRing` passes `record: true`. Existing ring tests keep passing (default `record: false` → no provider read); a new test with a fake recorder verifies open+finalize.
