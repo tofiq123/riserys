@@ -160,11 +160,190 @@ git commit -m "feat(domain): add snoozedUntil to Alarm and honor it in nextOccur
 
 ---
 
-## Remaining tasks (Tasks 2–10 — full code written just before each is executed)
+### Task 2: `snoozedUntil` in the DB (schema v4) + repository
+
+**Files:**
+- Modify: `lib/data/local/database.dart`
+- Regenerate: `lib/data/local/database.g.dart` (build_runner)
+- Modify: `lib/data/local/alarm_repository.dart`
+- Modify: `test/data/migration_test.dart`, `test/data/alarm_repository_test.dart`
+
+**Interfaces:**
+- Produces: an `alarms.snoozed_until` (nullable DateTime) column; `db.schemaVersion == 4`; `AlarmRepository` now maps `snoozedUntil` and gains `setSnoozedUntil(int id, DateTime at)` + `clearSnoozedUntil(int id)`; `recordDismissed` also clears `snoozedUntil`.
+
+- [ ] **Step 1: Add the column + v4 migration to `database.dart`**
+
+In the `Alarms` table (after the `missionDiff` getter):
+
+```dart
+  /// When set (UTC), the alarm's next firing is this instant instead of its
+  /// schedule — a deferred re-ring from a snooze (added in schema v4).
+  DateTimeColumn get snoozedUntil => dateTime().nullable()();
+```
+
+Bump the version to `int get schemaVersion => 4;`. Add this branch to `onUpgrade` AFTER the existing `if (from < 3)` block:
+
+```dart
+          // v3 -> v4: the snoozed_until column. Idempotent like the v1->v2
+          // column migration — a losing isolate that finds it present skips the
+          // ALTER rather than crashing on "duplicate column name".
+          if (from < 4) {
+            final existing = await _columnNames('alarms');
+            if (!existing.contains('snoozed_until')) {
+              await m.addColumn(alarms, alarms.snoozedUntil);
+            }
+          }
+```
+
+- [ ] **Step 2: Regenerate Drift code**
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
+Expected: `database.g.dart` regenerates with the `snoozedUntil` column. (Do NOT stage `database.g.dart` — it's gitignored.)
+
+- [ ] **Step 3: Map + clear `snoozedUntil` in `alarm_repository.dart`**
+
+In `_toDomain`, add `snoozedUntil: row.snoozedUntil,`. In `upsert`'s `AlarmsCompanion`, add `snoozedUntil: Value(alarm.snoozedUntil),`. In `recordDismissed`'s `AlarmsCompanion(...)` write, add `snoozedUntil: const Value(null),` (dismissing ends any snooze). Add two methods:
+
+```dart
+  /// Defers the alarm's next firing to [at] (a snooze). Cleared by
+  /// [clearSnoozedUntil] or [recordDismissed].
+  Future<void> setSnoozedUntil(int id, DateTime at) =>
+      (_db.update(_db.alarms)..where((t) => t.id.equals(id)))
+          .write(AlarmsCompanion(snoozedUntil: Value(at.toUtc())));
+
+  Future<void> clearSnoozedUntil(int id) =>
+      (_db.update(_db.alarms)..where((t) => t.id.equals(id)))
+          .write(const AlarmsCompanion(snoozedUntil: Value(null)));
+```
+
+- [ ] **Step 4: Update the migration tests**
+
+In `test/data/migration_test.dart`: change EVERY `expect(db.schemaVersion, 3);` to `expect(db.schemaVersion, 4);` (the DB now upgrades to v4). Then append these tests inside `main()`:
+
+```dart
+  test('upgrading a v3 database adds snoozed_until and keeps existing alarms', () async {
+    final raw = sqlite3.openInMemory();
+    raw.execute('''
+      CREATE TABLE alarms (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        hour INTEGER NOT NULL, minute INTEGER NOT NULL,
+        days TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1,
+        label TEXT NOT NULL DEFAULT 'Alarm',
+        sound_asset TEXT NOT NULL DEFAULT 'sounds/default_alarm.mp3',
+        vibrate INTEGER NOT NULL DEFAULT 1, last_dismissed_at INTEGER,
+        mission TEXT NOT NULL DEFAULT 'none', mission_diff TEXT NOT NULL DEFAULT 'easy',
+        CHECK (hour BETWEEN 0 AND 23), CHECK (minute BETWEEN 0 AND 59)
+      );
+    ''');
+    raw.execute('''
+      CREATE TABLE wake_events (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        alarm_id INTEGER NOT NULL, scheduled_at INTEGER NOT NULL,
+        first_ring_at INTEGER NOT NULL, dismissed_at INTEGER, method TEXT,
+        snooze_count INTEGER NOT NULL DEFAULT 0, mission_failures INTEGER NOT NULL DEFAULT 0,
+        on_time INTEGER NOT NULL DEFAULT 0, label TEXT NOT NULL DEFAULT 'Alarm'
+      );
+    ''');
+    raw.execute("INSERT INTO alarms (hour, minute, label) VALUES (6, 30, 'Run');");
+    raw.execute('PRAGMA user_version = 3;');
+
+    final db = RiseDatabase(NativeDatabase.opened(raw));
+    addTearDown(db.close);
+
+    final alarms = await db.select(db.alarms).get();
+    expect(alarms.single.label, 'Run', reason: 'alarms survive the upgrade');
+    expect(alarms.single.snoozedUntil, isNull, reason: 'new column defaults null');
+    expect(db.schemaVersion, 4);
+  });
+
+  test('upgrading to v4 is idempotent when snoozed_until already exists', () async {
+    final raw = sqlite3.openInMemory();
+    raw.execute('''
+      CREATE TABLE alarms (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        hour INTEGER NOT NULL, minute INTEGER NOT NULL,
+        days TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1,
+        label TEXT NOT NULL DEFAULT 'Alarm',
+        sound_asset TEXT NOT NULL DEFAULT 'sounds/default_alarm.mp3',
+        vibrate INTEGER NOT NULL DEFAULT 1, last_dismissed_at INTEGER,
+        mission TEXT NOT NULL DEFAULT 'none', mission_diff TEXT NOT NULL DEFAULT 'easy',
+        snoozed_until INTEGER,
+        CHECK (hour BETWEEN 0 AND 23), CHECK (minute BETWEEN 0 AND 59)
+      );
+    ''');
+    raw.execute("INSERT INTO alarms (hour, minute, label) VALUES (7, 0, 'Kept');");
+    raw.execute('PRAGMA user_version = 3;');
+
+    final db = RiseDatabase(NativeDatabase.opened(raw));
+    addTearDown(db.close);
+
+    // Must not throw "duplicate column name snoozed_until".
+    final rows = await db.select(db.alarms).get();
+    expect(rows.single.label, 'Kept');
+  });
+
+  test('a fresh database is created at v4 with snoozed_until', () async {
+    final db = RiseDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final id = await db.into(db.alarms).insert(AlarmsCompanion.insert(
+      hour: 6,
+      minute: 30,
+      snoozedUntil: Value(DateTime.utc(2026, 7, 20, 6, 39)),
+    ));
+    final row = await (db.select(db.alarms)..where((t) => t.id.equals(id))).getSingle();
+    expect(row.snoozedUntil, isNotNull);
+  });
+```
+
+> `AlarmsCompanion.insert`'s `snoozedUntil` is an optional `Value<DateTime?>` — the fresh-DB test needs `import 'package:drift/drift.dart';` (for `Value`) if the file doesn't already import it; check the file's existing imports.
+
+- [ ] **Step 5: Add repository tests**
+
+In `test/data/alarm_repository_test.dart` (reuse its existing in-memory `db`/`repo` `setUp`), add inside `main()`:
+
+```dart
+  test('snoozedUntil round-trips through upsert', () async {
+    final saved = await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30)
+        .copyWith(snoozedUntil: DateTime.utc(2026, 7, 20, 6, 39)));
+    final read = (await repo.all()).firstWhere((a) => a.id == saved.id);
+    expect(read.snoozedUntil, isNotNull);
+    expect(read.snoozedUntil!.toUtc(), DateTime.utc(2026, 7, 20, 6, 39));
+  });
+
+  test('setSnoozedUntil then clearSnoozedUntil', () async {
+    final saved = await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));
+    await repo.setSnoozedUntil(saved.id, DateTime.utc(2026, 7, 20, 6, 39));
+    expect((await repo.all()).single.snoozedUntil, isNotNull);
+    await repo.clearSnoozedUntil(saved.id);
+    expect((await repo.all()).single.snoozedUntil, isNull);
+  });
+
+  test('recordDismissed clears a pending snooze', () async {
+    final saved = await repo.upsert(
+        const Alarm(id: 0, hour: 6, minute: 30, days: {1})
+            .copyWith(snoozedUntil: DateTime.utc(2026, 7, 20, 6, 39)));
+    await repo.recordDismissed(saved.id, DateTime.utc(2026, 7, 20, 6, 40));
+    expect((await repo.all()).single.snoozedUntil, isNull);
+  });
+```
+
+- [ ] **Step 6: Run tests, whole suite, analyze, commit**
+
+```bash
+flutter test test/data/migration_test.dart test/data/alarm_repository_test.dart
+flutter test
+flutter analyze
+git add lib/data/local/database.dart lib/data/local/alarm_repository.dart test/data/migration_test.dart test/data/alarm_repository_test.dart
+git commit -m "feat(data): add snoozed_until column (schema v4) + repository snooze methods"
+```
+
+---
+
+## Remaining tasks (Tasks 3–10 — full code written just before each is executed)
 
 Each gets its complete code just before dispatch (same flow used for Plans 3/4a). Summary + interfaces:
-
-- **Task 2 — `snoozedUntil` in the DB** (`database.dart` v3→v4 migration adds the `snoozed_at` column; `alarm_repository.dart` maps it + `setSnoozedUntil(id, DateTime?)`/`clearSnoozedUntil(id)`). Migration idempotency test + repo test.
 - **Task 3 — Settings model** (`rise_settings.dart`: `RiseSettings{snoozeMaxCount, snoozeFlatMinutes, wakeCheckEnabled, wakeCheckDelayMinutes}` + `snoozeDurationMinutes(int index)`; `app_settings.dart` getters/setters; `settingsProvider` = `StateNotifierProvider<SettingsController, RiseSettings>` loading from + persisting to SharedPreferences). Round-trip tests.
 - **Task 4 — Snooze orchestration** (`wake_event_repository.dart` `bumpSnooze(alarmId)`; `lib/data/snooze.dart` `snoozeAlarm(alarmId, Duration)` = bump snooze on the open event → set `snoozedUntil` → `stopRinging` → `reconcileNow`, best-effort ordering like `dismissRingingAlarm`). Repo + orchestration tests (fake platform).
 - **Task 5 — Ring-screen Snooze button** (`ring_screen.dart`: reads `settingsProvider` + the open event's `snoozeCount`; shows "Snooze N min" while under budget; injectable `snoozeAlarm`; on snooze, pop). Widget tests: shows/hides per budget; snooze calls the action with the right duration; `maxCount==0` hides it.
