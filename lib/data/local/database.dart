@@ -32,6 +32,10 @@ class Alarms extends Table {
   TextColumn get mission => text().withDefault(const Constant('none'))();
   TextColumn get missionDiff => text().withDefault(const Constant('easy'))();
 
+  /// When set (UTC), the alarm's next firing is this instant instead of its
+  /// schedule — a deferred re-ring from a snooze (added in schema v4).
+  DateTimeColumn get snoozedUntil => dateTime().nullable()();
+
   // Alarm's hour/minute range checks are `assert`s, which are stripped in
   // release builds, and rows built from the database (_toDomain) never went
   // through that constructor validation to begin with — an out-of-range
@@ -68,7 +72,7 @@ class RiseDatabase extends _$RiseDatabase {
   RiseDatabase(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -96,6 +100,16 @@ class RiseDatabase extends _$RiseDatabase {
           if (from < 3) {
             if (!await _tableExists('wake_events')) {
               await m.createTable(wakeEvents);
+            }
+          }
+
+          // v3 -> v4: the snoozed_until column. Idempotent like the v1->v2
+          // column migration — a losing isolate that finds it present skips the
+          // ALTER rather than crashing on "duplicate column name".
+          if (from < 4) {
+            final existing = await _columnNames('alarms');
+            if (!existing.contains('snoozed_until')) {
+              await m.addColumn(alarms, alarms.snoozedUntil);
             }
           }
         },
