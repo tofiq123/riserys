@@ -9,9 +9,12 @@ import '../theme/typography.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen(
-      {super.key, this.permissions = const NativePermissionGateway()});
+      {super.key,
+      this.permissions = const NativePermissionGateway(),
+      this.onSettings});
 
   final PermissionGateway permissions;
+  final VoidCallback? onSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +51,25 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onSettings,
+            child: RiseCard(
+              child: Row(
+                children: [
+                  const Icon(Icons.tune, color: RiseColors.textDim, size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text('Settings',
+                        style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                  ),
+                  const Icon(Icons.chevron_right,
+                      color: RiseColors.textFaint, size: 20),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 24),
