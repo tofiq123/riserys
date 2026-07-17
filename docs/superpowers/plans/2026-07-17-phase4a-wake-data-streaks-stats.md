@@ -1973,9 +1973,156 @@ git commit -m "feat(ui): add the Stats screen (streak, calendar, week chart)"
 
 ### Task 9: App shell Sleep→Stats + deep-link + device verify
 
-Full code written just before dispatch. Summary + interfaces:
-- Modify `lib/ui/screens/app_shell.dart`: rename the stubbed **Sleep** tab to **Stats** (chart/flame icon) hosting `StatsScreen`; wire `HomeScreen`'s `onStreak` → switch `_tab` to the Stats index. Keep the Crew stub. Update `app_shell_test.dart`: a test that tapping the Home streak pill switches to the Stats tab (shows `StatsScreen`), and that the Stats tab renders `StatsScreen`.
-- Then the **on-device verification** protocol on the Samsung: create an alarm → ring → dismiss on time → the Home streak pill increments and the Stats screen shows the day on-time; a late/skipped dismissal shows as a miss. Record results in `docs/superpowers/reliability/2026-07-17-phase4a-device-results.md`. This is the increment's finish line before merge.
+**Files:**
+- Modify: `lib/ui/screens/app_shell.dart`
+- Modify: `test/ui/screens/app_shell_test.dart`
+
+**Interfaces:**
+- Consumes: `StatsScreen` (Task 8); the existing `HomeScreen.onStreak` (Task 7).
+- Produces: the stubbed **Sleep** tab (index 2) becomes **Stats** hosting `StatsScreen`; the Home streak pill deep-links to it.
+
+- [ ] **Step 1: Edit `app_shell.dart`**
+
+Add the import (after `import 'ring_screen.dart';`):
+
+```dart
+import 'stats_screen.dart';
+```
+
+Replace the `case 2:` block in `_activeTab()`:
+
+```dart
+      case 2:
+        return const _ComingSoon(
+            icon: Icons.bedtime_outlined,
+            title: 'Sleep',
+            body: 'Sleep insights and smart wake windows. Coming soon.');
+```
+
+with:
+
+```dart
+      case 2:
+        return const StatsScreen();
+```
+
+Replace the `default:` block (wire `onStreak` to switch to the Stats tab, index 2):
+
+```dart
+      default:
+        return HomeScreen(
+            onNew: _openNew, onEdit: _openEdit, onPreview: _preview);
+```
+
+with:
+
+```dart
+      default:
+        return HomeScreen(
+          onNew: _openNew,
+          onEdit: _openEdit,
+          onPreview: _preview,
+          onStreak: () => setState(() => _tab = 2),
+        );
+```
+
+In `_tabBar()`, replace the Sleep tab item:
+
+```dart
+      (icon: Icons.bedtime_outlined, label: 'Sleep'),
+```
+
+with:
+
+```dart
+      (icon: Icons.insights_outlined, label: 'Stats'),
+```
+
+- [ ] **Step 2: Edit `app_shell_test.dart`**
+
+Add these imports (after `import 'package:rise/domain/scheduled_occurrence.dart';`):
+
+```dart
+import 'package:rise/domain/wake_event.dart';
+import 'package:rise/ui/screens/stats_screen.dart';
+```
+
+Add the `wakeEventsProvider` override to `_overrides` (StatsScreen reads it) — replace:
+
+```dart
+List<Override> _overrides(List<Alarm> alarms, ScheduledOccurrence? next) => [
+      alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
+      nextOccurrenceProvider.overrideWith((ref) async => next),
+      streakProvider.overrideWithValue(StreakStats.empty),
+    ];
+```
+
+with:
+
+```dart
+List<Override> _overrides(List<Alarm> alarms, ScheduledOccurrence? next) => [
+      alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
+      nextOccurrenceProvider.overrideWith((ref) async => next),
+      streakProvider.overrideWithValue(StreakStats.empty),
+      wakeEventsProvider.overrideWith((ref) => Stream.value(const <WakeEvent>[])),
+    ];
+```
+
+Add these two tests inside `main()`:
+
+```dart
+  testWidgets('the Stats tab shows the Stats screen', (t) async {
+    await t.pumpWidget(_host(_container()));
+    await t.pump();
+    await t.tap(find.text('Stats')); // the tab label
+    await t.pump();
+    expect(find.byType(StatsScreen), findsOneWidget);
+    expect(find.byType(HomeScreen), findsNothing);
+  });
+
+  testWidgets('tapping the Home streak pill deep-links to the Stats tab', (t) async {
+    await t.pumpWidget(_host(_container()));
+    await t.pump();
+    // On Home the streak is empty, so the pill reads "Start".
+    await t.tap(find.text('Start'));
+    await t.pump();
+    expect(find.byType(StatsScreen), findsOneWidget);
+  });
+```
+
+- [ ] **Step 3: Run the app-shell tests, whole suite, analyze**
+
+```bash
+flutter test test/ui/screens/app_shell_test.dart
+flutter test
+flutter analyze
+```
+Expected: app-shell tests (existing + 2 new) green; whole suite green; `No issues found!`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add lib/ui/screens/app_shell.dart test/ui/screens/app_shell_test.dart
+git commit -m "feat(ui): turn the Sleep tab into Stats and deep-link the streak pill"
+```
+
+- [ ] **Step 5: On-device verification (run on the physical Samsung)**
+
+Fresh-build install (`flutter build apk --release` then `adb install -r`), then:
+
+1. **New install / fresh data:** first alarm you set and dismiss creates history. Set an alarm ~2 min out, lock the phone, let it ring, and **dismiss on time** (within 15 min). → the Home **streak pill** shows **1**; open **Stats** (tap the pill or the Stats tab) → the streak card shows 1, today's calendar cell is on-time (green), "this week" reads "On time 1 of 1".
+2. **A second on-time day** (or simulate by setting/dismissing again the next day) increments the streak.
+3. **A miss:** let an alarm ring and **don't dismiss it** (or dismiss well after 15 min) → Stats shows that day as a miss (red cell); the streak resets (or consumes a freeze once you've earned one).
+4. **Snooze/wake-check are NOT in this increment** — snoozeCount stays 0 and there's no "still up?" yet (that's Phase 4b). Confirm the ring screen still only offers dismiss (slide/mission), unchanged from Plan 3.
+5. Existing Plan-3 behaviors still hold: rings through silent+locked, mission gates dismissal, reboot re-arm.
+
+Record results in `docs/superpowers/reliability/2026-07-17-phase4a-device-results.md`. This is Phase 4a's finish line before merge to `main`.
+
+---
+
+## All Phase 4a tasks specified
+
+Tasks 1–9 now have complete, executable code. After Task 9 executes and the device protocol passes, `phase4a` is ready for the final whole-branch review and merge. **Phase 4b** (snooze budget + wake-up check) is the next increment, building on the wake-event log, `snoozeCount`, and the open-event model established here.
 
 - **Task 4 — WakeEventRepository** (`wake_event_repository.dart`): `openRing({alarmId, scheduledAt, firstRingAt, label}) → Future<int>` (reuse an open event for the alarm within 6 h, else insert); `finalizeDismiss({alarmId, dismissedAt, method}) → Future<void>` (find open event, set `dismissedAt`/`method`/`onTime = dismissedAt−firstRingAt ≤ 15 min`; no-op if none); `watchAll() → Stream<List<WakeEvent>>`. Tests: reuse-window, onTime boundary 14:59/15:01, no-op on closed/missing.
 - **Task 5 — WakeRecorder + providers** (`wake_recorder.dart`, `wake_providers.dart`; expose `RiseDatabase` on `AlarmSyncService`): `WakeRecorder(repo, alarmRepo)` with `openRing(int alarmId)` (looks up the alarm → label + `scheduledAt` = today's local h:m→UTC) and `finalizeDismiss(int alarmId, {String? method})`; providers `wakeEventRepositoryProvider`, `wakeRecorderProvider`, `wakeEventsProvider`, `streakProvider = computeStreak(events, DateTime.now())`.
