@@ -1125,7 +1125,242 @@ git commit -m "feat(data): add WakeRecorder and wake/streak providers"
 
 ---
 
-## Remaining tasks (Tasks 6–9 — full code written just before each is executed)
+### Task 6: Wire recording into the ring flow
+
+**Files:**
+- Modify: `lib/ui/screens/ring_screen.dart`
+- Modify: `lib/main.dart` (the real ring records)
+- Test: `test/ui/screens/ring_screen_test.dart` (add recording tests)
+
+**Interfaces:**
+- Consumes: `wakeRecorderProvider` (Task 5); the existing `RingScreen`/`dismissRingingAlarm`.
+- Produces: `RingScreen` gains `bool record` (default false); when true it opens a wake event on mount and finalises it (with the dismissal `method`) on a successful dismiss — both best-effort. `_dismiss` now takes the method. `main._showRing` passes `record: true`.
+
+> Recording is best-effort: a wake-log failure is caught and logged, never thrown into the ring/dismiss path (the alarm must always be stoppable). Previews (app shell) leave `record` at its default `false`, so they never touch the wake log.
+
+- [ ] **Step 1: Add the failing recording tests**
+
+In `test/ui/screens/ring_screen_test.dart`, add these imports at the top (alongside the existing ones):
+
+```dart
+import 'package:rise/data/wake_recorder.dart';
+import 'package:rise/ui/state/wake_providers.dart';
+```
+
+Add this fake recorder above `void main()` (after the existing top-level helpers):
+
+```dart
+class _RecordingRecorder implements WakeRecorder {
+  final opened = <int>[];
+  final finalized = <(int, String?)>[];
+  @override
+  Future<void> openRing(int alarmId) async => opened.add(alarmId);
+  @override
+  Future<void> finalizeDismiss(int alarmId, {String? method}) async =>
+      finalized.add((alarmId, method));
+}
+```
+
+Add these three tests inside `main()`:
+
+```dart
+  testWidgets('with record: opens on mount and finalizes "slide" on a slide dismiss',
+      (t) async {
+    final rec = _RecordingRecorder();
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        alarmsProvider.overrideWith((ref) => Stream.value(
+            const [Alarm(id: 5, hour: 6, minute: 30, label: 'Run')])),
+        wakeRecorderProvider.overrideWithValue(rec),
+      ],
+      child: MaterialApp(
+        home: RingScreen(alarmId: 5, record: true, dismissAlarm: (_) async {}),
+      ),
+    ));
+    await t.pump();
+    expect(rec.opened, [5]);
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(rec.finalized, [(5, 'slide')]);
+  });
+
+  testWidgets('with record: a missioned dismiss finalizes with method "mission"',
+      (t) async {
+    final rec = _RecordingRecorder();
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        alarmsProvider.overrideWith((ref) => Stream.value(
+            const [Alarm(id: 7, hour: 6, minute: 30, mission: 'math')])),
+        wakeRecorderProvider.overrideWithValue(rec),
+      ],
+      child: MaterialApp(
+        home: RingScreen(
+          alarmId: 7,
+          record: true,
+          dismissAlarm: (_) async {},
+          missionBuilder: (context, alarm, onSolved) =>
+              TextButton(onPressed: onSolved, child: const Text('SOLVE')),
+        ),
+      ),
+    ));
+    await t.pump();
+    expect(rec.opened, [7]);
+    await t.tap(find.text('SOLVE'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(rec.finalized, [(7, 'mission')]);
+  });
+
+  testWidgets('without record (default): never touches the wake recorder', (t) async {
+    final rec = _RecordingRecorder();
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        alarmsProvider.overrideWith((ref) => Stream.value(
+            const [Alarm(id: 5, hour: 6, minute: 30)])),
+        wakeRecorderProvider.overrideWithValue(rec),
+      ],
+      child: MaterialApp(
+        home: RingScreen(alarmId: 5, dismissAlarm: (_) async {}),
+      ),
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(rec.opened, isEmpty);
+    expect(rec.finalized, isEmpty);
+  });
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+```bash
+flutter test test/ui/screens/ring_screen_test.dart
+```
+Expected: FAIL — `RingScreen` has no `record` parameter.
+
+- [ ] **Step 3: Wire recording into `ring_screen.dart`**
+
+Add the import (with the other `../state/...` imports):
+
+```dart
+import '../state/wake_providers.dart';
+```
+
+Add the `record` field to the constructor and class. Change the constructor to:
+
+```dart
+  const RingScreen({
+    super.key,
+    required this.alarmId,
+    this.onDismissed,
+    this.dismissAlarm = dismissRingingAlarm,
+    this.missionBuilder,
+    this.record = false,
+  });
+```
+
+And add the field (after `missionBuilder`):
+
+```dart
+  /// When true, this firing is logged to the wake-event store — opened on
+  /// mount, finalised on dismiss. Off for previews. Best-effort: a wake-log
+  /// failure is logged, never thrown into the ring.
+  final bool record;
+```
+
+In `initState`, after the `_clock = Timer.periodic(...)` block, add:
+
+```dart
+    if (widget.record) _recordRingStart();
+```
+
+Add this method (e.g. after `dispose`):
+
+```dart
+  Future<void> _recordRingStart() async {
+    try {
+      await ref.read(wakeRecorderProvider).openRing(widget.alarmId);
+    } catch (e) {
+      debugPrint('Rise: wake-open failed for ${widget.alarmId}: $e');
+    }
+  }
+```
+
+Replace the whole `_dismiss` method with the method-carrying, recording version:
+
+```dart
+  Future<void> _dismiss(String method) async {
+    if (_dismissing) return; // guard double-taps / repeated slide fires
+    setState(() => _dismissing = true);
+    try {
+      await widget.dismissAlarm(widget.alarmId);
+    } catch (e) {
+      debugPrint('Rise: dismiss failed for ${widget.alarmId}: $e');
+      if (mounted) {
+        setState(() {
+          _dismissing = false;
+          _attempt++; // fresh key resets the slide-to-wake so it can fire again
+        });
+      }
+      return;
+    }
+    if (widget.record) {
+      try {
+        await ref
+            .read(wakeRecorderProvider)
+            .finalizeDismiss(widget.alarmId, method: method);
+      } catch (e) {
+        debugPrint('Rise: wake-finalize failed for ${widget.alarmId}: $e');
+      }
+    }
+    if (!mounted) return;
+    widget.onDismissed?.call();
+  }
+```
+
+In `build`, change the gate's two `_dismiss` references to pass the method:
+
+```dart
+          ? widget.missionBuilder!(context, alarm, () => _dismiss('mission'))
+          : SlideToWake(onWake: () => _dismiss('slide')),
+```
+
+- [ ] **Step 4: Make the real ring record in `main.dart`**
+
+In `lib/main.dart`, `_showRing` builds the `RingScreen`. Add `record: true`:
+
+```dart
+    final route = MaterialPageRoute<void>(
+      builder: (_) => RingScreen(
+        alarmId: alarmId,
+        record: true,
+        missionBuilder: buildMission,
+        onDismissed: () => _navigatorKey.currentState?.maybePop(),
+      ),
+    );
+```
+
+- [ ] **Step 5: Run the ring tests to verify they pass**
+
+```bash
+flutter test test/ui/screens/ring_screen_test.dart
+```
+Expected: PASS — the existing ring tests plus the 3 new recording tests (uses `pump`, not `pumpAndSettle`).
+
+- [ ] **Step 6: Whole suite, analyze, commit**
+
+```bash
+flutter test
+flutter analyze
+git add lib/ui/screens/ring_screen.dart lib/main.dart test/ui/screens/ring_screen_test.dart
+git commit -m "feat(ui): record wake events from the ring flow (open on ring, finalize on dismiss)"
+```
+
+---
+
+## Remaining tasks (Tasks 7–9 — full code written just before each is executed)
 
 Each gets its complete code just before dispatch (same flow used for Plan 3). Summary + interfaces:
 
