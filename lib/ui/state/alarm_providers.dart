@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/alarm_sync_service.dart';
 import '../../data/local/alarm_repository.dart';
 import '../../domain/alarm.dart';
+import '../../domain/scheduled_occurrence.dart';
 
 /// The app's configured AlarmSyncService. In production this is the singleton
 /// built by `AlarmSyncService.configureForApp()` in main(); tests override it
@@ -64,3 +65,11 @@ final draftProvider =
 
 /// The message shown by the ToastHost, or null when no toast is visible.
 final toastProvider = StateProvider<String?>((ref) => null);
+
+/// The soonest upcoming alarm occurrence, or null if no alarm is enabled.
+/// Recomputes whenever the alarm list changes.
+final nextOccurrenceProvider = FutureProvider<ScheduledOccurrence?>((ref) async {
+  ref.watch(alarmsProvider); // rebuild when alarms change
+  final plan = await ref.watch(alarmSyncServiceProvider).currentPlan();
+  return plan.isEmpty ? null : plan.first;
+});

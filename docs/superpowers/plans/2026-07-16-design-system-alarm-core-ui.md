@@ -1861,9 +1861,3558 @@ git commit -m "feat: add mission fields (schema v2 migration) and the Riverpod s
 
 ---
 
-## Remaining tasks (Tasks 7–14 — screens; specified, full code in the next authoring pass)
+### Task 7: Home screen
 
-Tasks 1–6 above complete the design-system + state foundation. The screens are scoped below (see the "Task 7–14" descriptions in the plan's earlier revision) and get full code just before execution: Home, Create/Edit, Ring (replacing DevRingPage), the four missions + host, Onboarding, Profile/Settings, the tab-bar app shell, and the `main.dart` wiring + device verification. They build purely on the components, interactions, and providers above.
+**Files:**
+- Create: `lib/ui/screens/home_screen.dart`
+- Modify: `lib/ui/state/alarm_providers.dart` (add `nextOccurrenceProvider`)
+- Test: `test/ui/screens/home_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `alarmsProvider`, `alarmMutationsProvider`, `alarmSyncServiceProvider` (Task 6), the components (`RiseCard`, `GhostButton`, `SectionLabel`, `DayChips`, `RiseSwitch`), `repeatLabel`, tokens/typography; `Alarm`, `ScheduledOccurrence`.
+- Produces:
+  - `nextOccurrenceProvider` (`FutureProvider<ScheduledOccurrence?>`) — the soonest upcoming occurrence, or null.
+  - `class HomeScreen extends ConsumerStatefulWidget` — `HomeScreen({required VoidCallback onNew, required void Function(Alarm) onEdit, required VoidCallback onPreview})`. Renders the greeting header, next-alarm hero (live 1s countdown), and the alarm list.
+
+- [ ] **Step 1: Add nextOccurrenceProvider**
+
+Append to `lib/ui/state/alarm_providers.dart`:
+
+```dart
+import '../../domain/scheduled_occurrence.dart';
+
+/// The soonest upcoming alarm occurrence, or null if no alarm is enabled.
+/// Recomputes whenever the alarm list changes.
+final nextOccurrenceProvider = FutureProvider<ScheduledOccurrence?>((ref) async {
+  ref.watch(alarmsProvider); // rebuild when alarms change
+  final plan = await ref.watch(alarmSyncServiceProvider).currentPlan();
+  return plan.isEmpty ? null : plan.first;
+});
+```
+
+(Put the `import` at the top with the other imports.)
+
+- [ ] **Step 2: Write the failing test**
+
+Create `test/ui/screens/home_screen_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/ui/screens/home_screen.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+class _RecordingMutations implements AlarmMutations {
+  final List<(int, bool)> enabledCalls = [];
+  @override
+  Future<void> setEnabled(int id, bool enabled) async => enabledCalls.add((id, enabled));
+  @override
+  Future<void> save(Alarm alarm) async {}
+  @override
+  Future<void> delete(int id) async {}
+}
+
+Widget _host({
+  required List<Alarm> alarms,
+  required _RecordingMutations mutations,
+  VoidCallback? onNew,
+  void Function(Alarm)? onEdit,
+}) {
+  return ProviderScope(
+    overrides: [
+      alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
+      nextOccurrenceProvider.overrideWith((ref) async => null),
+      alarmMutationsProvider.overrideWithValue(mutations),
+    ],
+    child: MaterialApp(
+      home: HomeScreen(
+        onNew: onNew ?? () {},
+        onEdit: onEdit ?? (_) {},
+        onPreview: () {},
+      ),
+    ),
+  );
+}
+
+void main() {
+  testWidgets('lists an alarm with its time and repeat label', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 1, hour: 6, minute: 30, label: 'Run', days: {1, 2, 3, 4, 5})],
+      mutations: _RecordingMutations(),
+    ));
+    await t.pump();
+    expect(find.text('6:30'), findsOneWidget);
+    expect(find.textContaining('Run'), findsOneWidget);
+    expect(find.textContaining('Weekdays'), findsOneWidget);
+  });
+
+  testWidgets('toggling a row calls setEnabled', (t) async {
+    final m = _RecordingMutations();
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 7, hour: 6, minute: 30, enabled: true)],
+      mutations: m,
+    ));
+    await t.pump();
+    await t.tap(find.byType(Switch).first.hitTestable(), warnIfMissed: false);
+    // The RiseSwitch is a GestureDetector, not a Material Switch — tap it by type.
+    await t.pump();
+    expect(m.enabledCalls, isNotEmpty);
+    expect(m.enabledCalls.first, (7, false));
+  });
+
+  testWidgets('tapping a row calls onEdit', (t) async {
+    Alarm? edited;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 3, hour: 7, minute: 0)],
+      mutations: _RecordingMutations(),
+      onEdit: (a) => edited = a,
+    ));
+    await t.pump();
+    await t.tap(find.text('7:00'));
+    await t.pump();
+    expect(edited?.id, 3);
+  });
+
+  testWidgets('empty state invites the user to add an alarm', (t) async {
+    await t.pumpWidget(_host(alarms: const [], mutations: _RecordingMutations()));
+    await t.pump();
+    expect(find.textContaining('No alarms'), findsOneWidget);
+  });
+}
+```
+
+> The toggle test taps the `RiseSwitch` (a `GestureDetector`, not a Material `Switch`). Replace the `find.byType(Switch)` line with `await t.tap(find.byType(RiseSwitch).first);` (import `RiseSwitch`) — the placeholder above is a reminder; the implementer wires the real finder. Keep the assertion that `setEnabled(7, false)` was called.
+
+- [ ] **Step 3: Run the test to verify it fails**
+
+```bash
+flutter test test/ui/screens/home_screen_test.dart
+```
+Expected: FAIL — `home_screen.dart` not found.
+
+- [ ] **Step 4: Write the Home screen**
+
+Create `lib/ui/screens/home_screen.dart`:
+
+```dart
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../domain/alarm.dart';
+import '../../domain/scheduled_occurrence.dart';
+import '../components/day_chips.dart';
+import '../components/rise_buttons.dart';
+import '../components/rise_card.dart';
+import '../components/rise_switch.dart';
+import '../components/section_label.dart';
+import '../state/alarm_providers.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+String _greeting() {
+  final h = DateTime.now().hour;
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
+String _countdown(Duration d) {
+  if (d.isNegative || d.inSeconds == 0) return 'now';
+  final h = d.inHours, m = d.inMinutes % 60, s = d.inSeconds % 60;
+  if (h > 0) return 'in ${h}h ${m}m';
+  return 'in ${m}m ${s.toString().padLeft(2, '0')}s';
+}
+
+class HomeScreen extends ConsumerStatefulWidget {
+  const HomeScreen({
+    super.key,
+    required this.onNew,
+    required this.onEdit,
+    required this.onPreview,
+  });
+
+  final VoidCallback onNew;
+  final void Function(Alarm) onEdit;
+  final VoidCallback onPreview;
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    // Drives the hero's live countdown.
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final alarmsAsync = ref.watch(alarmsProvider);
+    final alarms = alarmsAsync.value ?? const <Alarm>[];
+    final next = ref.watch(nextOccurrenceProvider).value;
+
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+            RiseSpacing.screen, 8, RiseSpacing.screen, 108),
+        children: [
+          _header(),
+          const SizedBox(height: 18),
+          _hero(alarms, next),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const SectionLabel('Your alarms'),
+              GhostButton(label: '+ New', onPressed: widget.onNew),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (alarms.isEmpty)
+            _empty()
+          else
+            for (final a in alarms) ...[
+              _AlarmRow(
+                alarm: a,
+                onEdit: () => widget.onEdit(a),
+                onToggle: (v) =>
+                    ref.read(alarmMutationsProvider).setEnabled(a.id, v),
+              ),
+              const SizedBox(height: 10),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _header() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(_greeting(), style: RiseText.display),
+        Container(
+          width: 40,
+          height: 40,
+          decoration: const BoxDecoration(color: RiseColors.primary, shape: BoxShape.circle),
+          child: const Icon(Icons.person, color: RiseColors.primaryText, size: 20),
+        ),
+      ],
+    );
+  }
+
+  Widget _hero(List<Alarm> alarms, ScheduledOccurrence? next) {
+    if (next == null) {
+      return RiseCard(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SectionLabel('Next alarm'),
+              const SizedBox(height: 10),
+              Text('No alarm set',
+                  style: RiseText.mono(size: 24, color: RiseColors.textFaint)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Alarm? alarm;
+    for (final a in alarms) {
+      if (a.id == next.alarmId) {
+        alarm = a;
+        break;
+      }
+    }
+    final hour12 = alarm?.hour12 ?? 0;
+    final minute = alarm?.minute ?? 0;
+    final ampm = (alarm?.isAm ?? true) ? 'AM' : 'PM';
+    final remaining = next.fireAt.toLocal().difference(DateTime.now());
+
+    return RiseCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionLabel('Next alarm'),
+                  const SizedBox(height: 8),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text('$hour12:${minute.toString().padLeft(2, '0')}',
+                          style: RiseText.mono(size: 46, weight: FontWeight.w500)),
+                      const SizedBox(width: 8),
+                      Text(ampm, style: RiseText.mono(size: 16, color: RiseColors.textDim)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text('${next.label} · rings ',
+                          style: RiseText.caption),
+                      Text(_countdown(remaining),
+                          style: RiseText.caption.copyWith(
+                              color: RiseColors.accent, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ],
+              ),
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: RiseColors.accentSoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.notifications_active_outlined,
+                    color: RiseColors.accent, size: 22),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          PrimaryButton(
+              label: 'Preview alarm', icon: Icons.play_arrow, onPressed: widget.onPreview),
+        ],
+      ),
+    );
+  }
+
+  Widget _empty() {
+    return RiseCard(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        child: Center(
+          child: Text('No alarms yet. Tap New to set one.',
+              style: RiseText.caption),
+        ),
+      ),
+    );
+  }
+}
+
+class _AlarmRow extends StatelessWidget {
+  const _AlarmRow({required this.alarm, required this.onEdit, required this.onToggle});
+
+  final Alarm alarm;
+  final VoidCallback onEdit;
+  final ValueChanged<bool> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: alarm.enabled ? 1 : 0.62,
+      child: RiseCard(
+        radius: RiseRadii.base,
+        child: Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onEdit,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text('${alarm.hour12}:${alarm.minute.toString().padLeft(2, '0')}',
+                            style: RiseText.mono(
+                                size: 27,
+                                color: alarm.enabled ? RiseColors.text : RiseColors.textFaint)),
+                        const SizedBox(width: 6),
+                        Text(alarm.isAm ? 'AM' : 'PM',
+                            style: RiseText.mono(size: 13, color: RiseColors.textDim)),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text('${alarm.label} · ${repeatLabel(alarm.days)}',
+                        style: RiseText.caption,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 9),
+                    DayChips(days: alarm.days, compact: true),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            RiseSwitch(value: alarm.enabled, onChanged: onToggle),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+> The header shows a time-based greeting and a neutral avatar — no fake user name, no streak pill; those belong to the profile/stats plans (5/7) and are added when real data exists. The Crew·live strip is omitted this plan.
+
+- [ ] **Step 5: Fix the toggle test's finder**
+
+In `test/ui/screens/home_screen_test.dart`, replace the placeholder toggle line with a real `RiseSwitch` tap (add `import 'package:rise/ui/components/rise_switch.dart';`):
+
+```dart
+    await t.tap(find.byType(RiseSwitch).first);
+```
+
+- [ ] **Step 6: Run the test to verify it passes**
+
+```bash
+flutter test test/ui/screens/home_screen_test.dart
+```
+Expected: PASS — 4 tests green.
+
+- [ ] **Step 7: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add lib/ui/screens/home_screen.dart lib/ui/state/alarm_providers.dart test/ui/screens/home_screen_test.dart
+git commit -m "feat(ui): add the Home screen with next-alarm hero and alarm list"
+```
+
+---
+
+### Task 8: Create/Edit alarm screen
+
+**Files:**
+- Create: `lib/domain/alarm_sounds.dart` (the selectable-sound catalog)
+- Create: `lib/ui/screens/create_edit_screen.dart`
+- Test: `test/domain/alarm_sounds_test.dart`
+- Test: `test/ui/screens/create_edit_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `draftProvider`/`DraftNotifier` (`startNew`/`startEdit`/`update`/`clear`), `alarmMutationsProvider` (`save(Alarm)`/`delete(int)`), `toastProvider`; `Alarm` (`copyWith`, `hour12`, `isAm`, `Alarm.to24Hour`); components `TimeDial` (`DialTime = ({int hour12, int minute, bool isAm})`), `DayChips`, `SoundChips`, `SegmentedControl<T>` (`segments: List<({T value, String label})>`), `RiseSwitch`, `RiseCard`, `SectionLabel`, `PrimaryButton`; tokens/typography.
+- Produces:
+  - `class AlarmSound { const AlarmSound(this.label, this.asset); final String label; final String asset; }`, `const List<AlarmSound> kAlarmSounds`, `String soundLabelFor(String asset)`, `String soundAssetFor(String label)`.
+  - `class CreateEditScreen extends ConsumerStatefulWidget` — `CreateEditScreen({required VoidCallback onDone})`. Edits the current `draftProvider` alarm in place; Save persists + arms via `alarmMutationsProvider` then calls `onDone`; Delete (edit mode only) removes + `onDone`; Cancel clears + `onDone`.
+
+- [ ] **Step 1: Write the failing sound-catalog test**
+
+Create `test/domain/alarm_sounds_test.dart`:
+
+```dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/alarm_sounds.dart';
+
+void main() {
+  test('catalog is non-empty and Default maps to the entity default asset', () {
+    expect(kAlarmSounds, isNotEmpty);
+    expect(kAlarmSounds.first.label, 'Default');
+    expect(kAlarmSounds.first.asset, 'sounds/default_alarm.mp3');
+  });
+
+  test('label<->asset round-trips for every catalog entry', () {
+    for (final s in kAlarmSounds) {
+      expect(soundLabelFor(s.asset), s.label);
+      expect(soundAssetFor(s.label), s.asset);
+    }
+  });
+
+  test('unknown asset or label falls back to the first entry', () {
+    expect(soundLabelFor('sounds/does_not_exist.mp3'), kAlarmSounds.first.label);
+    expect(soundAssetFor('Nonexistent'), kAlarmSounds.first.asset);
+  });
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+```bash
+flutter test test/domain/alarm_sounds_test.dart
+```
+Expected: FAIL — `alarm_sounds.dart` not found.
+
+- [ ] **Step 3: Write the sound catalog**
+
+Create `lib/domain/alarm_sounds.dart`:
+
+```dart
+/// A selectable alarm tone. [asset] is the bundled audio path handed to the
+/// native player. Until real audio files are bundled, the native layer falls
+/// back to the platform default alarm tone for any missing asset — so every
+/// option currently rings the system default. The user's choice is still
+/// persisted and is ready to sound the moment the files are added.
+class AlarmSound {
+  const AlarmSound(this.label, this.asset);
+  final String label;
+  final String asset;
+}
+
+/// The first entry MUST be 'Default' → the entity's default `soundAsset`, so an
+/// alarm created with no explicit sound reverse-maps to a selected chip.
+const List<AlarmSound> kAlarmSounds = [
+  AlarmSound('Default', 'sounds/default_alarm.mp3'),
+  AlarmSound('Radar', 'sounds/radar.mp3'),
+  AlarmSound('Chimes', 'sounds/chimes.mp3'),
+  AlarmSound('Beacon', 'sounds/beacon.mp3'),
+  AlarmSound('Signal', 'sounds/signal.mp3'),
+];
+
+/// The display label for a stored asset path; falls back to the first entry.
+String soundLabelFor(String asset) => kAlarmSounds
+    .firstWhere((s) => s.asset == asset, orElse: () => kAlarmSounds.first)
+    .label;
+
+/// The asset path for a display label; falls back to the first entry.
+String soundAssetFor(String label) => kAlarmSounds
+    .firstWhere((s) => s.label == label, orElse: () => kAlarmSounds.first)
+    .asset;
+```
+
+- [ ] **Step 4: Run it to verify it passes**
+
+```bash
+flutter test test/domain/alarm_sounds_test.dart
+```
+Expected: PASS — 3 tests green.
+
+- [ ] **Step 5: Write the failing Create/Edit widget test**
+
+Create `test/ui/screens/create_edit_screen_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/ui/components/segmented.dart';
+import 'package:rise/ui/screens/create_edit_screen.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+class _RecordingMutations implements AlarmMutations {
+  final List<Alarm> saved = [];
+  final List<int> deleted = [];
+  @override
+  Future<void> save(Alarm alarm) async => saved.add(alarm);
+  @override
+  Future<void> delete(int id) async => deleted.add(id);
+  @override
+  Future<void> setEnabled(int id, bool enabled) async {}
+}
+
+ProviderContainer _container(_RecordingMutations m) {
+  final c = ProviderContainer(
+    overrides: [alarmMutationsProvider.overrideWithValue(m)],
+  );
+  addTearDown(c.dispose);
+  return c;
+}
+
+Widget _host(ProviderContainer c, {VoidCallback? onDone}) {
+  return UncontrolledProviderScope(
+    container: c,
+    child: MaterialApp(
+      home: Scaffold(body: CreateEditScreen(onDone: onDone ?? () {})),
+    ),
+  );
+}
+
+void main() {
+  testWidgets('edit mode shows the alarm time, label, and "Edit alarm" title', (t) async {
+    final c = _container(_RecordingMutations());
+    c.read(draftProvider.notifier).startEdit(
+        const Alarm(id: 5, hour: 6, minute: 30, label: 'Run', days: {1, 2, 3}));
+    await t.pumpWidget(_host(c));
+    await t.pump();
+    expect(find.text('Edit alarm'), findsOneWidget);
+    expect(find.text('6'), findsOneWidget);        // hour dial
+    expect(find.text('30'), findsOneWidget);       // minute dial
+    expect(find.widgetWithText(TextField, 'Run'), findsOneWidget);
+    expect(find.text('Delete alarm'), findsOneWidget);
+  });
+
+  testWidgets('new mode shows "New alarm" and no delete button', (t) async {
+    final c = _container(_RecordingMutations());
+    c.read(draftProvider.notifier).startNew();
+    await t.pumpWidget(_host(c));
+    await t.pump();
+    expect(find.text('New alarm'), findsOneWidget);
+    expect(find.text('Delete alarm'), findsNothing);
+  });
+
+  testWidgets('tapping a day chip toggles it in the draft', (t) async {
+    final c = _container(_RecordingMutations());
+    c.read(draftProvider.notifier)
+        .startEdit(const Alarm(id: 5, hour: 6, minute: 30, days: {}));
+    await t.pumpWidget(_host(c));
+    await t.pump();
+    // Monday is index 1; tap the 'M' chip.
+    await t.tap(find.text('M'));
+    await t.pump();
+    expect(c.read(draftProvider)!.days.contains(1), isTrue);
+  });
+
+  testWidgets('difficulty control appears only when a mission is chosen', (t) async {
+    final c = _container(_RecordingMutations());
+    c.read(draftProvider.notifier).startEdit(
+        const Alarm(id: 5, hour: 6, minute: 30, mission: 'none'));
+    await t.pumpWidget(_host(c));
+    await t.pump();
+    expect(find.byType(SegmentedControl<String>), findsNothing);
+    await t.tap(find.text('Math'));
+    await t.pump();
+    expect(find.byType(SegmentedControl<String>), findsOneWidget);
+    expect(c.read(draftProvider)!.mission, 'math');
+  });
+
+  testWidgets('Save persists the draft, arms it, and calls onDone', (t) async {
+    final m = _RecordingMutations();
+    final c = _container(m);
+    var doneCalled = false;
+    c.read(draftProvider.notifier)
+        .startEdit(const Alarm(id: 5, hour: 6, minute: 30, label: 'Run'));
+    await t.pumpWidget(_host(c, onDone: () => doneCalled = true));
+    await t.pump();
+    await t.tap(find.text('Save alarm'));
+    await t.pumpAndSettle();
+    expect(m.saved.single.id, 5);
+    expect(m.saved.single.label, 'Run');
+    expect(doneCalled, isTrue);
+  });
+
+  testWidgets('Delete removes the alarm and calls onDone', (t) async {
+    final m = _RecordingMutations();
+    final c = _container(m);
+    var doneCalled = false;
+    c.read(draftProvider.notifier)
+        .startEdit(const Alarm(id: 5, hour: 6, minute: 30));
+    await t.pumpWidget(_host(c, onDone: () => doneCalled = true));
+    await t.pump();
+    await t.tap(find.text('Delete alarm'));
+    await t.pumpAndSettle();
+    expect(m.deleted.single, 5);
+    expect(doneCalled, isTrue);
+  });
+}
+```
+
+- [ ] **Step 6: Run it to verify it fails**
+
+```bash
+flutter test test/ui/screens/create_edit_screen_test.dart
+```
+Expected: FAIL — `create_edit_screen.dart` not found.
+
+- [ ] **Step 7: Write the Create/Edit screen**
+
+Create `lib/ui/screens/create_edit_screen.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../domain/alarm.dart';
+import '../../domain/alarm_sounds.dart';
+import '../components/day_chips.dart';
+import '../components/rise_buttons.dart';
+import '../components/rise_card.dart';
+import '../components/rise_switch.dart';
+import '../components/section_label.dart';
+import '../components/segmented.dart';
+import '../components/sound_chips.dart';
+import '../components/time_dial.dart';
+import '../state/alarm_providers.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// Mission keys ↔ display labels. The `SoundChips` pill row is a generic
+/// single-select chip strip, reused here for the mission picker.
+const Map<String, String> _missionLabels = {
+  'none': 'None',
+  'math': 'Math',
+  'hold': 'Hold',
+  'tap': 'Tap',
+  'memory': 'Memory',
+};
+
+class CreateEditScreen extends ConsumerStatefulWidget {
+  const CreateEditScreen({super.key, required this.onDone});
+
+  final VoidCallback onDone;
+
+  @override
+  ConsumerState<CreateEditScreen> createState() => _CreateEditScreenState();
+}
+
+class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
+  late final TextEditingController _label;
+
+  @override
+  void initState() {
+    super.initState();
+    // Seed once from the draft set before navigation; the controller then owns
+    // the text so watching the draft in build() won't fight the user's typing.
+    _label = TextEditingController(text: ref.read(draftProvider)?.label ?? '');
+  }
+
+  @override
+  void dispose() {
+    _label.dispose();
+    super.dispose();
+  }
+
+  void _update(Alarm next) => ref.read(draftProvider.notifier).update(next);
+
+  Future<void> _save(Alarm draft) async {
+    await ref.read(alarmMutationsProvider).save(draft);
+    if (!mounted) return;
+    ref.read(toastProvider.notifier).state = 'Alarm saved';
+    ref.read(draftProvider.notifier).clear();
+    widget.onDone();
+  }
+
+  Future<void> _delete(int id) async {
+    await ref.read(alarmMutationsProvider).delete(id);
+    if (!mounted) return;
+    ref.read(toastProvider.notifier).state = 'Alarm deleted';
+    ref.read(draftProvider.notifier).clear();
+    widget.onDone();
+  }
+
+  void _cancel() {
+    ref.read(draftProvider.notifier).clear();
+    widget.onDone();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final draft = ref.watch(draftProvider);
+    if (draft == null) return const SizedBox.shrink();
+    final isEdit = draft.id != 0;
+
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+            RiseSpacing.screen, 8, RiseSpacing.screen, 40),
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              GhostButton(label: 'Cancel', onPressed: _cancel),
+              Text(isEdit ? 'Edit alarm' : 'New alarm', style: RiseText.title),
+              const SizedBox(width: 64), // balances the Cancel button
+            ],
+          ),
+          const SizedBox(height: 12),
+          RiseCard(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            child: TimeDial(
+              value: (hour12: draft.hour12, minute: draft.minute, isAm: draft.isAm),
+              onChanged: (t) => _update(draft.copyWith(
+                hour: Alarm.to24Hour(t.hour12, t.isAm),
+                minute: t.minute,
+                clearLastDismissedAt: true, // editing time clears a stale dismissal
+              )),
+            ),
+          ),
+          _section('Repeat', DayChips(
+            days: draft.days,
+            onToggle: (i) {
+              final next = {...draft.days};
+              next.contains(i) ? next.remove(i) : next.add(i);
+              _update(draft.copyWith(days: next));
+            },
+          ),
+          trailing: Text(repeatLabel(draft.days), style: RiseText.caption)),
+          _section('Label', TextField(
+            controller: _label,
+            onChanged: (v) => _update(draft.copyWith(label: v)),
+            style: RiseText.body,
+            cursorColor: RiseColors.primary,
+            decoration: InputDecoration(
+              hintText: 'Alarm',
+              hintStyle: RiseText.body.copyWith(color: RiseColors.textFaint),
+              filled: true,
+              fillColor: RiseColors.surface2,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: _fieldBorder(RiseColors.border),
+              enabledBorder: _fieldBorder(RiseColors.border),
+              focusedBorder: _fieldBorder(RiseColors.primary),
+            ),
+          )),
+          _section('Sound', SoundChips(
+            sounds: kAlarmSounds.map((s) => s.label).toList(),
+            selected: soundLabelFor(draft.soundAsset),
+            onChanged: (label) =>
+                _update(draft.copyWith(soundAsset: soundAssetFor(label))),
+          )),
+          _section('Wake mission', SoundChips(
+            sounds: _missionLabels.values.toList(),
+            selected: _missionLabels[draft.mission]!,
+            onChanged: (label) {
+              final key = _missionLabels.entries
+                  .firstWhere((e) => e.value == label)
+                  .key;
+              _update(draft.copyWith(mission: key));
+            },
+          )),
+          if (draft.mission != 'none')
+            _section('Difficulty', SegmentedControl<String>(
+              segments: const [
+                (value: 'easy', label: 'Easy'),
+                (value: 'medium', label: 'Medium'),
+                (value: 'hard', label: 'Hard'),
+              ],
+              selected: draft.missionDiff,
+              onChanged: (d) => _update(draft.copyWith(missionDiff: d)),
+            )),
+          const SizedBox(height: 20),
+          RiseCard(
+            radius: RiseRadii.base,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Vibrate', style: RiseText.body),
+                RiseSwitch(
+                  value: draft.vibrate,
+                  onChanged: (v) => _update(draft.copyWith(vibrate: v)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          PrimaryButton(label: 'Save alarm', onPressed: () => _save(draft)),
+          if (isEdit) ...[
+            const SizedBox(height: 8),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _delete(draft.id),
+              child: Container(
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                child: Text('Delete alarm',
+                    style: RiseText.body.copyWith(
+                        color: RiseColors.danger, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static OutlineInputBorder _fieldBorder(Color color) => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(RiseRadii.base),
+        borderSide: BorderSide(color: color),
+      );
+
+  Widget _section(String label, Widget child, {Widget? trailing}) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [SectionLabel(label), if (trailing != null) trailing],
+          ),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+}
+```
+
+> The delete action is a danger-tinted text button (the component set has no danger button, and adding one is out of scope). Editing the time clears `lastDismissedAt` (per the `Alarm.copyWith` contract) so a stale dismissal can't suppress the edited occurrence. The screen returns bare content (no `Scaffold`); its host — the app shell in Task 13, and a `Scaffold` in the tests — supplies the `Material` ancestor the label `TextField` needs.
+
+- [ ] **Step 8: Run both new test files to verify they pass**
+
+```bash
+flutter test test/domain/alarm_sounds_test.dart test/ui/screens/create_edit_screen_test.dart
+```
+Expected: PASS — 3 + 6 tests green.
+
+- [ ] **Step 9: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add lib/domain/alarm_sounds.dart lib/ui/screens/create_edit_screen.dart test/domain/alarm_sounds_test.dart test/ui/screens/create_edit_screen_test.dart
+git commit -m "feat(ui): add the Create/Edit alarm screen with sound catalog"
+```
+
+---
+
+### Task 9: Ring screen (replaces DevRingPage's logic)
+
+**Files:**
+- Create: `lib/ui/screens/ring_screen.dart`
+- Test: `test/ui/screens/ring_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `alarmsProvider` (to read the ringing alarm's label/mission); `AlarmHostApi().stopRinging` + `AlarmSyncService.instance` (for the production dismissal only); `SlideToWake`, tokens/typography; `Alarm`.
+- Produces:
+  - `typedef MissionBuilder = Widget Function(BuildContext context, Alarm alarm, VoidCallback onSolved);`
+  - `Future<void> dismissRingingAlarm(int alarmId)` — the production dismissal (stop → record → reconcile, in that exact order).
+  - `class RingScreen extends ConsumerStatefulWidget` — `RingScreen({required int alarmId, VoidCallback? onDismissed, Future<void> Function(int) dismissAlarm = dismissRingingAlarm, MissionBuilder? missionBuilder})`. Task 14 swaps `main.dart`'s `DevRingPage` for this and passes `onDismissed`; Task 10 supplies `missionBuilder`.
+
+> This task does NOT touch `main.dart` — `DevRingPage` stays wired until Task 14. `RingScreen` is built and tested standalone. The dismissal ordering (silence first, unconditional; record + reconcile second, best-effort) is copied faithfully from `DevRingPage` — it is load-bearing and was validated on a physical device in Plan 1.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/ui/screens/ring_screen_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/ui/components/slide_to_wake.dart';
+import 'package:rise/ui/screens/ring_screen.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+Widget _host({
+  required List<Alarm> alarms,
+  required int alarmId,
+  Future<void> Function(int)? dismissAlarm,
+  VoidCallback? onDismissed,
+  MissionBuilder? missionBuilder,
+}) {
+  return ProviderScope(
+    overrides: [alarmsProvider.overrideWith((ref) => Stream.value(alarms))],
+    child: MaterialApp(
+      home: RingScreen(
+        alarmId: alarmId,
+        onDismissed: onDismissed,
+        dismissAlarm: dismissAlarm ?? (_) async {},
+        missionBuilder: missionBuilder,
+      ),
+    ),
+  );
+}
+
+void main() {
+  testWidgets('no-mission alarm shows slide-to-wake; sliding dismisses', (t) async {
+    int? dismissed;
+    var doneCalled = false;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30, label: 'Run')],
+      alarmId: 5,
+      dismissAlarm: (id) async => dismissed = id,
+      onDismissed: () => doneCalled = true,
+    ));
+    await t.pump(); // let alarmsProvider emit
+    expect(find.byType(SlideToWake), findsOneWidget);
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(dismissed, 5);
+    expect(doneCalled, isTrue);
+  });
+
+  testWidgets('shows the alarm label', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30, label: 'Gym time')],
+      alarmId: 5,
+    ));
+    await t.pump();
+    expect(find.text('Gym time'), findsOneWidget);
+  });
+
+  testWidgets('a missioned alarm with a missionBuilder shows the mission, not the slider', (t) async {
+    int? dismissed;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 7, hour: 6, minute: 30, mission: 'math')],
+      alarmId: 7,
+      dismissAlarm: (id) async => dismissed = id,
+      missionBuilder: (context, alarm, onSolved) =>
+          TextButton(onPressed: onSolved, child: const Text('SOLVE')),
+    ));
+    await t.pump();
+    expect(find.byType(SlideToWake), findsNothing);
+    expect(find.text('SOLVE'), findsOneWidget);
+    await t.tap(find.text('SOLVE'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(dismissed, 7);
+  });
+
+  testWidgets('unknown alarm still shows a slider so the user can dismiss', (t) async {
+    await t.pumpWidget(_host(alarms: const [], alarmId: 999));
+    await t.pump();
+    expect(find.byType(SlideToWake), findsOneWidget);
+  });
+
+  testWidgets('a failed dismissal keeps the screen so the user can retry', (t) async {
+    var doneCalled = false;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      dismissAlarm: (_) async => throw StateError('stop failed'),
+      onDismissed: () => doneCalled = true,
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(doneCalled, isFalse);
+    expect(find.byType(RingScreen), findsOneWidget);
+  });
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+```bash
+flutter test test/ui/screens/ring_screen_test.dart
+```
+Expected: FAIL — `ring_screen.dart` not found.
+
+- [ ] **Step 3: Write the ring screen**
+
+Create `lib/ui/screens/ring_screen.dart`:
+
+```dart
+import 'dart:async';
+
+import 'package:collection/collection.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../data/alarm_sync_service.dart';
+import '../../data/native/alarm_api.g.dart';
+import '../../domain/alarm.dart';
+import '../components/slide_to_wake.dart';
+import '../state/alarm_providers.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// Builds the dismissal gate for a missioned alarm. Task 10 supplies the real
+/// mission widgets; [onSolved] must be called exactly once when the user
+/// completes the mission — that dismisses the alarm.
+typedef MissionBuilder = Widget Function(
+    BuildContext context, Alarm alarm, VoidCallback onSolved);
+
+/// Fully dismisses a ringing alarm. The order is deliberate and load-bearing
+/// (validated on a physical device in Plan 1):
+///
+/// 1. [AlarmHostApi.stopRinging] runs FIRST and unconditionally — a user who
+///    dismisses must get silence immediately, never gated on a database write
+///    that can block for seconds under SQLite contention. It talks straight to
+///    the native side and does not depend on the Dart service being configured,
+///    so a ringing alarm is always stoppable.
+/// 2. Recording the dismissal + reconciling is best-effort and MUST run after
+///    stopRinging: it disables a fired one-shot so reconcile does not re-arm it
+///    for tomorrow. A failure here is logged, not fatal — the alarm is already
+///    silent.
+///
+/// If stopRinging itself throws (a real platform failure — the alarm may still
+/// be sounding), the throw propagates so the caller keeps the ring screen up
+/// for a retry instead of falsely reporting success.
+Future<void> dismissRingingAlarm(int alarmId) async {
+  await AlarmHostApi().stopRinging(alarmId);
+  try {
+    await AlarmSyncService.instance.repository
+        .recordDismissed(alarmId, DateTime.now().toUtc());
+    await AlarmSyncService.instance.reconcileNow();
+  } catch (e) {
+    debugPrint('Rise: could not record dismissal for alarm $alarmId: $e');
+  }
+}
+
+class RingScreen extends ConsumerStatefulWidget {
+  const RingScreen({
+    super.key,
+    required this.alarmId,
+    this.onDismissed,
+    this.dismissAlarm = dismissRingingAlarm,
+    this.missionBuilder,
+  });
+
+  final int alarmId;
+
+  /// Called after the alarm is fully dismissed — the host pops the screen.
+  final VoidCallback? onDismissed;
+
+  /// The dismissal work (stop → record → reconcile). Injectable for tests;
+  /// defaults to [dismissRingingAlarm].
+  final Future<void> Function(int alarmId) dismissAlarm;
+
+  final MissionBuilder? missionBuilder;
+
+  @override
+  ConsumerState<RingScreen> createState() => _RingScreenState();
+}
+
+class _RingScreenState extends ConsumerState<RingScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+  Timer? _clock;
+  bool _dismissing = false;
+  int _attempt = 0; // bumped on a failed dismissal to reset the slider
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+      lowerBound: 0.92,
+      upperBound: 1.08,
+    )..repeat(reverse: true);
+    _clock = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {}); // advances the live clock
+    });
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  Future<void> _dismiss() async {
+    if (_dismissing) return; // guard double-taps / repeated slide fires
+    setState(() => _dismissing = true);
+    try {
+      await widget.dismissAlarm(widget.alarmId);
+    } catch (e) {
+      debugPrint('Rise: dismiss failed for ${widget.alarmId}: $e');
+      if (mounted) {
+        setState(() {
+          _dismissing = false;
+          _attempt++; // fresh key resets the slide-to-wake so it can fire again
+        });
+      }
+      return;
+    }
+    if (!mounted) return;
+    widget.onDismissed?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final alarm = ref
+        .watch(alarmsProvider)
+        .value
+        ?.firstWhereOrNull((a) => a.id == widget.alarmId);
+    final label = alarm?.label ?? 'Alarm';
+    final now = DateTime.now();
+    final hour12 = now.hour % 12 == 0 ? 12 : now.hour % 12;
+    final ampm = now.hour < 12 ? 'AM' : 'PM';
+    final reduce = MediaQuery.of(context).disableAnimations;
+
+    Widget bell = Container(
+      width: 92,
+      height: 92,
+      decoration: BoxDecoration(
+        color: RiseColors.accentSoft,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: const Icon(Icons.notifications_active,
+          color: RiseColors.accent, size: 44),
+    );
+    if (!reduce) bell = ScaleTransition(scale: _pulse, child: bell);
+
+    final gate = (alarm != null &&
+            alarm.mission != 'none' &&
+            widget.missionBuilder != null)
+        ? widget.missionBuilder!(context, alarm, _dismiss)
+        : SlideToWake(key: ValueKey(_attempt), onWake: _dismiss);
+
+    return Scaffold(
+      backgroundColor: RiseColors.appBg,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(RiseSpacing.screen),
+          child: Column(
+            children: [
+              const Spacer(),
+              bell,
+              const SizedBox(height: 30),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text('$hour12:${now.minute.toString().padLeft(2, '0')}',
+                      style: RiseText.mono(size: 72, weight: FontWeight.w500)),
+                  const SizedBox(width: 10),
+                  Text(ampm,
+                      style: RiseText.mono(size: 20, color: RiseColors.textDim)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(label, style: RiseText.title.copyWith(color: RiseColors.textDim)),
+              const Spacer(),
+              gate,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 4: Run it to verify it passes**
+
+```bash
+flutter test test/ui/screens/ring_screen_test.dart
+```
+Expected: PASS — 5 tests green. (Use `flutter test` — the repeating pulse animation means `pumpAndSettle` would hang; the tests deliberately use `pump`.)
+
+- [ ] **Step 5: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add lib/ui/screens/ring_screen.dart test/ui/screens/ring_screen_test.dart
+git commit -m "feat(ui): add the ring screen with slide-to-wake and mission seam"
+```
+
+---
+
+### Task 10: Wake missions (Math / Hold / Tap / Memory) + host
+
+**Files:**
+- Create: `lib/ui/missions/mission_frame.dart`
+- Create: `lib/ui/missions/math_mission.dart`
+- Create: `lib/ui/missions/hold_mission.dart`
+- Create: `lib/ui/missions/tap_mission.dart`
+- Create: `lib/ui/missions/memory_mission.dart`
+- Create: `lib/ui/missions/mission_host.dart`
+- Test: `test/ui/missions/missions_test.dart`
+
+**Interfaces:**
+- Consumes: components/tokens (`PrimaryButton`, `RiseColors`, `RiseRadii`, `RiseShadows`, `RiseText`); `Alarm`; `RingScreen`'s `MissionBuilder` shape and `alarmsProvider`/`SlideToWake` (for the integration test).
+- Produces:
+  - `MissionFrame({required String instruction, required Widget child})`.
+  - `MathMission`/`HoldMission`/`TapMission`/`MemoryMission` — each `StatefulWidget({required String diff, required VoidCallback onSolved, <injectable override>})`, calling `onSolved` exactly once on completion.
+  - Difficulty helpers `generateMathProblem`, `holdDurationFor`, `tapTargetFor`, `memoryLengthFor`, `generateSequence`.
+  - `Widget buildMission(BuildContext, Alarm, VoidCallback onSolved)` — structurally a `MissionBuilder`; dispatches on `alarm.mission`. Task 14 passes it to `RingScreen(missionBuilder: buildMission)`.
+
+> Each mission takes an injectable override (a fixed math problem, a tiny hold duration, a small tap target, a known memory sequence) so tests are deterministic and fast. `'none'` never reaches `buildMission` (RingScreen shows slide-to-wake for it); the host maps it to an empty box defensively.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/ui/missions/missions_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/ui/components/slide_to_wake.dart';
+import 'package:rise/ui/missions/hold_mission.dart';
+import 'package:rise/ui/missions/math_mission.dart';
+import 'package:rise/ui/missions/memory_mission.dart';
+import 'package:rise/ui/missions/mission_host.dart';
+import 'package:rise/ui/missions/tap_mission.dart';
+import 'package:rise/ui/screens/ring_screen.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+Widget _wrap(Widget child) =>
+    MaterialApp(home: Scaffold(body: Center(child: child)));
+
+void main() {
+  group('MathMission', () {
+    testWidgets('correct answer solves', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(MathMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        problem: (prompt: '2 + 3', answer: 5),
+      )));
+      await t.enterText(find.byType(TextField), '5');
+      await t.tap(find.text('Check'));
+      await t.pump();
+      expect(solved, isTrue);
+    });
+
+    testWidgets('wrong answer does not solve and shows a retry hint', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(MathMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        problem: (prompt: '2 + 3', answer: 5),
+      )));
+      await t.enterText(find.byType(TextField), '9');
+      await t.tap(find.text('Check'));
+      await t.pump();
+      expect(solved, isFalse);
+      expect(find.text('Try again'), findsOneWidget);
+    });
+  });
+
+  test('generateMathProblem answer is consistent with its operands', () {
+    for (final d in ['easy', 'medium', 'hard']) {
+      final p = generateMathProblem(d);
+      expect(p.answer, greaterThan(0));
+      expect(p.prompt, isNotEmpty);
+    }
+  });
+
+  group('HoldMission', () {
+    testWidgets('holding until the timer completes solves', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(HoldMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        holdDuration: const Duration(milliseconds: 100),
+      )));
+      final g = await t.startGesture(t.getCenter(find.text('HOLD')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 130));
+      expect(solved, isTrue);
+      await g.up();
+    });
+
+    testWidgets('releasing early does not solve', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(HoldMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        holdDuration: const Duration(milliseconds: 100),
+      )));
+      final g = await t.startGesture(t.getCenter(find.text('HOLD')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 40));
+      await g.up();
+      await t.pump(const Duration(milliseconds: 200));
+      expect(solved, isFalse);
+    });
+  });
+
+  testWidgets('TapMission: reaching the target solves', (t) async {
+    var solved = false;
+    await t.pumpWidget(_wrap(TapMission(
+      diff: 'easy',
+      onSolved: () => solved = true,
+      targetTaps: 3,
+    )));
+    await t.tap(find.text('3'));
+    await t.pump();
+    await t.tap(find.text('2'));
+    await t.pump();
+    await t.tap(find.text('1'));
+    await t.pump();
+    expect(solved, isTrue);
+  });
+
+  group('MemoryMission', () {
+    testWidgets('repeating the shown sequence solves', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(MemoryMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        sequence: const [0, 1, 2],
+      )));
+      await t.pump(); // start playback
+      await t.pump(const Duration(seconds: 2)); // playback done, input opens
+      await t.tap(find.byKey(const ValueKey('mem-pad-0')));
+      await t.tap(find.byKey(const ValueKey('mem-pad-1')));
+      await t.tap(find.byKey(const ValueKey('mem-pad-2')));
+      await t.pump();
+      expect(solved, isTrue);
+    });
+
+    testWidgets('a wrong tap does not solve', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(MemoryMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        sequence: const [0, 1, 2],
+      )));
+      await t.pump();
+      await t.pump(const Duration(seconds: 2));
+      await t.tap(find.byKey(const ValueKey('mem-pad-3'))); // wrong first pad
+      await t.pump();
+      expect(solved, isFalse);
+    });
+  });
+
+  group('buildMission host', () {
+    testWidgets('dispatches to the right mission widget', (t) async {
+      final cases = <String, Type>{
+        'math': MathMission,
+        'hold': HoldMission,
+        'tap': TapMission,
+        'memory': MemoryMission,
+      };
+      for (final entry in cases.entries) {
+        await t.pumpWidget(_wrap(Builder(
+          builder: (context) => buildMission(
+            context,
+            Alarm(id: 1, hour: 6, minute: 0, mission: entry.key),
+            () {},
+          ),
+        )));
+        await t.pump();
+        expect(find.byType(entry.value), findsOneWidget,
+            reason: 'mission ${entry.key}');
+      }
+    });
+
+    testWidgets('RingScreen with the host shows the mission for a missioned alarm',
+        (t) async {
+      await t.pumpWidget(ProviderScope(
+        overrides: [
+          alarmsProvider.overrideWith((ref) => Stream.value(
+              const [Alarm(id: 7, hour: 6, minute: 30, mission: 'tap')])),
+        ],
+        child: MaterialApp(
+          home: RingScreen(
+            alarmId: 7,
+            dismissAlarm: (_) async {},
+            missionBuilder: buildMission,
+          ),
+        ),
+      ));
+      await t.pump();
+      expect(find.byType(TapMission), findsOneWidget);
+      expect(find.byType(SlideToWake), findsNothing);
+    });
+  });
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+```bash
+flutter test test/ui/missions/missions_test.dart
+```
+Expected: FAIL — mission files not found.
+
+- [ ] **Step 3: Create the shared frame**
+
+Create `lib/ui/missions/mission_frame.dart`:
+
+```dart
+import 'package:flutter/widgets.dart';
+
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// Common presentation for a wake mission: a bold instruction above the
+/// interactive area.
+class MissionFrame extends StatelessWidget {
+  const MissionFrame({super.key, required this.instruction, required this.child});
+
+  final String instruction;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(instruction,
+            textAlign: TextAlign.center,
+            style: RiseText.body
+                .copyWith(color: RiseColors.textDim, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 16),
+        child,
+      ],
+    );
+  }
+}
+```
+
+- [ ] **Step 4: Create the Math mission**
+
+Create `lib/ui/missions/math_mission.dart`:
+
+```dart
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+
+import '../components/rise_buttons.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+import 'mission_frame.dart';
+
+typedef MathProblem = ({String prompt, int answer});
+
+/// A random arithmetic problem scaled by difficulty. Pass [rng] for
+/// determinism in tests.
+MathProblem generateMathProblem(String diff, [Random? rng]) {
+  final r = rng ?? Random();
+  switch (diff) {
+    case 'hard':
+      final a = 3 + r.nextInt(11); // 3..13
+      final b = 3 + r.nextInt(11);
+      return (prompt: '$a × $b', answer: a * b);
+    case 'medium':
+      final a = 10 + r.nextInt(40); // 10..49
+      final b = 10 + r.nextInt(40);
+      return (prompt: '$a + $b', answer: a + b);
+    default: // easy
+      final a = 2 + r.nextInt(18); // 2..19
+      final b = 2 + r.nextInt(18);
+      return (prompt: '$a + $b', answer: a + b);
+  }
+}
+
+class MathMission extends StatefulWidget {
+  const MathMission({
+    super.key,
+    required this.diff,
+    required this.onSolved,
+    this.problem, // injectable for tests
+  });
+
+  final String diff;
+  final VoidCallback onSolved;
+  final MathProblem? problem;
+
+  @override
+  State<MathMission> createState() => _MathMissionState();
+}
+
+class _MathMissionState extends State<MathMission> {
+  late MathProblem _p;
+  final _controller = TextEditingController();
+  bool _wrong = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _p = widget.problem ?? generateMathProblem(widget.diff);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (int.tryParse(_controller.text.trim()) == _p.answer) {
+      widget.onSolved();
+      return;
+    }
+    setState(() {
+      _wrong = true;
+      _controller.clear();
+      // A fresh problem (when not injected) so guessing can't brute-force it.
+      _p = widget.problem ?? generateMathProblem(widget.diff);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MissionFrame(
+      instruction: 'Solve to dismiss',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('${_p.prompt} = ?',
+              style: RiseText.mono(size: 40, weight: FontWeight.w500)),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: 160,
+            child: TextField(
+              controller: _controller,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              style: RiseText.mono(size: 24),
+              cursorColor: RiseColors.primary,
+              onSubmitted: (_) => _submit(),
+              decoration: InputDecoration(
+                hintText: '?',
+                filled: true,
+                fillColor: RiseColors.surface2,
+                errorText: _wrong ? 'Try again' : null,
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(RiseRadii.base),
+                  borderSide: BorderSide(
+                      color: _wrong ? RiseColors.danger : RiseColors.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(RiseRadii.base),
+                  borderSide: const BorderSide(color: RiseColors.primary),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          PrimaryButton(label: 'Check', onPressed: _submit),
+        ],
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 5: Create the Hold mission**
+
+Create `lib/ui/missions/hold_mission.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+import 'mission_frame.dart';
+
+Duration holdDurationFor(String diff) {
+  switch (diff) {
+    case 'hard':
+      return const Duration(seconds: 12);
+    case 'medium':
+      return const Duration(seconds: 8);
+    default:
+      return const Duration(seconds: 5);
+  }
+}
+
+class HoldMission extends StatefulWidget {
+  const HoldMission({
+    super.key,
+    required this.diff,
+    required this.onSolved,
+    this.holdDuration, // injectable for tests
+  });
+
+  final String diff;
+  final VoidCallback onSolved;
+  final Duration? holdDuration;
+
+  @override
+  State<HoldMission> createState() => _HoldMissionState();
+}
+
+class _HoldMissionState extends State<HoldMission>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: widget.holdDuration ?? holdDurationFor(widget.diff),
+    )..addStatusListener((s) {
+        if (s == AnimationStatus.completed) widget.onSolved();
+      });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _down() => _c.forward();
+  void _up() {
+    if (_c.status != AnimationStatus.completed) _c.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MissionFrame(
+      instruction: 'Hold the button until it fills',
+      child: GestureDetector(
+        onTapDown: (_) => _down(),
+        onTapUp: (_) => _up(),
+        onTapCancel: _up,
+        child: SizedBox(
+          width: 140,
+          height: 140,
+          child: AnimatedBuilder(
+            animation: _c,
+            builder: (context, _) => Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 140,
+                  height: 140,
+                  child: CircularProgressIndicator(
+                    value: _c.value,
+                    strokeWidth: 8,
+                    backgroundColor: RiseColors.surface2,
+                    valueColor:
+                        const AlwaysStoppedAnimation(RiseColors.primary),
+                  ),
+                ),
+                Container(
+                  width: 104,
+                  height: 104,
+                  decoration: const BoxDecoration(
+                      color: RiseColors.primary, shape: BoxShape.circle),
+                  alignment: Alignment.center,
+                  child: Text('HOLD',
+                      style: RiseText.mono(
+                          size: 16,
+                          weight: FontWeight.w700,
+                          color: RiseColors.primaryText)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 6: Create the Tap mission**
+
+Create `lib/ui/missions/tap_mission.dart`:
+
+```dart
+import 'package:flutter/widgets.dart';
+
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+import 'mission_frame.dart';
+
+int tapTargetFor(String diff) {
+  switch (diff) {
+    case 'hard':
+      return 50;
+    case 'medium':
+      return 30;
+    default:
+      return 15;
+  }
+}
+
+class TapMission extends StatefulWidget {
+  const TapMission({
+    super.key,
+    required this.diff,
+    required this.onSolved,
+    this.targetTaps, // injectable for tests
+  });
+
+  final String diff;
+  final VoidCallback onSolved;
+  final int? targetTaps;
+
+  @override
+  State<TapMission> createState() => _TapMissionState();
+}
+
+class _TapMissionState extends State<TapMission> {
+  int _count = 0;
+  late final int _target = widget.targetTaps ?? tapTargetFor(widget.diff);
+
+  void _tap() {
+    if (_count >= _target) return;
+    setState(() => _count++);
+    if (_count >= _target) widget.onSolved();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = _target - _count;
+    return MissionFrame(
+      instruction: 'Tap $remaining more time${remaining == 1 ? '' : 's'}',
+      child: GestureDetector(
+        onTap: _tap,
+        child: Container(
+          width: 150,
+          height: 150,
+          decoration: BoxDecoration(
+            color: RiseColors.primary,
+            borderRadius: BorderRadius.circular(RiseRadii.lg),
+            boxShadow: RiseShadows.primary,
+          ),
+          alignment: Alignment.center,
+          child: Text('$remaining',
+              style: RiseText.mono(
+                  size: 48,
+                  weight: FontWeight.w600,
+                  color: RiseColors.primaryText)),
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 7: Create the Memory mission**
+
+Create `lib/ui/missions/memory_mission.dart`:
+
+```dart
+import 'dart:async';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+
+import '../theme/tokens.dart';
+import 'mission_frame.dart';
+
+int memoryLengthFor(String diff) {
+  switch (diff) {
+    case 'hard':
+      return 5;
+    case 'medium':
+      return 4;
+    default:
+      return 3;
+  }
+}
+
+/// A random pad sequence (pads 0..3). Pass [rng] for determinism in tests.
+List<int> generateSequence(int length, [Random? rng]) {
+  final r = rng ?? Random();
+  return List.generate(length, (_) => r.nextInt(4));
+}
+
+class MemoryMission extends StatefulWidget {
+  const MemoryMission({
+    super.key,
+    required this.diff,
+    required this.onSolved,
+    this.sequence, // injectable for tests
+  });
+
+  final String diff;
+  final VoidCallback onSolved;
+  final List<int>? sequence;
+
+  @override
+  State<MemoryMission> createState() => _MemoryMissionState();
+}
+
+class _MemoryMissionState extends State<MemoryMission> {
+  late List<int> _seq;
+  int _flashIndex = -1; // lit pad during playback; -1 = none
+  int _inputPos = 0;
+  bool _accepting = false;
+  final _timers = <Timer>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _seq = widget.sequence ?? generateSequence(memoryLengthFor(widget.diff));
+    _play();
+  }
+
+  @override
+  void dispose() {
+    for (final t in _timers) {
+      t.cancel();
+    }
+    super.dispose();
+  }
+
+  void _play() {
+    _accepting = false;
+    _inputPos = 0;
+    const on = Duration(milliseconds: 420);
+    const gap = Duration(milliseconds: 180);
+    var t = Duration.zero;
+    for (var i = 0; i < _seq.length; i++) {
+      final lit = _seq[i];
+      _timers.add(Timer(t, () {
+        if (mounted) setState(() => _flashIndex = lit);
+      }));
+      t += on;
+      _timers.add(Timer(t, () {
+        if (mounted) setState(() => _flashIndex = -1);
+      }));
+      t += gap;
+    }
+    _timers.add(Timer(t, () {
+      if (mounted) setState(() => _accepting = true);
+    }));
+  }
+
+  void _replay() {
+    for (final t in _timers) {
+      t.cancel();
+    }
+    _timers.clear();
+    setState(() {
+      _flashIndex = -1;
+      _accepting = false;
+      _inputPos = 0;
+    });
+    _play();
+  }
+
+  void _tap(int pad) {
+    if (!_accepting) return;
+    if (pad == _seq[_inputPos]) {
+      _inputPos++;
+      if (_inputPos >= _seq.length) widget.onSolved();
+    } else {
+      _replay(); // wrong — show it again
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MissionFrame(
+      instruction: _accepting ? 'Repeat the sequence' : 'Watch carefully…',
+      child: SizedBox(
+        width: 200,
+        child: GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          children: [
+            for (var i = 0; i < 4; i++)
+              GestureDetector(
+                key: ValueKey('mem-pad-$i'),
+                onTap: () => _tap(i),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _flashIndex == i
+                        ? RiseColors.accent
+                        : RiseColors.surface2,
+                    borderRadius: BorderRadius.circular(RiseRadii.base),
+                    border: Border.all(color: RiseColors.border),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 8: Create the host**
+
+Create `lib/ui/missions/mission_host.dart`:
+
+```dart
+import 'package:flutter/widgets.dart';
+
+import '../../domain/alarm.dart';
+import 'hold_mission.dart';
+import 'math_mission.dart';
+import 'memory_mission.dart';
+import 'tap_mission.dart';
+
+/// Structurally a `MissionBuilder` (see `ring_screen.dart`): picks the mission
+/// widget for [alarm.mission]. `'none'` never reaches here — RingScreen shows
+/// slide-to-wake for it — so it maps to an empty box defensively.
+Widget buildMission(BuildContext context, Alarm alarm, VoidCallback onSolved) {
+  switch (alarm.mission) {
+    case 'math':
+      return MathMission(diff: alarm.missionDiff, onSolved: onSolved);
+    case 'hold':
+      return HoldMission(diff: alarm.missionDiff, onSolved: onSolved);
+    case 'tap':
+      return TapMission(diff: alarm.missionDiff, onSolved: onSolved);
+    case 'memory':
+      return MemoryMission(diff: alarm.missionDiff, onSolved: onSolved);
+    default:
+      return const SizedBox.shrink();
+  }
+}
+```
+
+- [ ] **Step 9: Run the missions test to verify it passes**
+
+```bash
+flutter test test/ui/missions/missions_test.dart
+```
+Expected: PASS — 10 tests green. (Uses `pump`, never `pumpAndSettle`.)
+
+- [ ] **Step 10: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add lib/ui/missions test/ui/missions
+git commit -m "feat(ui): add the four wake missions and the mission host"
+```
+
+---
+
+### Task 11: Onboarding
+
+**Files:**
+- Create: `lib/ui/screens/onboarding_screen.dart`
+- Test: `test/ui/screens/onboarding_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `AlarmHostApi`/`AlarmPermissions` (`lib/data/native/alarm_api.g.dart` — `getPermissions()`, `requestNotificationPermission()`, `openExactAlarmSettings()`, `openFullScreenIntentSettings()`, `openBatterySettings()`); components (`RiseCard`, `PrimaryButton`, `SecondaryButton`, `GhostButton`); tokens/typography.
+- Produces:
+  - `abstract interface class PermissionGateway { Future<AlarmPermissions> status(); Future<void> requestNotifications(); Future<void> openExactAlarm(); Future<void> openFullScreenIntent(); Future<void> openBattery(); }`
+  - `class NativePermissionGateway implements PermissionGateway` (const; wraps `AlarmHostApi`).
+  - `class OnboardingScreen extends StatefulWidget` — `OnboardingScreen({required VoidCallback onDone, PermissionGateway permissions = const NativePermissionGateway()})`. A 3-page intro ending in a permissions page; `onDone` fires on "Start using Rise" or "Skip". Persisting "onboarding seen" is the host's concern (Task 13/14).
+
+> The permission calls are abstracted behind `PermissionGateway` so the screen is testable without the platform channel (mirrors `RingScreen`'s injected `dismissAlarm`). The screen never gates "Start" on permissions — a user can grant later from Profile — but shows each permission's live status and a Grant button. `AlarmPermissions` is a mutable Pigeon value; the fake gateway flips fields to simulate a grant.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/ui/screens/onboarding_screen_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/native/alarm_api.g.dart';
+import 'package:rise/ui/screens/onboarding_screen.dart';
+
+AlarmPermissions _perms({
+  bool notif = false,
+  bool exact = false,
+  bool fsi = false,
+  bool batt = false,
+}) =>
+    AlarmPermissions(
+        notifications: notif,
+        exactAlarm: exact,
+        fullScreenIntent: fsi,
+        batteryUnrestricted: batt);
+
+class _FakeGateway implements PermissionGateway {
+  _FakeGateway(this._p);
+  AlarmPermissions _p;
+  int notifRequests = 0;
+  final opened = <String>[];
+  @override
+  Future<AlarmPermissions> status() async => _p;
+  @override
+  Future<void> requestNotifications() async {
+    notifRequests++;
+    _p.notifications = true;
+  }
+
+  @override
+  Future<void> openExactAlarm() async => opened.add('exact');
+  @override
+  Future<void> openFullScreenIntent() async => opened.add('fsi');
+  @override
+  Future<void> openBattery() async => opened.add('battery');
+}
+
+Widget _host(_FakeGateway gw, {VoidCallback? onDone}) => MaterialApp(
+      home: OnboardingScreen(onDone: onDone ?? () {}, permissions: gw),
+    );
+
+Future<void> _toPermissions(WidgetTester t) async {
+  await t.tap(find.text('Next'));
+  await t.pumpAndSettle();
+  await t.tap(find.text('Next'));
+  await t.pumpAndSettle();
+}
+
+void main() {
+  testWidgets('advances through pages and Start calls onDone', (t) async {
+    var done = false;
+    await t.pumpWidget(_host(_FakeGateway(_perms()), onDone: () => done = true));
+    await t.pumpAndSettle();
+    expect(find.text('Wake up, for real'), findsOneWidget);
+    await _toPermissions(t);
+    expect(find.text('Ring through anything'), findsOneWidget);
+    await t.tap(find.text('Start using Rise'));
+    await t.pumpAndSettle();
+    expect(done, isTrue);
+  });
+
+  testWidgets('Skip on the first page calls onDone', (t) async {
+    var done = false;
+    await t.pumpWidget(_host(_FakeGateway(_perms()), onDone: () => done = true));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Skip'));
+    await t.pumpAndSettle();
+    expect(done, isTrue);
+  });
+
+  testWidgets('ungranted notifications shows Grant; tapping requests and updates',
+      (t) async {
+    final gw = _FakeGateway(_perms());
+    await t.pumpWidget(_host(gw));
+    await t.pumpAndSettle();
+    await _toPermissions(t);
+    expect(find.text('Grant'), findsNWidgets(4)); // all four ungranted
+    await t.tap(find.text('Grant').first); // notifications is first
+    await t.pumpAndSettle();
+    expect(gw.notifRequests, 1);
+    expect(find.text('Grant'), findsNWidgets(3)); // notifications now granted
+  });
+
+  testWidgets('a granted permission shows no Grant button', (t) async {
+    final gw = _FakeGateway(_perms(notif: true));
+    await t.pumpWidget(_host(gw));
+    await t.pumpAndSettle();
+    await _toPermissions(t);
+    expect(find.text('Notifications'), findsOneWidget);
+    expect(find.text('Grant'), findsNWidgets(3)); // three ungranted
+  });
+
+  testWidgets('tapping the exact-alarm Grant opens its settings', (t) async {
+    final gw = _FakeGateway(_perms());
+    await t.pumpWidget(_host(gw));
+    await t.pumpAndSettle();
+    await _toPermissions(t);
+    await t.tap(find.text('Grant').at(1)); // order: notif, exact, fsi, battery
+    await t.pumpAndSettle();
+    expect(gw.opened, contains('exact'));
+  });
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+```bash
+flutter test test/ui/screens/onboarding_screen_test.dart
+```
+Expected: FAIL — `onboarding_screen.dart` not found.
+
+- [ ] **Step 3: Write the onboarding screen**
+
+Create `lib/ui/screens/onboarding_screen.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../../data/native/alarm_api.g.dart';
+import '../components/rise_buttons.dart';
+import '../components/rise_card.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+/// Abstracts the native permission calls so onboarding is testable without the
+/// platform channel. Production uses [NativePermissionGateway].
+abstract interface class PermissionGateway {
+  Future<AlarmPermissions> status();
+  Future<void> requestNotifications();
+  Future<void> openExactAlarm();
+  Future<void> openFullScreenIntent();
+  Future<void> openBattery();
+}
+
+class NativePermissionGateway implements PermissionGateway {
+  const NativePermissionGateway();
+  @override
+  Future<AlarmPermissions> status() => AlarmHostApi().getPermissions();
+  @override
+  Future<void> requestNotifications() =>
+      AlarmHostApi().requestNotificationPermission();
+  @override
+  Future<void> openExactAlarm() => AlarmHostApi().openExactAlarmSettings();
+  @override
+  Future<void> openFullScreenIntent() =>
+      AlarmHostApi().openFullScreenIntentSettings();
+  @override
+  Future<void> openBattery() => AlarmHostApi().openBatterySettings();
+}
+
+class OnboardingScreen extends StatefulWidget {
+  const OnboardingScreen({
+    super.key,
+    required this.onDone,
+    this.permissions = const NativePermissionGateway(),
+  });
+
+  final VoidCallback onDone;
+  final PermissionGateway permissions;
+
+  @override
+  State<OnboardingScreen> createState() => _OnboardingScreenState();
+}
+
+class _OnboardingScreenState extends State<OnboardingScreen>
+    with WidgetsBindingObserver {
+  final _controller = PageController();
+  int _page = 0;
+  AlarmPermissions? _perms;
+
+  static const _lastPage = 2;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Returning from a system settings screen (exact-alarm, battery, …) should
+    // refresh the granted/needed checks.
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final p = await widget.permissions.status();
+    if (mounted) setState(() => _perms = p);
+  }
+
+  Future<void> _grant(Future<void> Function() action) async {
+    await action();
+    await _refresh();
+  }
+
+  void _next() {
+    if (_page < _lastPage) {
+      _controller.nextPage(
+          duration: const Duration(milliseconds: 280), curve: Curves.easeOut);
+    } else {
+      widget.onDone();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: RiseColors.appBg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8, top: 4),
+                child: _page < _lastPage
+                    ? GhostButton(label: 'Skip', onPressed: widget.onDone)
+                    : const SizedBox(height: 44),
+              ),
+            ),
+            Expanded(
+              child: PageView(
+                controller: _controller,
+                onPageChanged: (i) => setState(() => _page = i),
+                children: [
+                  _intro(
+                    icon: Icons.notifications_active,
+                    title: 'Wake up, for real',
+                    body:
+                        'Rise rings through silent mode, Focus, and a locked screen — and makes sure you actually get up.',
+                  ),
+                  _intro(
+                    icon: Icons.psychology_alt,
+                    title: 'Prove you\'re awake',
+                    body:
+                        'Turn an alarm off only by finishing a quick mission — solve some math, repeat a pattern, or hold a button. No half-asleep swipe.',
+                  ),
+                  _permissionsPage(),
+                ],
+              ),
+            ),
+            _dots(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  RiseSpacing.screen, 12, RiseSpacing.screen, 16),
+              child: PrimaryButton(
+                label: _page < _lastPage ? 'Next' : 'Start using Rise',
+                onPressed: _next,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _intro(
+      {required IconData icon, required String title, required String body}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              color: RiseColors.accentSoft,
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: Icon(icon, size: 44, color: RiseColors.accent),
+          ),
+          const SizedBox(height: 28),
+          Text(title, textAlign: TextAlign.center, style: RiseText.display),
+          const SizedBox(height: 12),
+          Text(body,
+              textAlign: TextAlign.center,
+              style: RiseText.body.copyWith(color: RiseColors.textDim)),
+        ],
+      ),
+    );
+  }
+
+  Widget _permissionsPage() {
+    final p = _perms;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+          RiseSpacing.screen, 12, RiseSpacing.screen, 12),
+      children: [
+        Text('Ring through anything', style: RiseText.title),
+        const SizedBox(height: 8),
+        Text(
+            'Rise needs a few permissions to reach you on silent, locked, or dozing.',
+            style: RiseText.body.copyWith(color: RiseColors.textDim)),
+        const SizedBox(height: 18),
+        if (p == null)
+          const Center(
+              child: Padding(
+                  padding: EdgeInsets.all(20), child: Text('Checking…')))
+        else ...[
+          _permRow('Notifications', 'Show the alarm and let it ring.',
+              p.notifications, () => _grant(widget.permissions.requestNotifications)),
+          _permRow('Exact alarm', 'Fire at the exact minute.', p.exactAlarm,
+              () => _grant(widget.permissions.openExactAlarm)),
+          _permRow('Full-screen alarm', 'Show over the lock screen.',
+              p.fullScreenIntent,
+              () => _grant(widget.permissions.openFullScreenIntent)),
+          _permRow('Unrestricted battery',
+              'Don\'t let the system doze the alarm.', p.batteryUnrestricted,
+              () => _grant(widget.permissions.openBattery)),
+          const SizedBox(height: 4),
+          Center(child: GhostButton(label: 'Re-check', onPressed: _refresh)),
+        ],
+      ],
+    );
+  }
+
+  Widget _permRow(String label, String why, bool granted, VoidCallback onGrant) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: RiseCard(
+        child: Row(
+          children: [
+            Icon(granted ? Icons.check_circle : Icons.circle_outlined,
+                color: granted ? RiseColors.positive : RiseColors.textFaint,
+                size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style:
+                          RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(why, style: RiseText.caption),
+                ],
+              ),
+            ),
+            if (!granted) SecondaryButton(label: 'Grant', onPressed: onGrant),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dots() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var i = 0; i <= _lastPage; i++)
+          Container(
+            width: 7,
+            height: 7,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              color: i == _page ? RiseColors.primary : RiseColors.border,
+              shape: BoxShape.circle,
+            ),
+          ),
+      ],
+    );
+  }
+}
+```
+
+- [ ] **Step 4: Run it to verify it passes**
+
+```bash
+flutter test test/ui/screens/onboarding_screen_test.dart
+```
+Expected: PASS — 5 tests green.
+
+- [ ] **Step 5: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add lib/ui/screens/onboarding_screen.dart test/ui/screens/onboarding_screen_test.dart
+git commit -m "feat(ui): add onboarding with permission requests"
+```
+
+---
+
+### Task 12: Profile/Settings + local settings store
+
+**Files:**
+- Modify: `pubspec.yaml` (add `shared_preferences`)
+- Create: `lib/data/app_settings.dart`
+- Create: `lib/ui/state/settings_providers.dart`
+- Create: `lib/data/permission_gateway.dart` (moved out of `onboarding_screen.dart`)
+- Create: `lib/ui/components/permissions_section.dart`
+- Modify: `lib/ui/screens/onboarding_screen.dart` (use the shared gateway + section)
+- Modify: `test/ui/screens/onboarding_screen_test.dart` (import the moved gateway)
+- Create: `lib/ui/screens/profile_screen.dart`
+- Test: `test/data/app_settings_test.dart`
+- Test: `test/ui/screens/profile_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `AlarmPermissions`/`AlarmHostApi`; components/tokens; the onboarding screen (refactor).
+- Produces:
+  - `class AppSettings` — `static Future<AppSettings> load()`, `bool get onboardingComplete`, `Future<void> setOnboardingComplete(bool)`. SharedPreferences-backed app prefs (NOT alarm data).
+  - `appSettingsProvider` (`Provider<AppSettings>`, throws until overridden in main).
+  - `PermissionGateway` / `NativePermissionGateway` — moved to `lib/data/permission_gateway.dart` (was in `onboarding_screen.dart`).
+  - `PermissionsSection({required PermissionGateway gateway})` — the four reliability permissions with live status + Grant, shared by onboarding and Profile.
+  - `ProfileScreen({PermissionGateway permissions = const NativePermissionGateway()})` — guest card + reliability (permissions) + about.
+
+> DRY: the permission rows and refresh/grant logic that lived inline in `onboarding_screen.dart` move into `PermissionsSection`; the `PermissionGateway` type moves to the data layer (it wraps `AlarmHostApi`). Onboarding is refactored to use both — its user-visible strings are unchanged, so its existing tests still pass (one import line updates). `AppSettings` is deliberately separate from the alarm Drift DB: app preferences are not alarm data.
+
+- [ ] **Step 1: Add the dependency**
+
+```bash
+flutter pub add shared_preferences
+```
+Expected: `pubspec.yaml` gains `shared_preferences: ^2.x`; `flutter pub get` runs clean.
+
+- [ ] **Step 2: Write the failing settings-store test**
+
+Create `test/data/app_settings_test.dart`:
+
+```dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/app_settings.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('onboardingComplete defaults to false, round-trips, and persists', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.onboardingComplete, isFalse);
+
+    await s.setOnboardingComplete(true);
+    expect(s.onboardingComplete, isTrue);
+
+    // A freshly loaded instance sees the persisted value.
+    final s2 = await AppSettings.load();
+    expect(s2.onboardingComplete, isTrue);
+  });
+}
+```
+
+- [ ] **Step 3: Run it to verify it fails**
+
+```bash
+flutter test test/data/app_settings_test.dart
+```
+Expected: FAIL — `app_settings.dart` not found.
+
+- [ ] **Step 4: Write the settings store and provider**
+
+Create `lib/data/app_settings.dart`:
+
+```dart
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Small key-value store for app-level preferences. Deliberately separate from
+/// the alarm Drift database (the alarm source of truth) — these are app prefs,
+/// not alarm data. Backed by SharedPreferences.
+class AppSettings {
+  AppSettings(this._prefs);
+
+  final SharedPreferences _prefs;
+
+  static Future<AppSettings> load() async =>
+      AppSettings(await SharedPreferences.getInstance());
+
+  static const _kOnboardingComplete = 'onboardingComplete';
+
+  /// Whether the user has finished (or skipped) onboarding. The launcher reads
+  /// this to decide between Onboarding and the app shell.
+  bool get onboardingComplete => _prefs.getBool(_kOnboardingComplete) ?? false;
+
+  Future<void> setOnboardingComplete(bool value) =>
+      _prefs.setBool(_kOnboardingComplete, value);
+}
+```
+
+Create `lib/ui/state/settings_providers.dart`:
+
+```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../data/app_settings.dart';
+
+/// The app's settings store. main() overrides this with the instance loaded at
+/// startup; tests override it with an AppSettings over mock preferences.
+final appSettingsProvider = Provider<AppSettings>((ref) {
+  throw UnimplementedError('appSettingsProvider must be overridden in main()');
+});
+```
+
+- [ ] **Step 5: Run the settings test to verify it passes**
+
+```bash
+flutter test test/data/app_settings_test.dart
+```
+Expected: PASS.
+
+- [ ] **Step 6: Move the gateway to the data layer**
+
+Create `lib/data/permission_gateway.dart`:
+
+```dart
+import 'native/alarm_api.g.dart';
+
+/// Abstracts the native permission calls so UI is testable without the
+/// platform channel. Production uses [NativePermissionGateway].
+abstract interface class PermissionGateway {
+  Future<AlarmPermissions> status();
+  Future<void> requestNotifications();
+  Future<void> openExactAlarm();
+  Future<void> openFullScreenIntent();
+  Future<void> openBattery();
+}
+
+class NativePermissionGateway implements PermissionGateway {
+  const NativePermissionGateway();
+  @override
+  Future<AlarmPermissions> status() => AlarmHostApi().getPermissions();
+  @override
+  Future<void> requestNotifications() =>
+      AlarmHostApi().requestNotificationPermission();
+  @override
+  Future<void> openExactAlarm() => AlarmHostApi().openExactAlarmSettings();
+  @override
+  Future<void> openFullScreenIntent() =>
+      AlarmHostApi().openFullScreenIntentSettings();
+  @override
+  Future<void> openBattery() => AlarmHostApi().openBatterySettings();
+}
+```
+
+- [ ] **Step 7: Create the shared PermissionsSection**
+
+Create `lib/ui/components/permissions_section.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../../data/native/alarm_api.g.dart';
+import '../../data/permission_gateway.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+import 'rise_buttons.dart';
+import 'rise_card.dart';
+
+/// The four alarm-reliability permissions with live status and a Grant action.
+/// Loads on mount and refreshes on app-resume (e.g. after the user returns from
+/// a system settings screen). Shared by onboarding and Profile.
+class PermissionsSection extends StatefulWidget {
+  const PermissionsSection({super.key, required this.gateway});
+
+  final PermissionGateway gateway;
+
+  @override
+  State<PermissionsSection> createState() => _PermissionsSectionState();
+}
+
+class _PermissionsSectionState extends State<PermissionsSection>
+    with WidgetsBindingObserver {
+  AlarmPermissions? _perms;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final p = await widget.gateway.status();
+    if (mounted) setState(() => _perms = p);
+  }
+
+  Future<void> _grant(Future<void> Function() action) async {
+    await action();
+    await _refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = _perms;
+    if (p == null) {
+      return const Center(
+          child:
+              Padding(padding: EdgeInsets.all(20), child: Text('Checking…')));
+    }
+    return Column(
+      children: [
+        _row('Notifications', 'Show the alarm and let it ring.', p.notifications,
+            () => _grant(widget.gateway.requestNotifications)),
+        _row('Exact alarm', 'Fire at the exact minute.', p.exactAlarm,
+            () => _grant(widget.gateway.openExactAlarm)),
+        _row('Full-screen alarm', 'Show over the lock screen.',
+            p.fullScreenIntent,
+            () => _grant(widget.gateway.openFullScreenIntent)),
+        _row('Unrestricted battery', 'Don\'t let the system doze the alarm.',
+            p.batteryUnrestricted, () => _grant(widget.gateway.openBattery)),
+        const SizedBox(height: 4),
+        Center(child: GhostButton(label: 'Re-check', onPressed: _refresh)),
+      ],
+    );
+  }
+
+  Widget _row(String label, String why, bool granted, VoidCallback onGrant) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: RiseCard(
+        child: Row(
+          children: [
+            Icon(granted ? Icons.check_circle : Icons.circle_outlined,
+                color: granted ? RiseColors.positive : RiseColors.textFaint,
+                size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style:
+                          RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(why, style: RiseText.caption),
+                ],
+              ),
+            ),
+            if (!granted) SecondaryButton(label: 'Grant', onPressed: onGrant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 8: Refactor onboarding to use the shared gateway + section**
+
+In `lib/ui/screens/onboarding_screen.dart`:
+
+1. DELETE the `PermissionGateway` abstract class and the `NativePermissionGateway` class (they now live in `lib/data/permission_gateway.dart`).
+2. Add imports:
+```dart
+import '../../data/permission_gateway.dart';
+import '../components/permissions_section.dart';
+```
+(and remove the now-unused `import '../../data/native/alarm_api.g.dart';` if it is no longer referenced — after this refactor `AlarmPermissions` is no longer used in this file; keep only imports still used.)
+3. Change the state class declaration from `class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBindingObserver {` to `class _OnboardingScreenState extends State<OnboardingScreen> {`.
+4. DELETE these members (now owned by `PermissionsSection`): the `AlarmPermissions? _perms;` field; `didChangeAppLifecycleState`; `Future<void> _refresh()`; `Future<void> _grant(...)`; `Widget _permRow(...)`. Also delete the `WidgetsBinding.instance.addObserver(this);` line from `initState` and the `WidgetsBinding.instance.removeObserver(this);` line from `dispose`. Keep the `_controller` creation/disposal and the `_refresh()` call in `initState` becomes just gone (remove that call).
+5. Replace `_permissionsPage()` with:
+```dart
+  Widget _permissionsPage() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+          RiseSpacing.screen, 12, RiseSpacing.screen, 12),
+      children: [
+        Text('Ring through anything', style: RiseText.title),
+        const SizedBox(height: 8),
+        Text(
+            'Rise needs a few permissions to reach you on silent, locked, or dozing.',
+            style: RiseText.body.copyWith(color: RiseColors.textDim)),
+        const SizedBox(height: 18),
+        PermissionsSection(gateway: widget.permissions),
+      ],
+    );
+  }
+```
+Leave everything else in the file (the constructor, `onDone`/`permissions` fields, `_page`, `_lastPage`, `_next`, `_intro`, `_dots`, `build`) unchanged.
+
+In `test/ui/screens/onboarding_screen_test.dart`, add the import so the test's `_FakeGateway implements PermissionGateway` still resolves:
+```dart
+import 'package:rise/data/permission_gateway.dart';
+```
+(The rest of the onboarding test is unchanged — its string-based assertions still hold because `PermissionsSection` renders the same 'Grant'/'Notifications' text.)
+
+- [ ] **Step 9: Run the onboarding test to confirm it still passes**
+
+```bash
+flutter test test/ui/screens/onboarding_screen_test.dart
+```
+Expected: PASS — the same 5 tests, now exercising `PermissionsSection` through onboarding.
+
+- [ ] **Step 10: Write the failing Profile test**
+
+Create `test/ui/screens/profile_screen_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/native/alarm_api.g.dart';
+import 'package:rise/data/permission_gateway.dart';
+import 'package:rise/ui/screens/profile_screen.dart';
+
+class _FakeGateway implements PermissionGateway {
+  _FakeGateway(this._p);
+  final AlarmPermissions _p;
+  @override
+  Future<AlarmPermissions> status() async => _p;
+  @override
+  Future<void> requestNotifications() async {}
+  @override
+  Future<void> openExactAlarm() async {}
+  @override
+  Future<void> openFullScreenIntent() async {}
+  @override
+  Future<void> openBattery() async {}
+}
+
+void main() {
+  testWidgets('shows profile, reliability permissions, and about', (t) async {
+    await t.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ProfileScreen(
+          permissions: _FakeGateway(AlarmPermissions(
+              notifications: false,
+              exactAlarm: false,
+              fullScreenIntent: false,
+              batteryUnrestricted: false)),
+        ),
+      ),
+    ));
+    await t.pumpAndSettle();
+    expect(find.text('Profile'), findsOneWidget);
+    expect(find.text('Guest'), findsOneWidget);
+    expect(find.text('Grant'), findsNWidgets(4));
+    expect(find.text('1.0.0'), findsOneWidget);
+  });
+}
+```
+
+- [ ] **Step 11: Run it to verify it fails**
+
+```bash
+flutter test test/ui/screens/profile_screen_test.dart
+```
+Expected: FAIL — `profile_screen.dart` not found.
+
+- [ ] **Step 12: Write the Profile screen**
+
+Create `lib/ui/screens/profile_screen.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../../data/permission_gateway.dart';
+import '../components/permissions_section.dart';
+import '../components/rise_card.dart';
+import '../components/section_label.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+class ProfileScreen extends StatelessWidget {
+  const ProfileScreen(
+      {super.key, this.permissions = const NativePermissionGateway()});
+
+  final PermissionGateway permissions;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+            RiseSpacing.screen, 8, RiseSpacing.screen, 40),
+        children: [
+          Text('Profile', style: RiseText.display),
+          const SizedBox(height: 16),
+          RiseCard(
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: const BoxDecoration(
+                      color: RiseColors.accentSoft, shape: BoxShape.circle),
+                  child: const Icon(Icons.person_outline,
+                      color: RiseColors.accent, size: 26),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Guest',
+                          style: RiseText.body
+                              .copyWith(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                      Text('Sign in to sync your alarms and crew — coming soon',
+                          style: RiseText.caption),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          const SectionLabel('Reliability'),
+          const SizedBox(height: 6),
+          Text('Make sure Rise can always reach you.', style: RiseText.caption),
+          const SizedBox(height: 12),
+          PermissionsSection(gateway: permissions),
+          const SizedBox(height: 24),
+          const SectionLabel('About'),
+          const SizedBox(height: 12),
+          RiseCard(
+            child: Column(
+              children: [
+                _aboutRow('Version', '1.0.0'),
+                const Divider(height: 20, color: RiseColors.divider),
+                _aboutRow('Made for', 'waking up, 100%'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _aboutRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: RiseText.body.copyWith(color: RiseColors.textDim)),
+        Text(value, style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+}
+```
+
+- [ ] **Step 13: Run the Profile test, then the whole suite and analyze**
+
+```bash
+flutter test test/ui/screens/profile_screen_test.dart
+flutter test
+flutter analyze
+```
+Expected: Profile test green; whole suite green (onboarding still passes); `No issues found!`.
+
+- [ ] **Step 14: Commit**
+
+```bash
+git add pubspec.yaml pubspec.lock lib/data/app_settings.dart lib/ui/state/settings_providers.dart lib/data/permission_gateway.dart lib/ui/components/permissions_section.dart lib/ui/screens/onboarding_screen.dart test/ui/screens/onboarding_screen_test.dart lib/ui/screens/profile_screen.dart test/data/app_settings_test.dart test/ui/screens/profile_screen_test.dart
+git commit -m "feat(ui): add Profile, settings store, and shared permissions section"
+```
+
+---
+
+### Task 13: Tab-bar app shell
+
+**Files:**
+- Create: `lib/ui/screens/app_shell.dart`
+- Test: `test/ui/screens/app_shell_test.dart`
+
+**Interfaces:**
+- Consumes: `HomeScreen`, `CreateEditScreen`, `ProfileScreen`, `RingScreen` + `buildMission`; `draftProvider`/`alarmsProvider`/`nextOccurrenceProvider`/`toastProvider`; `ToastHost`/`RiseToast`; `PermissionGateway`/`NativePermissionGateway`; tokens/typography; `Alarm`.
+- Produces:
+  - `class AppShell extends ConsumerStatefulWidget` — `AppShell({PermissionGateway permissions = const NativePermissionGateway()})`. A 4-tab shell (Alarms / Crew / Sleep / Profile) that opens the editor as a `draftProvider`-driven overlay, pushes a ring preview, and hosts toasts.
+
+> The editor is an overlay gated on `draftProvider` (not a route): `HomeScreen.onNew`/`onEdit` set the draft, `CreateEditScreen` clears it on done → overlay closes. `PopScope` makes Android back close the editor instead of the app. Only the active tab is built (defers `ProfileScreen`'s permission check until the tab is visited and keeps tab-switching testable). Crew/Sleep are honest "coming soon" stubs (Plans 5–7). Preview pushes a real `RingScreen` with a no-op `dismissAlarm` (nothing is actually ringing) so the user can rehearse the wake + mission.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/ui/screens/app_shell_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/native/alarm_api.g.dart';
+import 'package:rise/data/permission_gateway.dart';
+import 'package:rise/domain/alarm.dart';
+import 'package:rise/domain/scheduled_occurrence.dart';
+import 'package:rise/ui/components/toast.dart';
+import 'package:rise/ui/screens/app_shell.dart';
+import 'package:rise/ui/screens/create_edit_screen.dart';
+import 'package:rise/ui/screens/home_screen.dart';
+import 'package:rise/ui/screens/profile_screen.dart';
+import 'package:rise/ui/screens/ring_screen.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
+
+class _FakeGateway implements PermissionGateway {
+  @override
+  Future<AlarmPermissions> status() async => AlarmPermissions(
+      notifications: true,
+      exactAlarm: true,
+      fullScreenIntent: true,
+      batteryUnrestricted: true);
+  @override
+  Future<void> requestNotifications() async {}
+  @override
+  Future<void> openExactAlarm() async {}
+  @override
+  Future<void> openFullScreenIntent() async {}
+  @override
+  Future<void> openBattery() async {}
+}
+
+List<Override> _overrides(List<Alarm> alarms, ScheduledOccurrence? next) => [
+      alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
+      nextOccurrenceProvider.overrideWith((ref) async => next),
+    ];
+
+Widget _host(ProviderContainer c) => UncontrolledProviderScope(
+      container: c,
+      child: MaterialApp(home: AppShell(permissions: _FakeGateway())),
+    );
+
+ProviderContainer _container(
+    {List<Alarm> alarms = const [], ScheduledOccurrence? next}) {
+  final c = ProviderContainer(overrides: _overrides(alarms, next));
+  addTearDown(c.dispose);
+  return c;
+}
+
+void main() {
+  testWidgets('starts on the alarms tab', (t) async {
+    await t.pumpWidget(_host(_container()));
+    await t.pump();
+    expect(find.byType(HomeScreen), findsOneWidget);
+  });
+
+  testWidgets('tapping New opens the editor; Cancel closes it', (t) async {
+    await t.pumpWidget(_host(_container()));
+    await t.pump();
+    expect(find.byType(CreateEditScreen), findsNothing);
+    await t.tap(find.text('+ New'));
+    await t.pump();
+    expect(find.byType(CreateEditScreen), findsOneWidget);
+    expect(find.text('New alarm'), findsOneWidget);
+    await t.tap(find.text('Cancel'));
+    await t.pump();
+    expect(find.byType(CreateEditScreen), findsNothing);
+  });
+
+  testWidgets('switching to the Profile tab shows the profile', (t) async {
+    await t.pumpWidget(_host(_container()));
+    await t.pump();
+    await t.tap(find.text('Profile'));
+    await t.pump();
+    expect(find.byType(ProfileScreen), findsOneWidget);
+    expect(find.byType(HomeScreen), findsNothing);
+  });
+
+  testWidgets('a toast message renders then is cleared', (t) async {
+    final c = _container();
+    await t.pumpWidget(_host(c));
+    await t.pump();
+    c.read(toastProvider.notifier).state = 'Saved';
+    await t.pump();
+    expect(find.byType(RiseToast), findsOneWidget);
+    expect(find.text('Saved'), findsOneWidget);
+  });
+
+  testWidgets('preview opens the ring screen', (t) async {
+    final occ = ScheduledOccurrence(
+      alarmId: 1,
+      fireAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
+      label: 'Run',
+      soundAsset: '',
+      vibrate: true,
+      hour: 6,
+      minute: 30,
+    );
+    await t.pumpWidget(_host(_container(
+        alarms: const [Alarm(id: 1, hour: 6, minute: 30, label: 'Run')],
+        next: occ)));
+    await t.pump();
+    await t.tap(find.text('Preview alarm'));
+    await t.pump();
+    await t.pump();
+    expect(find.byType(RingScreen), findsOneWidget);
+  });
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+```bash
+flutter test test/ui/screens/app_shell_test.dart
+```
+Expected: FAIL — `app_shell.dart` not found.
+
+- [ ] **Step 3: Write the app shell**
+
+Create `lib/ui/screens/app_shell.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../data/permission_gateway.dart';
+import '../../domain/alarm.dart';
+import '../components/toast.dart';
+import '../missions/mission_host.dart';
+import '../state/alarm_providers.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+import 'create_edit_screen.dart';
+import 'home_screen.dart';
+import 'profile_screen.dart';
+import 'ring_screen.dart';
+
+class AppShell extends ConsumerStatefulWidget {
+  const AppShell({super.key, this.permissions = const NativePermissionGateway()});
+
+  final PermissionGateway permissions;
+
+  @override
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
+  int _tab = 0;
+
+  void _openNew() => ref.read(draftProvider.notifier).startNew();
+  void _openEdit(Alarm a) => ref.read(draftProvider.notifier).startEdit(a);
+
+  void _preview() {
+    final alarms = ref.read(alarmsProvider).value ?? const <Alarm>[];
+    final id = alarms.isEmpty ? 0 : alarms.first.id;
+    final navigator = Navigator.of(context);
+    navigator.push(MaterialPageRoute<void>(
+      builder: (_) => RingScreen(
+        alarmId: id,
+        dismissAlarm: (_) async {}, // preview only — nothing is actually ringing
+        missionBuilder: buildMission,
+        onDismissed: navigator.maybePop,
+      ),
+    ));
+  }
+
+  Widget _activeTab() {
+    switch (_tab) {
+      case 1:
+        return const _ComingSoon(
+            icon: Icons.groups_outlined,
+            title: 'Crew',
+            body: 'Wake up with friends and keep each other honest. Coming soon.');
+      case 2:
+        return const _ComingSoon(
+            icon: Icons.bedtime_outlined,
+            title: 'Sleep',
+            body: 'Sleep insights and smart wake windows. Coming soon.');
+      case 3:
+        return ProfileScreen(permissions: widget.permissions);
+      default:
+        return HomeScreen(
+            onNew: _openNew, onEdit: _openEdit, onPreview: _preview);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final editing = ref.watch(draftProvider) != null;
+    final toast = ref.watch(toastProvider);
+
+    return PopScope(
+      canPop: !editing,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && editing) ref.read(draftProvider.notifier).clear();
+      },
+      child: Scaffold(
+        backgroundColor: RiseColors.appBg,
+        body: ToastHost(
+          message: toast,
+          onHide: () => ref.read(toastProvider.notifier).state = null,
+          child: Stack(
+            children: [
+              _activeTab(),
+              if (editing)
+                Positioned.fill(
+                  child: Material(
+                    color: RiseColors.appBg,
+                    child: CreateEditScreen(onDone: () {}),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        bottomNavigationBar: editing ? null : _tabBar(),
+      ),
+    );
+  }
+
+  Widget _tabBar() {
+    const items = [
+      (icon: Icons.alarm, label: 'Alarms'),
+      (icon: Icons.groups_outlined, label: 'Crew'),
+      (icon: Icons.bedtime_outlined, label: 'Sleep'),
+      (icon: Icons.person_outline, label: 'Profile'),
+    ];
+    return Container(
+      decoration: const BoxDecoration(
+        color: RiseColors.card,
+        border: Border(top: BorderSide(color: RiseColors.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 60,
+          child: Row(
+            children: [
+              for (var i = 0; i < items.length; i++)
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _tab = i),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(items[i].icon,
+                            size: 22,
+                            color: i == _tab
+                                ? RiseColors.primary
+                                : RiseColors.textFaint),
+                        const SizedBox(height: 3),
+                        Text(items[i].label,
+                            style: RiseText.caption.copyWith(
+                                fontSize: 11,
+                                color: i == _tab
+                                    ? RiseColors.primary
+                                    : RiseColors.textFaint,
+                                fontWeight: i == _tab
+                                    ? FontWeight.w600
+                                    : FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ComingSoon extends StatelessWidget {
+  const _ComingSoon(
+      {required this.icon, required this.title, required this.body});
+
+  final IconData icon;
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 44, color: RiseColors.textFaint),
+            const SizedBox(height: 16),
+            Text(title, style: RiseText.title),
+            const SizedBox(height: 8),
+            Text(body,
+                textAlign: TextAlign.center,
+                style: RiseText.body.copyWith(color: RiseColors.textDim)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 4: Run it to verify it passes**
+
+```bash
+flutter test test/ui/screens/app_shell_test.dart
+```
+Expected: PASS — 5 tests green. (Uses `pump`; the preview ring screen has a repeating animation, so avoid `pumpAndSettle`.)
+
+- [ ] **Step 5: Run the whole suite and analyze**
+
+```bash
+flutter test
+flutter analyze
+```
+Expected: all green; `No issues found!`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add lib/ui/screens/app_shell.dart test/ui/screens/app_shell_test.dart
+git commit -m "feat(ui): add the tab-bar app shell wiring home, editor, profile, and toasts"
+```
+
+---
+
+### Task 14: Wire main.dart, delete dev screens, verify
+
+**Files:**
+- Rewrite: `lib/main.dart`
+- Delete: `lib/ui/dev_home_page.dart`, `lib/ui/dev_ring_page.dart`, `test/widget_test.dart` (the obsolete DevRingPage smoke test)
+
+**Interfaces:**
+- Consumes: `AppShell`, `OnboardingScreen`, `RingScreen` + `buildMission`, `AppSettings`, `appSettingsProvider`; the existing `AlarmSyncService`/`AlarmHostApi`/`AlarmRepository` startup + ring-reconcile logic.
+- Produces: the production app entrypoint — `ProviderScope`-wrapped, onboarding-gated, real screens; the dev scaffolding removed.
+
+> Preserves the hard-won startup logic verbatim (headless `reconcileEntrypoint`, the `try/catch` around `configureForApp`/`reconcileNow` so a ring engine always reaches `runApp`, the `_StartupFailedPage` degrade path, and the cold-start/resume ring reconcile via `navigatorKey`). Only three things change: `runApp` is wrapped in `ProviderScope` (overriding `appSettingsProvider`); `home` gates Onboarding→AppShell on the persisted flag; and `_showRing` builds `RingScreen` (production `dismissAlarm`, `missionBuilder: buildMission`) instead of `DevRingPage`. Settings load is guarded independently so a SharedPreferences failure can't stop launch (and never traps the user in onboarding).
+
+- [ ] **Step 1: Rewrite `lib/main.dart`**
+
+Replace the entire contents of `lib/main.dart` with:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:timezone/data/latest.dart' as tzdata;
+
+import 'data/alarm_sync_service.dart';
+import 'data/app_settings.dart';
+import 'data/local/alarm_repository.dart';
+import 'data/native/alarm_api.g.dart';
+import 'ui/missions/mission_host.dart';
+import 'ui/screens/app_shell.dart';
+import 'ui/screens/onboarding_screen.dart';
+import 'ui/screens/ring_screen.dart';
+import 'ui/state/settings_providers.dart';
+
+/// Headless entrypoint invoked by Android's BootReceiver after boot, app
+/// replacement, or a clock change. Re-arms the scheduler from the local
+/// database and recovers any alarm missed while the device was off.
+@pragma('vm:entry-point')
+Future<void> reconcileEntrypoint() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  tzdata.initializeTimeZones();
+  try {
+    await AlarmSyncService.configureForApp();
+    await AlarmSyncService.instance.reconcileNow(recoverMissed: true);
+  } finally {
+    // Let the platform tear down the headless engine that ran this, even if
+    // reconcile above threw — otherwise a crash leaks the engine forever.
+    await AlarmHostApi().reconcileFinished();
+  }
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  tzdata.initializeTimeZones();
+
+  // App preferences (the onboarding flag). Independent of the alarm engine, so
+  // a failure here must not stop the app from launching — and must not trap the
+  // user in onboarding.
+  AppSettings? settings;
+  try {
+    settings = await AppSettings.load();
+  } catch (e) {
+    debugPrint('Rise: settings load failed: $e');
+  }
+
+  // RingActivity is a plain FlutterActivity: it runs this same main() in its own
+  // engine while an alarm is audibly ringing. If a throw here stopped runApp()
+  // from being reached, the ring UI — including its Dismiss — would never
+  // render, and the alarm would be unstoppable short of force-stop or reboot.
+  // So this must never let an exception escape.
+  try {
+    await AlarmSyncService.configureForApp();
+    // Every launch re-arms the scheduler: OEMs and OS updates silently clear it.
+    await AlarmSyncService.instance.reconcileNow();
+  } catch (e, s) {
+    debugPrint('Rise: startup reconcile failed: $e\n$s');
+  }
+
+  // AlarmSyncService.instance throws if configureForApp() itself failed above.
+  // Guard this access so a startup failure already reported does not crash
+  // main() a second time before runApp() is reached.
+  AlarmRepository? repository;
+  try {
+    repository = AlarmSyncService.instance.repository;
+  } catch (e) {
+    debugPrint('Rise: AlarmSyncService unavailable after startup failure: $e');
+  }
+
+  runApp(ProviderScope(
+    overrides: [
+      if (settings != null) appSettingsProvider.overrideWithValue(settings),
+    ],
+    child: RiseApp(repository: repository, settings: settings),
+  ));
+}
+
+class RiseApp extends StatefulWidget {
+  const RiseApp({super.key, required this.repository, required this.settings});
+
+  /// Null when startup failed to configure the service (see main()). The app
+  /// degrades to [_StartupFailedPage] instead of crashing on a second throw.
+  final AlarmRepository? repository;
+
+  /// Null when settings failed to load; the app then skips onboarding rather
+  /// than trapping the user in it.
+  final AppSettings? settings;
+
+  @override
+  State<RiseApp> createState() => _RiseAppState();
+}
+
+class _RiseAppState extends State<RiseApp> with WidgetsBindingObserver {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+
+  // The alarm id currently shown on a pushed RingScreen, or null if none is
+  // showing. Tracked so a re-check can tell "same alarm still ringing" (do
+  // nothing) from "a different alarm took over" (replace) from "nothing is
+  // ringing any more" (pop). Kept in sync by the `.then` in _showRing, which
+  // fires whenever the pushed route is popped for any reason.
+  int? _shownRingId;
+
+  late bool _showOnboarding;
+
+  @override
+  void initState() {
+    super.initState();
+    _showOnboarding =
+        widget.settings != null && !widget.settings!.onboardingComplete;
+    WidgetsBinding.instance.addObserver(this);
+    _checkColdStartRing();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // RingActivity is singleInstance: a second alarm firing while it shows does
+    // not recreate it, so initState never re-runs. Resuming is the one signal
+    // available in both that case and the general "returned to the app while an
+    // alarm rings" case.
+    if (state == AppLifecycleState.resumed) _checkColdStartRing();
+  }
+
+  void _completeOnboarding() {
+    widget.settings?.setOnboardingComplete(true);
+    setState(() => _showOnboarding = false);
+  }
+
+  /// Cold start: RingActivity launched the engine from scratch, so nothing else
+  /// tells Dart an alarm is ringing — ask the platform directly. Also re-run on
+  /// every resume. A thrown PlatformException here must not go unhandled, or the
+  /// ring screen would never appear and the alarm would render no way to stop.
+  Future<void> _checkColdStartRing() async {
+    int? id;
+    try {
+      id = await AlarmHostApi().getRingingAlarmId();
+    } catch (e) {
+      debugPrint('Rise: could not check for a ringing alarm: $e');
+      return;
+    }
+    _reconcileRingScreen(id);
+  }
+
+  void _reconcileRingScreen(int? id) {
+    if (id == _shownRingId) return;
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+    if (id == null) {
+      _shownRingId = null;
+      navigator.maybePop();
+      return;
+    }
+    if (_shownRingId == null) {
+      _showRing(id, replace: false);
+    } else {
+      _showRing(id, replace: true);
+    }
+  }
+
+  void _showRing(int alarmId, {required bool replace}) {
+    _shownRingId = alarmId;
+    final route = MaterialPageRoute<void>(
+      builder: (_) => RingScreen(
+        alarmId: alarmId,
+        missionBuilder: buildMission,
+        onDismissed: () => _navigatorKey.currentState?.maybePop(),
+      ),
+    );
+    final navigator = _navigatorKey.currentState!;
+    final future =
+        replace ? navigator.pushReplacement(route) : navigator.push(route);
+    future.then((_) {
+      if (_shownRingId == alarmId) _shownRingId = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final repository = widget.repository;
+    return MaterialApp(
+      title: 'Rise',
+      navigatorKey: _navigatorKey,
+      debugShowCheckedModeBanner: false,
+      home: repository == null
+          ? const _StartupFailedPage()
+          : (_showOnboarding
+              ? OnboardingScreen(onDone: _completeOnboarding)
+              : const AppShell()),
+    );
+  }
+}
+
+/// Degrade-visibly screen shown when startup's configureForApp() failed. Alarms
+/// already armed still ring — RingActivity runs its own engine and RingScreen's
+/// Dismiss does not depend on this repository — but the home screen has no
+/// database to read or write until the app restarts.
+class _StartupFailedPage extends StatelessWidget {
+  const _StartupFailedPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Icon(Icons.error_outline, size: 48),
+              SizedBox(height: 16),
+              Text(
+                'Rise failed to start and could not reach the database.\n'
+                'Already-armed alarms will still ring. Restart the app to '
+                'try again.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 2: Delete the dev scaffolding**
+
+```bash
+git rm lib/ui/dev_home_page.dart lib/ui/dev_ring_page.dart test/widget_test.dart
+```
+
+- [ ] **Step 3: Analyze and run the whole suite**
+
+```bash
+flutter analyze
+flutter test
+```
+Expected: `No issues found!`; all tests green (the whole existing suite, now with no DevRingPage test).
+
+- [ ] **Step 4: Compile the full app**
+
+```bash
+flutter build apk --debug
+```
+Expected: `✓ Built build/app/outputs/flutter-apk/app-debug.apk`. This links the entire app (including the rewritten `main.dart`), catching any wiring/compile error a widget test would miss.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/main.dart
+git commit -m "feat(ui): wire the real app shell + onboarding into main; remove dev scaffolding"
+```
+
+- [ ] **Step 6: On-device verification (run on the physical Samsung)**
+
+This is a manual protocol — run it after the branch is installed on the device (`flutter run --release` or install the APK). Each line is a pass/fail check:
+
+1. **First launch** shows Onboarding (wake promise → missions → permissions). Grant Notifications; open + return from Exact-alarm/Battery settings and see the checks update. Tap **Start using Rise** → lands on the Alarms tab.
+2. **Second launch** (kill + relaunch) skips onboarding → straight to the Alarms tab (the flag persisted).
+3. **Create an alarm** for ~2 minutes out with a mission (e.g. Math, medium): New → set time → pick Math → Save. It appears in the list with the right time/repeat; the hero shows the countdown.
+4. **Lock the phone, wait.** At the set minute it rings through the lock screen (and through silent mode) with the ring screen. Solve the mission → it dismisses and silences. Confirm you cannot dismiss without solving.
+5. **Preview** from the hero shows the ring screen with the mission; solving/ sliding returns to Home.
+6. **Toggle** an alarm off in the list → it does not ring at its next time; toggle on → it does.
+7. **Edit** an alarm (tap the row), change the time, Save → the countdown updates. **Delete** an alarm → it leaves the list and does not ring.
+8. **Profile tab** → the four reliability permissions show correct granted/needed status; Re-check works after changing one in system settings.
+9. **Reboot** the phone, don't open the app, wait past an alarm's time → it still rings (boot re-arm + missed recovery, from Plan 1).
+
+Record results in `docs/superpowers/reliability/2026-07-17-plan3-ui-device-results.md`.
+
+---
+
+## All tasks specified
+
+Tasks 1–14 now have complete, executable code. After Task 14 executes and the on-device protocol passes, the branch is ready for the final whole-branch review and merge.
 
 **Task 7 — Home screen.** Header (greeting + first name + streak pill, avatar), the next-alarm hero card (NEXT ALARM label, big mono time + AM/PM, "{label} · rings in Xh Ym" live countdown via a 1s ticker, animated bell, full-width Preview button that opens the ring screen), and the "Your alarms" list (rows: mono time + AM/PM, "{label} · {repeat}", `DayChips` compact, `RiseSwitch`; tap row → edit). The Crew·live strip is omitted this plan (empty region). Reads `alarmsProvider`; toggling a row calls the mutation. Widget-tested for rendering alarms and the toggle.
 
