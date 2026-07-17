@@ -46,6 +46,8 @@ Deno.serve(async (req) => {
 
     return json({ success: true }, 200);
   } catch (e) {
-    return json({ error: String(e) }, 500);
+    // Log the detail server-side; return a generic message to the client.
+    console.error('delete-account failed:', e);
+    return json({ error: 'Internal error' }, 500);
   }
 });

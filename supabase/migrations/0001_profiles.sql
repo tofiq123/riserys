@@ -24,8 +24,9 @@ create table if not exists public.profiles (
   constraint profiles_username_format check (username ~ '^[a-z0-9_]{3,20}$')
 );
 
--- Case-exact lookups by username (availability RPC below; friend search later).
-create index if not exists profiles_username_idx on public.profiles (username);
+-- (The `profiles_username_unique` constraint already creates a unique index on
+-- username, which serves equality lookups for the availability RPC and future
+-- friend search — no separate index is needed.)
 
 alter table public.profiles enable row level security;
 
@@ -58,7 +59,10 @@ create or replace function public.username_available(name text)
 returns boolean
 language sql
 security definer
-set search_path = public
+-- Empty search_path so nothing resolves via an ambient/hijackable path; every
+-- object below is schema-qualified (`public.profiles`), and `lower()` resolves
+-- from the always-implicit `pg_catalog`.
+set search_path = ''
 as $$
   select not exists (
     select 1 from public.profiles where username = lower(name)
