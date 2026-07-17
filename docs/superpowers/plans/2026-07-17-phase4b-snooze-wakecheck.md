@@ -968,10 +968,338 @@ git commit -m "feat(ui): add the ring-screen Snooze button (budget-aware, shrink
 
 ---
 
-## Remaining tasks (Tasks 6–10 — full code written just before each is executed)
+### Task 6: Settings screen + Profile row + routing
+
+**Files:**
+- Create: `lib/ui/screens/settings_screen.dart`
+- Modify: `lib/ui/screens/profile_screen.dart`
+- Modify: `lib/ui/screens/app_shell.dart`
+- Test: `test/ui/screens/settings_screen_test.dart`, `test/ui/screens/profile_screen_test.dart` (add)
+
+**Interfaces:**
+- Consumes: `settingsProvider` (Task 3), components (`RiseCard`, `RiseSwitch`, `SegmentedControl`, `SectionLabel`), tokens/typography.
+- Produces: `SettingsScreen` (a `ConsumerWidget`); `ProfileScreen` gains `VoidCallback? onSettings` + a "Settings" row; `app_shell` routes the Profile "Settings" row to `SettingsScreen`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `test/ui/screens/settings_screen_test.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/app_settings.dart';
+import 'package:rise/ui/components/rise_switch.dart';
+import 'package:rise/ui/screens/settings_screen.dart';
+import 'package:rise/ui/state/settings_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+Future<void> _pump(WidgetTester t, Widget w) async {
+  t.view.physicalSize = const Size(1200, 4000);
+  t.view.devicePixelRatio = 1.0;
+  addTearDown(t.view.reset);
+  await t.pumpWidget(w);
+}
+
+Future<Widget> _host() async {
+  SharedPreferences.setMockInitialValues({});
+  final store = await AppSettings.load();
+  return ProviderScope(
+    overrides: [appSettingsProvider.overrideWithValue(store)],
+    child: const MaterialApp(home: SettingsScreen()),
+  );
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('renders the current settings', (t) async {
+    await _pump(t, await _host());
+    await t.pump();
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('3'), findsOneWidget); // max snoozes default
+    expect(find.text('5 min'), findsOneWidget); // wake-check delay default
+  });
+
+  testWidgets('stepping the snooze max updates the displayed value', (t) async {
+    await _pump(t, await _host());
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('snooze-max-plus')));
+    await t.pump();
+    expect(find.text('4'), findsOneWidget);
+  });
+
+  testWidgets('toggling the wake-check persists it', (t) async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    await _pump(
+        t,
+        ProviderScope(
+          overrides: [appSettingsProvider.overrideWithValue(store)],
+          child: const MaterialApp(home: SettingsScreen()),
+        ));
+    await t.pump();
+    await t.tap(find.byType(RiseSwitch));
+    await t.pump();
+    expect(store.wakeCheckEnabled, isFalse); // default true → toggled off
+  });
+}
+```
+
+Add to `test/ui/screens/profile_screen_test.dart` (reuse its `_FakeGateway`/`_perms` helper and the `_pump` viewport helper it already has; if it lacks one, wrap in `MaterialApp(home: Scaffold(body: ...))` and enlarge the view like the settings test):
+
+```dart
+  testWidgets('tapping the Settings row calls onSettings', (t) async {
+    var tapped = false;
+    await t.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ProfileScreen(
+          permissions: _FakeGateway(_perms()),
+          onSettings: () => tapped = true,
+        ),
+      ),
+    ));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Settings'));
+    await t.pump();
+    expect(tapped, isTrue);
+  });
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+```bash
+flutter test test/ui/screens/settings_screen_test.dart
+```
+Expected: FAIL — `settings_screen.dart` not found.
+
+- [ ] **Step 3: Create the Settings screen**
+
+Create `lib/ui/screens/settings_screen.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../components/rise_card.dart';
+import '../components/rise_switch.dart';
+import '../components/section_label.dart';
+import '../components/segmented.dart';
+import '../state/settings_providers.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+
+class SettingsScreen extends ConsumerWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(settingsProvider);
+    final ctrl = ref.read(settingsProvider.notifier);
+
+    return Scaffold(
+      backgroundColor: RiseColors.appBg,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+              RiseSpacing.screen, 8, RiseSpacing.screen, 40),
+          children: [
+            Row(
+              children: [
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).maybePop(),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                    child: Icon(Icons.arrow_back,
+                        color: RiseColors.text, size: 22),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text('Settings', style: RiseText.title),
+              ],
+            ),
+            const SizedBox(height: 20),
+            const SectionLabel('Snooze'),
+            const SizedBox(height: 12),
+            RiseCard(
+              child: Column(
+                children: [
+                  _stepperRow(
+                    label: 'Max snoozes',
+                    value: s.snoozeMaxCount,
+                    keyPrefix: 'snooze-max',
+                    onDec: () => ctrl
+                        .setSnoozeMaxCount((s.snoozeMaxCount - 1).clamp(0, 5)),
+                    onInc: () => ctrl
+                        .setSnoozeMaxCount((s.snoozeMaxCount + 1).clamp(0, 5)),
+                  ),
+                  const Divider(height: 20, color: RiseColors.divider),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Length', style: RiseText.caption),
+                  ),
+                  const SizedBox(height: 8),
+                  SegmentedControl<int>(
+                    segments: const [
+                      (value: 0, label: 'Shrinking'),
+                      (value: 5, label: '5m'),
+                      (value: 10, label: '10m'),
+                      (value: 15, label: '15m'),
+                    ],
+                    selected: s.snoozeFlatMinutes,
+                    onChanged: ctrl.setSnoozeFlatMinutes,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            const SectionLabel('Wake-up check'),
+            const SizedBox(height: 6),
+            Text('If you don\'t confirm you\'re up, Rise re-rings.',
+                style: RiseText.caption),
+            const SizedBox(height: 12),
+            RiseCard(
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Enabled', style: RiseText.body),
+                      RiseSwitch(
+                          value: s.wakeCheckEnabled,
+                          onChanged: ctrl.setWakeCheckEnabled),
+                    ],
+                  ),
+                  const Divider(height: 20, color: RiseColors.divider),
+                  _stepperRow(
+                    label: 'Check after',
+                    value: s.wakeCheckDelayMinutes,
+                    suffix: 'min',
+                    keyPrefix: 'wake-delay',
+                    onDec: () => ctrl.setWakeCheckDelayMinutes(
+                        (s.wakeCheckDelayMinutes - 1).clamp(1, 30)),
+                    onInc: () => ctrl.setWakeCheckDelayMinutes(
+                        (s.wakeCheckDelayMinutes + 1).clamp(1, 30)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _stepperRow({
+    required String label,
+    required int value,
+    required String keyPrefix,
+    required VoidCallback onDec,
+    required VoidCallback onInc,
+    String? suffix,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: RiseText.body),
+        Row(
+          children: [
+            _stepBtn(Icons.remove, ValueKey('$keyPrefix-minus'), onDec),
+            SizedBox(
+              width: 56,
+              child: Text(suffix == null ? '$value' : '$value $suffix',
+                  textAlign: TextAlign.center,
+                  style: RiseText.mono(size: 15, weight: FontWeight.w600)),
+            ),
+            _stepBtn(Icons.add, ValueKey('$keyPrefix-plus'), onInc),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _stepBtn(IconData icon, Key key, VoidCallback onTap) => GestureDetector(
+        key: key,
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: RiseColors.surface2,
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: RiseColors.border),
+          ),
+          child: Icon(icon, size: 18, color: RiseColors.textDim),
+        ),
+      );
+}
+```
+
+- [ ] **Step 4: Add the Profile "Settings" row**
+
+In `lib/ui/screens/profile_screen.dart`: change the constructor to `const ProfileScreen({super.key, this.permissions = const NativePermissionGateway(), this.onSettings});` and add the field `final VoidCallback? onSettings;`. Between the guest card and the `Reliability` section, replace:
+
+```dart
+          const SizedBox(height: 24),
+          const SectionLabel('Reliability'),
+```
+with:
+
+```dart
+          const SizedBox(height: 24),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onSettings,
+            child: RiseCard(
+              child: Row(
+                children: [
+                  const Icon(Icons.tune, color: RiseColors.textDim, size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text('Settings',
+                        style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                  ),
+                  const Icon(Icons.chevron_right,
+                      color: RiseColors.textFaint, size: 20),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const SectionLabel('Reliability'),
+```
+
+- [ ] **Step 5: Route to Settings from the app shell**
+
+In `lib/ui/screens/app_shell.dart`: add `import 'settings_screen.dart';`. Change `_activeTab()` to `_activeTab(BuildContext context)` and its call site in `build` to `_activeTab(context)`. In the `case 3:` (Profile), pass `onSettings`:
+
+```dart
+      case 3:
+        return ProfileScreen(
+          permissions: widget.permissions,
+          onSettings: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen())),
+        );
+```
+
+- [ ] **Step 6: Run tests, whole suite, analyze, commit**
+
+```bash
+flutter test test/ui/screens/settings_screen_test.dart test/ui/screens/profile_screen_test.dart test/ui/screens/app_shell_test.dart
+flutter test
+flutter analyze
+git add lib/ui/screens/settings_screen.dart lib/ui/screens/profile_screen.dart lib/ui/screens/app_shell.dart test/ui/screens/settings_screen_test.dart test/ui/screens/profile_screen_test.dart
+git commit -m "feat(ui): add the Settings screen (snooze + wake-check editors) + Profile route"
+```
+
+---
+
+## Remaining tasks (Tasks 7–10 — full code written just before each is executed)
 
 Each gets its complete code just before dispatch. Summary + interfaces:
-- **Task 6 — Settings screen** (`settings_screen.dart`: Snooze section — max-count stepper 0–5, length mode Shrinking/5/10/15; Wake-up-check section — toggle + delay stepper 1–30; via `settingsProvider`. `profile_screen.dart` gains a "Settings" row; `app_shell.dart` routes to it). Widget tests: renders values, edits persist.
+- **Task 7 — Pigeon contract** (`pigeons/alarm_api.dart`: `void scheduleWakeCheck(NativeAlarm alarm, int checkAtEpochMs)`, `void cancelWakeCheck(int alarmId)`; regenerate the Dart/Kotlin/Swift). Compile/analyze check.
 - **Task 5 — Ring-screen Snooze button** (`ring_screen.dart`: reads `settingsProvider` + the open event's `snoozeCount`; shows "Snooze N min" while under budget; injectable `snoozeAlarm`; on snooze, pop). Widget tests: shows/hides per budget; snooze calls the action with the right duration; `maxCount==0` hides it.
 - **Task 6 — Settings screen** (`settings_screen.dart`: Snooze section — max-count stepper 0–5, length mode Shrinking/5/10/15; Wake-up-check section — toggle + delay stepper 1–30; all via `settingsProvider`. `profile_screen.dart` gains a "Settings" row; `app_shell.dart` routes to it). Widget tests: renders values, edits persist.
 - **Task 7 — Pigeon contract** (`pigeons/alarm_api.dart`: `void scheduleWakeCheck(NativeAlarm alarm, int checkAtEpochMs)`, `void cancelWakeCheck(int alarmId)`; regenerate `alarm_api.g.dart`/`AlarmApi.g.kt`/`AlarmApi.g.swift` via `dart run pigeon`). Compile check (analyze + build).
