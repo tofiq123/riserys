@@ -1560,5 +1560,211 @@ git commit -m "feat(native): add the Android wake-up-check (notification + re-fi
 
 ## Remaining tasks (Tasks 8–9 — full code / protocol just before execution)
 
-- **Task 8 — Dart wake-check wiring**: the ring screen, on a successful real dismissal (`record == true`), if `settings.wakeCheckEnabled`, calls an injectable `armWakeCheck(alarm, Duration(minutes: settings.wakeCheckDelayMinutes))` (default: build a `NativeAlarm` from the alarm + `AlarmHostApi().scheduleWakeCheck(nativeAlarm, now + delay)`), best-effort. `AlarmMutations.delete` best-effort `cancelWakeCheck(id)`. Widget tests (inject a recording `armWakeCheck`): called with the right delay when enabled+record; NOT called when disabled or when `record == false`.
+### Task 8: Dart wake-check wiring (arm on dismiss)
+
+**Files:**
+- Modify: `lib/ui/screens/ring_screen.dart`
+- Modify: `test/ui/screens/ring_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `currentSettingsProvider` (Task 5), `AlarmHostApi().scheduleWakeCheck` (Task 7), `NativeAlarm`, `Alarm`.
+- Produces: `RingScreen` gains `Future<void> Function(Alarm, Duration) armWakeCheck = defaultArmWakeCheck`; a real dismissal (`record == true`) with `settings.wakeCheckEnabled` arms the wake-check best-effort. A top-level `defaultArmWakeCheck`.
+
+> Only a **real dismissal** arms the check — snooze does not (the `_snooze` path never calls this). Best-effort: a scheduling failure is caught, never blocks the dismissal. Cancel-on-delete/disable is deferred (a stale wake-check just re-rings a now-deleted alarm, which `RingScreen` shows as a dismissable slide-to-wake — harmless).
+
+- [ ] **Step 1: Add the default + field to `ring_screen.dart`**
+
+Add this top-level function (near `dismissRingingAlarm`):
+
+```dart
+/// Arms the post-dismissal wake-up check for [alarm] at now + [delay]. The
+/// re-fire time (checkAt + 100s) is computed natively, so [NativeAlarm.fireAtEpochMs]
+/// is unused here; the label/sound/vibrate carry so the re-fire rings correctly.
+Future<void> defaultArmWakeCheck(Alarm alarm, Duration delay) async {
+  final checkAt = DateTime.now().toUtc().add(delay).millisecondsSinceEpoch;
+  await AlarmHostApi().scheduleWakeCheck(
+    NativeAlarm(
+      id: alarm.id,
+      fireAtEpochMs: 0,
+      label: alarm.label,
+      soundAsset: alarm.soundAsset,
+      vibrate: alarm.vibrate,
+      hour: alarm.hour,
+      minute: alarm.minute,
+      weekdays: alarm.days.toList(),
+    ),
+    checkAt,
+  );
+}
+```
+
+Add the field to the constructor + class:
+
+```dart
+    this.armWakeCheck = defaultArmWakeCheck,
+```
+and
+```dart
+  /// Arms the "still up?" check after a real dismissal. Injectable for tests;
+  /// defaults to [defaultArmWakeCheck].
+  final Future<void> Function(Alarm alarm, Duration delay) armWakeCheck;
+```
+
+Ensure the imports are present: `import '../state/settings_providers.dart';` (Task 5 added it) and `import '../../data/native/alarm_api.g.dart';` (already there for `dismissRingingAlarm`).
+
+- [ ] **Step 2: Arm the check in `_dismiss`**
+
+In `_dismiss(String method)`, inside the existing `if (widget.record) { ... }` block, AFTER the `finalizeDismiss` try/catch (and before the `if (!mounted) return;` / `onDismissed` at the end of the method), add:
+
+```dart
+      final settings = ref.read(currentSettingsProvider);
+      if (settings.wakeCheckEnabled) {
+        final alarm = ref
+            .read(alarmsProvider)
+            .value
+            ?.firstWhereOrNull((a) => a.id == widget.alarmId);
+        if (alarm != null) {
+          try {
+            await widget.armWakeCheck(
+                alarm, Duration(minutes: settings.wakeCheckDelayMinutes));
+          } catch (e) {
+            debugPrint('Rise: wake-check schedule failed for ${widget.alarmId}: $e');
+          }
+        }
+      }
+```
+
+- [ ] **Step 3: Update the ring tests**
+
+In `test/ui/screens/ring_screen_test.dart`:
+
+1. Extend `_host` with `record`/`recorder`/`armWakeCheck` params and wire them:
+
+```dart
+Widget _host({
+  required List<Alarm> alarms,
+  required int alarmId,
+  Future<void> Function(int)? dismissAlarm,
+  VoidCallback? onDismissed,
+  MissionBuilder? missionBuilder,
+  RiseSettings settings = const RiseSettings(),
+  List<WakeEvent> wakeEvents = const [],
+  Future<void> Function(int, Duration)? snooze,
+  bool record = false,
+  WakeRecorder? recorder,
+  Future<void> Function(Alarm, Duration)? armWakeCheck,
+}) {
+  return ProviderScope(
+    overrides: [
+      alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
+      currentSettingsProvider.overrideWithValue(settings),
+      wakeEventsProvider.overrideWith((ref) => Stream.value(wakeEvents)),
+      if (recorder != null) wakeRecorderProvider.overrideWithValue(recorder),
+    ],
+    child: MaterialApp(
+      home: RingScreen(
+        alarmId: alarmId,
+        onDismissed: onDismissed,
+        dismissAlarm: dismissAlarm ?? (_) async {},
+        missionBuilder: missionBuilder,
+        snooze: snooze ?? (_, __) async {},
+        record: record,
+        armWakeCheck: armWakeCheck ?? (_, __) async {},
+      ),
+    ),
+  );
+}
+```
+
+2. In the THREE inline-`ProviderScope` tests that build a `RingScreen(record: true, ...)` and dismiss it (the two "with record: …" finalize tests and the "a failing wake recorder…" test), add `armWakeCheck: (_, __) async {}` to their `RingScreen(...)` so they don't invoke the real `AlarmHostApi` on dismissal. (The "without record" test doesn't dismiss-with-record, so it's unaffected; leave it.)
+
+3. Add these three wake-check tests inside `main()`:
+
+```dart
+  testWidgets('record + wake-check enabled arms the check on dismiss', (t) async {
+    Alarm? armed;
+    Duration? delay;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      record: true,
+      recorder: _RecordingRecorder(),
+      settings: const RiseSettings(wakeCheckEnabled: true, wakeCheckDelayMinutes: 5),
+      armWakeCheck: (a, d) async {
+        armed = a;
+        delay = d;
+      },
+      onDismissed: () {},
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(armed?.id, 5);
+    expect(delay, const Duration(minutes: 5));
+  });
+
+  testWidgets('wake-check disabled does not arm the check', (t) async {
+    var armedCount = 0;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      record: true,
+      recorder: _RecordingRecorder(),
+      settings: const RiseSettings(wakeCheckEnabled: false),
+      armWakeCheck: (_, __) async {
+        armedCount++;
+      },
+      onDismissed: () {},
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(armedCount, 0);
+  });
+
+  testWidgets('a preview dismissal (record false) does not arm the check', (t) async {
+    var armedCount = 0;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(wakeCheckEnabled: true),
+      armWakeCheck: (_, __) async {
+        armedCount++;
+      },
+      onDismissed: () {},
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(armedCount, 0);
+  });
+```
+
+- [ ] **Step 4: Run the ring tests, whole suite, analyze, commit**
+
+```bash
+flutter test test/ui/screens/ring_screen_test.dart
+flutter test
+flutter analyze
+git add lib/ui/screens/ring_screen.dart test/ui/screens/ring_screen_test.dart
+git commit -m "feat(ui): arm the wake-up check on a real dismissal (best-effort, when enabled)"
+```
+
+---
+
+### Task 9: Device verification + merge
+
+Full protocol run on the Samsung after a fresh `flutter build apk --release` + `adb install -r`:
+- **Wake-check happy path:** dismiss an alarm on time → at the configured delay (default 5 min; drop it to 1 min in Settings to test fast) a **"Still up?"** notification appears with an **"I'm up"** action.
+- **Confirm:** tap **"I'm up"** → no re-ring.
+- **Escalate:** ignore it for 100 s → the alarm **re-rings** (with its mission if it has one).
+- **Toggle off:** disable the wake-check in Settings → a fresh dismissal schedules no check.
+- **Notifications-off degradation:** revoke notification permission → dismissing still (silently) arms the re-fire, so you still get re-rung (no "still up?" prompt) — honest degradation.
+- **Regression:** snooze budget still shrinks + caps; rings-through-silent/locked; missions; reboot re-arm; streak/stats record correctly.
+- Note the reviewer's device-only caveats: OEM heads-up/broadcast delays, "I'm up" reaching the receiver with the app killed, the notification lingering after a re-fire (harmless), and no reboot-persistence for a pending check.
+
+Record in `docs/superpowers/reliability/2026-07-18-phase4b-device-results.md`. On PASS, this branch gets the final whole-branch review and merges to `main`.
 - **Task 9 — Device verification** (Samsung): the full loop — "Still up?" notification appears at the configured delay after dismissal; "I'm up" cancels the re-fire; ignoring it → the alarm re-rings with its mission; toggling the feature off stops new checks; notifications-off degrades to always-re-ring; plus a regression pass on snooze + Plan-1/3/4a behaviors. Record in `docs/superpowers/reliability/2026-07-18-phase4b-device-results.md`. Finish line before merge.
