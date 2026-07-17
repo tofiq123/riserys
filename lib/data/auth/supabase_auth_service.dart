@@ -49,26 +49,40 @@ class SupabaseAuthService implements AuthService {
     yield* _accounts.stream;
   }
 
-  Future<void> _ensureGoogleInitialized() =>
-      _googleInit ??= GoogleSignIn.instance.initialize(
-        serverClientId: _serverClientId,
-      );
+  Future<void> _ensureGoogleInitialized() async {
+    // Cache the init Future so initialize() runs at most once, but drop the
+    // cache if it fails so a transient failure (e.g. Play Services briefly
+    // unavailable) doesn't permanently wedge sign-in — the next attempt retries.
+    try {
+      await (_googleInit ??=
+          GoogleSignIn.instance.initialize(serverClientId: _serverClientId));
+    } catch (_) {
+      _googleInit = null;
+      rethrow;
+    }
+  }
 
   /// Builds a [RiseAccount] for [user], reading the optional `profiles` row.
   /// A missing row means the username has not been claimed yet (needsUsername).
   Future<RiseAccount> _accountForUser(User user) async {
+    // Best-effort throughout: this runs inside the onAuthStateChange listener,
+    // so it must never throw (an uncaught error there escapes an unawaited
+    // callback). A profile fetch failure or unexpected metadata shape just
+    // degrades to a not-yet-claimed account with sensible defaults.
     Map<String, dynamic>? profile;
+    String? googleName;
     try {
       profile = await _client
           .from('profiles')
           .select()
           .eq('id', user.id)
           .maybeSingle();
+      googleName = (user.userMetadata?['full_name'] ??
+          user.userMetadata?['name']) as String?;
     } catch (_) {
       profile = null; // best-effort; treat as not-yet-claimed
+      googleName = null;
     }
-    final googleName = (user.userMetadata?['full_name'] ??
-        user.userMetadata?['name']) as String?;
     return RiseAccount(
       id: user.id,
       username: profile?['username'] as String?,
