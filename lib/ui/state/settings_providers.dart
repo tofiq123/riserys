@@ -42,5 +42,13 @@ final settingsProvider =
 
 /// Read-only view of the current settings, for consumers that only read (e.g.
 /// the ring screen). Trivially overridable with a fixed value in tests.
-final currentSettingsProvider =
-    Provider<RiseSettings>((ref) => ref.watch(settingsProvider));
+final currentSettingsProvider = Provider<RiseSettings>((ref) {
+  // Resilient: a read-only consumer (e.g. the ring screen, which must always
+  // render a dismiss gate) gets sensible defaults rather than a thrown
+  // UnimplementedError if the settings store failed to load at startup.
+  try {
+    return ref.watch(settingsProvider);
+  } catch (_) {
+    return const RiseSettings();
+  }
+});
