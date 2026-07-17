@@ -729,10 +729,249 @@ git commit -m "feat(data): add snooze orchestration (bumpSnooze + snoozeAlarm)"
 
 ---
 
-## Remaining tasks (Tasks 5–10 — full code written just before each is executed)
+### Task 5: Ring-screen Snooze button
+
+**Files:**
+- Modify: `lib/ui/state/settings_providers.dart` (add `currentSettingsProvider`)
+- Modify: `lib/ui/screens/ring_screen.dart`
+- Modify: `test/ui/screens/ring_screen_test.dart`
+
+**Interfaces:**
+- Consumes: `currentSettingsProvider` (new read-only `Provider<RiseSettings>`), `wakeEventsProvider`, `snoozeAlarm` (Task 4), `WakeEvent.isOpen`/`snoozeCount`.
+- Produces: `RingScreen` gains `Future<void> Function(int, Duration) snooze = snoozeAlarm`; a "Snooze N min" button below the dismiss gate, shown while the open event's `snoozeCount < settings.snoozeMaxCount`, using `settings.snoozeDurationMinutes(snoozeCount)`.
+
+- [ ] **Step 1: Add the read-only settings provider**
+
+In `lib/ui/state/settings_providers.dart`, append (needs `RiseSettings` already imported from Task 3):
+
+```dart
+/// Read-only view of the current settings, for consumers that only read (e.g.
+/// the ring screen). Trivially overridable with a fixed value in tests.
+final currentSettingsProvider =
+    Provider<RiseSettings>((ref) => ref.watch(settingsProvider));
+```
+
+- [ ] **Step 2: Add the Snooze button to `ring_screen.dart`**
+
+Add imports:
+
+```dart
+import '../../data/snooze.dart';
+import '../../domain/wake_event.dart';
+import '../state/settings_providers.dart';
+```
+
+Add the `snooze` field to the constructor + class:
+
+```dart
+    this.snooze = snoozeAlarm,
+```
+and
+```dart
+  /// Snooze action (silence + defer). Injectable for tests; defaults to
+  /// [snoozeAlarm].
+  final Future<void> Function(int alarmId, Duration duration) snooze;
+```
+
+Add the `_snooze` method (next to `_dismiss`):
+
+```dart
+  Future<void> _snooze(Duration d) async {
+    if (_dismissing) return; // shares the dismiss guard
+    setState(() => _dismissing = true);
+    try {
+      await widget.snooze(widget.alarmId, d);
+    } catch (e) {
+      debugPrint('Rise: snooze failed for ${widget.alarmId}: $e');
+      if (mounted) {
+        setState(() {
+          _dismissing = false;
+          _attempt++;
+        });
+      }
+      return;
+    }
+    if (!mounted) return;
+    widget.onDismissed?.call(); // close the ring screen
+  }
+
+  Widget _snoozeButton(int minutes) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _snooze(Duration(minutes: minutes)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text('Snooze $minutes min',
+              style: RiseText.body.copyWith(
+                  color: RiseColors.textDim, fontWeight: FontWeight.w600)),
+        ),
+      );
+```
+
+In `build`, after the existing `final alarm = ...` lookup, add:
+
+```dart
+    final settings = ref.watch(currentSettingsProvider);
+    final snoozeCount = ref
+            .watch(wakeEventsProvider)
+            .value
+            ?.firstWhereOrNull((e) => e.alarmId == widget.alarmId && e.isOpen)
+            ?.snoozeCount ??
+        0;
+    final canSnooze = snoozeCount < settings.snoozeMaxCount;
+    final snoozeMinutes = settings.snoozeDurationMinutes(snoozeCount);
+```
+
+In the `Column`'s children, change the tail from:
+
+```dart
+              const Spacer(),
+              gate,
+            ],
+```
+to:
+
+```dart
+              const Spacer(),
+              gate,
+              if (canSnooze) _snoozeButton(snoozeMinutes),
+            ],
+```
+
+- [ ] **Step 3: Update the ring tests**
+
+`test/ui/screens/ring_screen_test.dart` — the ring screen now reads `currentSettingsProvider` + `wakeEventsProvider`, so every `ProviderScope` that builds a `RingScreen` needs them. Add these imports:
+
+```dart
+import 'package:rise/domain/rise_settings.dart';
+import 'package:rise/domain/wake_event.dart';
+import 'package:rise/ui/state/settings_providers.dart';
+```
+
+Replace `_host` with the extended version (adds `settings`/`wakeEvents`/`snooze` and their overrides):
+
+```dart
+Widget _host({
+  required List<Alarm> alarms,
+  required int alarmId,
+  Future<void> Function(int)? dismissAlarm,
+  VoidCallback? onDismissed,
+  MissionBuilder? missionBuilder,
+  RiseSettings settings = const RiseSettings(),
+  List<WakeEvent> wakeEvents = const [],
+  Future<void> Function(int, Duration)? snooze,
+}) {
+  return ProviderScope(
+    overrides: [
+      alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
+      currentSettingsProvider.overrideWithValue(settings),
+      wakeEventsProvider.overrideWith((ref) => Stream.value(wakeEvents)),
+    ],
+    child: MaterialApp(
+      home: RingScreen(
+        alarmId: alarmId,
+        onDismissed: onDismissed,
+        dismissAlarm: dismissAlarm ?? (_) async {},
+        missionBuilder: missionBuilder,
+        snooze: snooze ?? (_, __) async {},
+      ),
+    ),
+  );
+}
+```
+
+For each of the FIVE inline-`ProviderScope` tests (the mission-retry test and the four recording/best-effort tests that build `ProviderScope(overrides: [...])` directly rather than via `_host`), add these two overrides to their `overrides` list:
+
+```dart
+        currentSettingsProvider.overrideWithValue(const RiseSettings()),
+        wakeEventsProvider.overrideWith((ref) => Stream.value(const <WakeEvent>[])),
+```
+(Leave those tests' other overrides — `alarmsProvider`, `wakeRecorderProvider` — as they are.)
+
+Then add these four Snooze tests inside `main()`:
+
+```dart
+  WakeEvent openEvent(int alarmId, int snoozeCount) => WakeEvent(
+        id: 1,
+        alarmId: alarmId,
+        scheduledAt: DateTime.utc(2026, 7, 20, 6),
+        firstRingAt: DateTime.utc(2026, 7, 20, 6),
+        snoozeCount: snoozeCount,
+      );
+
+  testWidgets('shows a Snooze button and snoozes for the budget duration', (t) async {
+    int? snoozedId;
+    Duration? snoozedDur;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(snoozeMaxCount: 3),
+      snooze: (id, d) async {
+        snoozedId = id;
+        snoozedDur = d;
+      },
+      onDismissed: () {},
+    ));
+    await t.pump();
+    expect(find.text('Snooze 9 min'), findsOneWidget); // first snooze = 9 min
+    await t.tap(find.text('Snooze 9 min'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(snoozedId, 5);
+    expect(snoozedDur, const Duration(minutes: 9));
+  });
+
+  testWidgets('the snooze duration shrinks with the open event snooze count', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(snoozeMaxCount: 3),
+      wakeEvents: [openEvent(5, 2)], // already snoozed twice
+      snooze: (_, __) async {},
+    ));
+    await t.pump();
+    expect(find.text('Snooze 3 min'), findsOneWidget); // 3rd snooze (index 2)
+  });
+
+  testWidgets('hides the Snooze button at the budget cap', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(snoozeMaxCount: 2),
+      wakeEvents: [openEvent(5, 2)], // at the cap
+      snooze: (_, __) async {},
+    ));
+    await t.pump();
+    expect(find.textContaining('Snooze'), findsNothing);
+  });
+
+  testWidgets('snoozeMaxCount 0 hides the Snooze button entirely', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(snoozeMaxCount: 0),
+      snooze: (_, __) async {},
+    ));
+    await t.pump();
+    expect(find.textContaining('Snooze'), findsNothing);
+  });
+```
+
+- [ ] **Step 4: Run the ring tests, whole suite, analyze, commit**
+
+```bash
+flutter test test/ui/screens/ring_screen_test.dart
+flutter test
+flutter analyze
+git add lib/ui/state/settings_providers.dart lib/ui/screens/ring_screen.dart test/ui/screens/ring_screen_test.dart
+git commit -m "feat(ui): add the ring-screen Snooze button (budget-aware, shrinking)"
+```
+
+---
+
+## Remaining tasks (Tasks 6–10 — full code written just before each is executed)
 
 Each gets its complete code just before dispatch. Summary + interfaces:
-- **Task 5 — Ring-screen Snooze button** (`ring_screen.dart`: reads `settingsProvider` + the open event's `snoozeCount`; shows "Snooze N min" while under budget; injectable `snoozeAlarm`; on snooze, pop). Widget tests: shows/hides per budget; snooze calls the action with the right duration; `maxCount==0` hides it.
+- **Task 6 — Settings screen** (`settings_screen.dart`: Snooze section — max-count stepper 0–5, length mode Shrinking/5/10/15; Wake-up-check section — toggle + delay stepper 1–30; via `settingsProvider`. `profile_screen.dart` gains a "Settings" row; `app_shell.dart` routes to it). Widget tests: renders values, edits persist.
 - **Task 5 — Ring-screen Snooze button** (`ring_screen.dart`: reads `settingsProvider` + the open event's `snoozeCount`; shows "Snooze N min" while under budget; injectable `snoozeAlarm`; on snooze, pop). Widget tests: shows/hides per budget; snooze calls the action with the right duration; `maxCount==0` hides it.
 - **Task 6 — Settings screen** (`settings_screen.dart`: Snooze section — max-count stepper 0–5, length mode Shrinking/5/10/15; Wake-up-check section — toggle + delay stepper 1–30; all via `settingsProvider`. `profile_screen.dart` gains a "Settings" row; `app_shell.dart` routes to it). Widget tests: renders values, edits persist.
 - **Task 7 — Pigeon contract** (`pigeons/alarm_api.dart`: `void scheduleWakeCheck(NativeAlarm alarm, int checkAtEpochMs)`, `void cancelWakeCheck(int alarmId)`; regenerate `alarm_api.g.dart`/`AlarmApi.g.kt`/`AlarmApi.g.swift` via `dart run pigeon`). Compile check (analyze + build).
