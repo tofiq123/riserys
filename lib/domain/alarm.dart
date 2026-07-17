@@ -16,6 +16,7 @@ class Alarm {
     this.mission = 'none',
     this.missionDiff = 'easy',
     this.lastDismissedAt,
+    this.snoozedUntil,
   })  : assert(hour >= 0 && hour <= 23),
         assert(minute >= 0 && minute <= 59);
 
@@ -37,6 +38,10 @@ class Alarm {
   /// UTC instant this alarm was last dismissed, or null if never dismissed.
   /// Recovery uses this to avoid re-ringing an occurrence already dealt with.
   final DateTime? lastDismissedAt;
+
+  /// When set (UTC), the alarm's next firing is this instant instead of its
+  /// schedule — a deferred re-ring from a snooze. Cleared on dismissal.
+  final DateTime? snoozedUntil;
 
   bool get isOneShot => days.isEmpty;
 
@@ -73,6 +78,8 @@ class Alarm {
     // `copyWith(hour: 7, clearLastDismissedAt: true)` reads unambiguously,
     // whereas a magic "unset" sentinel value would not.
     bool clearLastDismissedAt = false,
+    DateTime? snoozedUntil,
+    bool clearSnoozedUntil = false,
   }) {
     return Alarm(
       id: id ?? this.id,
@@ -88,6 +95,7 @@ class Alarm {
       lastDismissedAt: clearLastDismissedAt
           ? null
           : (lastDismissedAt ?? this.lastDismissedAt),
+      snoozedUntil: clearSnoozedUntil ? null : (snoozedUntil ?? this.snoozedUntil),
     );
   }
 
@@ -104,7 +112,8 @@ class Alarm {
       other.vibrate == vibrate &&
       other.mission == mission &&
       other.missionDiff == missionDiff &&
-      _sameInstant(other.lastDismissedAt, lastDismissedAt);
+      _sameInstant(other.lastDismissedAt, lastDismissedAt) &&
+      _sameInstant(other.snoozedUntil, snoozedUntil);
 
   @override
   int get hashCode => Object.hash(
@@ -126,7 +135,8 @@ class Alarm {
       // unix-seconds storage), while values set in memory are UTC — the
       // .toUtc() here just keeps hashCode consistent with the == above,
       // which does need the normalization to treat the two as equal.
-      lastDismissedAt?.toUtc());
+      lastDismissedAt?.toUtc(),
+      snoozedUntil?.toUtc());
 
   @override
   String toString() =>

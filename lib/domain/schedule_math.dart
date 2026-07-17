@@ -62,6 +62,15 @@ tz.TZDateTime? nextOccurrence({
 }) {
   if (!alarm.enabled) return null;
 
+  // A snoozed alarm fires at snoozedUntil (a deferred re-ring of the current
+  // firing), ahead of its normal schedule. A snoozedUntil in the past means the
+  // snooze has already fired, so it is ignored and the normal schedule resumes.
+  final snoozed = alarm.snoozedUntil;
+  if (snoozed != null) {
+    final at = tz.TZDateTime.from(snoozed, location);
+    if (at.isAfter(from)) return at;
+  }
+
   final startDate = DateTime.utc(from.year, from.month, from.day);
 
   for (var offset = 0; offset <= _searchHorizonDays; offset++) {
