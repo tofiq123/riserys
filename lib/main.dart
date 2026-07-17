@@ -166,6 +166,7 @@ class _RiseAppState extends State<RiseApp> with WidgetsBindingObserver {
     final route = MaterialPageRoute<void>(
       builder: (_) => RingScreen(
         alarmId: alarmId,
+        record: true,
         missionBuilder: buildMission,
         onDismissed: () => _navigatorKey.currentState?.maybePop(),
       ),

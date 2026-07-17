@@ -46,12 +46,29 @@ class Alarms extends Table {
       ];
 }
 
-@DriftDatabase(tables: [Alarms])
+/// One logical firing of an alarm — opened when the ring starts, finalised on
+/// dismissal (added in schema v3). Independent of [Alarms]: deleting an alarm
+/// does not delete its history.
+@DataClassName('WakeEventRow')
+class WakeEvents extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get alarmId => integer()();
+  DateTimeColumn get scheduledAt => dateTime()();
+  DateTimeColumn get firstRingAt => dateTime()();
+  DateTimeColumn get dismissedAt => dateTime().nullable()();
+  TextColumn get method => text().nullable()();
+  IntColumn get snoozeCount => integer().withDefault(const Constant(0))();
+  IntColumn get missionFailures => integer().withDefault(const Constant(0))();
+  BoolColumn get onTime => boolean().withDefault(const Constant(false))();
+  TextColumn get label => text().withDefault(const Constant('Alarm'))();
+}
+
+@DriftDatabase(tables: [Alarms, WakeEvents])
 class RiseDatabase extends _$RiseDatabase {
   RiseDatabase(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -71,6 +88,16 @@ class RiseDatabase extends _$RiseDatabase {
               await m.addColumn(alarms, alarms.missionDiff);
             }
           }
+
+          // v2 -> v3: the wake_events table. Idempotent like the column
+          // migration above — a losing isolate (or a partial prior run) that
+          // finds the table already present skips the create rather than
+          // crashing on "table wake_events already exists".
+          if (from < 3) {
+            if (!await _tableExists('wake_events')) {
+              await m.createTable(wakeEvents);
+            }
+          }
         },
       );
 
@@ -79,5 +106,15 @@ class RiseDatabase extends _$RiseDatabase {
   Future<Set<String>> _columnNames(String table) async {
     final rows = await customSelect('PRAGMA table_info($table)').get();
     return rows.map((r) => r.read<String>('name')).toSet();
+  }
+
+  /// Whether [table] exists, read from sqlite's own schema. Keeps the v3
+  /// table-create migration idempotent under the app's multi-isolate DB opens.
+  Future<bool> _tableExists(String table) async {
+    final rows = await customSelect(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+      variables: [Variable<String>(table)],
+    ).get();
+    return rows.isNotEmpty;
   }
 }

@@ -6,6 +6,8 @@ import 'package:rise/domain/scheduled_occurrence.dart';
 import 'package:rise/ui/components/rise_switch.dart';
 import 'package:rise/ui/screens/home_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
+import 'package:rise/domain/streak.dart';
+import 'package:rise/ui/state/wake_providers.dart';
 
 class _RecordingMutations implements AlarmMutations {
   final List<(int, bool)> enabledCalls = [];
@@ -22,18 +24,22 @@ Widget _host({
   required _RecordingMutations mutations,
   VoidCallback? onNew,
   void Function(Alarm)? onEdit,
+  VoidCallback? onStreak,
+  StreakStats streak = StreakStats.empty,
 }) {
   return ProviderScope(
     overrides: [
       alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
       nextOccurrenceProvider.overrideWith((ref) async => null),
       alarmMutationsProvider.overrideWithValue(mutations),
+      streakProvider.overrideWithValue(streak),
     ],
     child: MaterialApp(
       home: HomeScreen(
         onNew: onNew ?? () {},
         onEdit: onEdit ?? (_) {},
         onPreview: () {},
+        onStreak: onStreak,
       ),
     ),
   );
@@ -98,6 +104,7 @@ void main() {
         alarmsProvider.overrideWith((ref) => Stream.value(const <Alarm>[])),
         nextOccurrenceProvider.overrideWith((ref) async => occ),
         alarmMutationsProvider.overrideWithValue(_RecordingMutations()),
+        streakProvider.overrideWithValue(StreakStats.empty),
       ],
       child: MaterialApp(
         home: HomeScreen(onNew: () {}, onEdit: (_) {}, onPreview: () {}),
@@ -107,5 +114,38 @@ void main() {
     await t.pump();
     expect(find.text('2:05'), findsOneWidget); // 14:05 → 2:05 PM
     expect(find.text('PM'), findsOneWidget);
+  });
+
+  testWidgets('the streak pill shows the current streak', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [],
+      mutations: _RecordingMutations(),
+      streak: const StreakStats(
+          current: 5, best: 7, freezesRemaining: 1, byDay: {}),
+    ));
+    await t.pump();
+    expect(find.text('5'), findsOneWidget);
+  });
+
+  testWidgets('the streak pill shows Start when there is no streak', (t) async {
+    await t.pumpWidget(
+        _host(alarms: const [], mutations: _RecordingMutations()));
+    await t.pump();
+    expect(find.text('Start'), findsOneWidget);
+  });
+
+  testWidgets('tapping the streak pill calls onStreak', (t) async {
+    var tapped = false;
+    await t.pumpWidget(_host(
+      alarms: const [],
+      mutations: _RecordingMutations(),
+      streak: const StreakStats(
+          current: 3, best: 3, freezesRemaining: 0, byDay: {}),
+      onStreak: () => tapped = true,
+    ));
+    await t.pump();
+    await t.tap(find.text('3'));
+    await t.pump();
+    expect(tapped, isTrue);
   });
 }

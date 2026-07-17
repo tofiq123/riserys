@@ -11,6 +11,7 @@ import '../components/rise_card.dart';
 import '../components/rise_switch.dart';
 import '../components/section_label.dart';
 import '../state/alarm_providers.dart';
+import '../state/wake_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 
@@ -41,11 +42,15 @@ class HomeScreen extends ConsumerStatefulWidget {
     required this.onNew,
     required this.onEdit,
     required this.onPreview,
+    this.onStreak,
   });
 
   final VoidCallback onNew;
   final void Function(Alarm) onEdit;
   final VoidCallback onPreview;
+
+  /// Opens Stats (the app shell switches tab). Null leaves the pill inert.
+  final VoidCallback? onStreak;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -112,16 +117,59 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _header() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(_greeting(), style: RiseText.display),
-        Container(
-          width: 40,
-          height: 40,
-          decoration: const BoxDecoration(color: RiseColors.primary, shape: BoxShape.circle),
-          child: const Icon(Icons.person, color: RiseColors.primaryText, size: 20),
+        Flexible(
+          child: Text(_greeting(),
+              style: RiseText.display, overflow: TextOverflow.ellipsis),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _streakPill(),
+            const SizedBox(width: 10),
+            Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                  color: RiseColors.primary, shape: BoxShape.circle),
+              child: const Icon(Icons.person,
+                  color: RiseColors.primaryText, size: 20),
+            ),
+          ],
         ),
       ],
+    );
+  }
+
+  Widget _streakPill() {
+    final streak = ref.watch(streakProvider);
+    final has = streak.current > 0;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onStreak,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        decoration: BoxDecoration(
+          color: has ? RiseColors.accentSoft : RiseColors.surface2,
+          borderRadius: BorderRadius.circular(RiseRadii.pill),
+          border: Border.all(color: RiseColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.local_fire_department,
+                size: 16,
+                color: has ? RiseColors.waking : RiseColors.textFaint),
+            const SizedBox(width: 5),
+            Text(has ? '${streak.current}' : 'Start',
+                style: RiseText.mono(
+                    size: 14,
+                    weight: FontWeight.w700,
+                    color: has ? RiseColors.text : RiseColors.textDim)),
+          ],
+        ),
+      ),
     );
   }
 

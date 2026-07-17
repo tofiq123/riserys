@@ -9,6 +9,7 @@ import '../../data/native/alarm_api.g.dart';
 import '../../domain/alarm.dart';
 import '../components/slide_to_wake.dart';
 import '../state/alarm_providers.dart';
+import '../state/wake_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 
@@ -52,6 +53,7 @@ class RingScreen extends ConsumerStatefulWidget {
     this.onDismissed,
     this.dismissAlarm = dismissRingingAlarm,
     this.missionBuilder,
+    this.record = false,
   });
 
   final int alarmId;
@@ -64,6 +66,11 @@ class RingScreen extends ConsumerStatefulWidget {
   final Future<void> Function(int alarmId) dismissAlarm;
 
   final MissionBuilder? missionBuilder;
+
+  /// When true, this firing is logged to the wake-event store — opened on
+  /// mount, finalised on dismiss. Off for previews. Best-effort: a wake-log
+  /// failure is logged, never thrown into the ring.
+  final bool record;
 
   @override
   ConsumerState<RingScreen> createState() => _RingScreenState();
@@ -88,6 +95,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {}); // advances the live clock
     });
+    if (widget.record) _recordRingStart();
   }
 
   @override
@@ -97,7 +105,15 @@ class _RingScreenState extends ConsumerState<RingScreen>
     super.dispose();
   }
 
-  Future<void> _dismiss() async {
+  Future<void> _recordRingStart() async {
+    try {
+      await ref.read(wakeRecorderProvider).openRing(widget.alarmId);
+    } catch (e) {
+      debugPrint('Rise: wake-open failed for ${widget.alarmId}: $e');
+    }
+  }
+
+  Future<void> _dismiss(String method) async {
     if (_dismissing) return; // guard double-taps / repeated slide fires
     setState(() => _dismissing = true);
     try {
@@ -111,6 +127,15 @@ class _RingScreenState extends ConsumerState<RingScreen>
         });
       }
       return;
+    }
+    if (widget.record) {
+      try {
+        await ref
+            .read(wakeRecorderProvider)
+            .finalizeDismiss(widget.alarmId, method: method);
+      } catch (e) {
+        debugPrint('Rise: wake-finalize failed for ${widget.alarmId}: $e');
+      }
     }
     if (!mounted) return;
     widget.onDismissed?.call();
@@ -145,8 +170,8 @@ class _RingScreenState extends ConsumerState<RingScreen>
       child: (alarm != null &&
               alarm.mission != 'none' &&
               widget.missionBuilder != null)
-          ? widget.missionBuilder!(context, alarm, _dismiss)
-          : SlideToWake(onWake: _dismiss),
+          ? widget.missionBuilder!(context, alarm, () => _dismiss('mission'))
+          : SlideToWake(onWake: () => _dismiss('slide')),
     );
 
     return Scaffold(
