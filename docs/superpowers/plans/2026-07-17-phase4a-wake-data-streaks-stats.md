@@ -216,11 +216,249 @@ git commit -m "feat(domain): add WakeEvent entity"
 
 ---
 
-## Remaining tasks (Tasks 2–9 — full code written just before each is executed)
+### Task 2: Streak engine (pure)
 
-Tasks 2–9 build on Task 1 and each other; each gets its complete code just before dispatch (same flow used for Plan 3). Summary + interfaces:
+**Files:**
+- Create: `lib/domain/streak.dart`
+- Test: `test/domain/streak_test.dart`
 
-- **Task 2 — Streak engine** (`lib/domain/streak.dart`): `enum DayOutcome { success, miss, neutral, pending }`; `class StreakStats { int current; int best; int freezesRemaining; Map<DateTime,DayOutcome> byDay; }`; `StreakStats computeStreak(List<WakeEvent> events, DateTime now, {int freezeCap = 2, int earnEvery = 7})`. Pure; heavy unit tests (clean run, miss breaks, freeze absorbs, earn-at-7/cap-2, neutral skipped, today success vs pending, empty).
+**Interfaces:**
+- Consumes: `WakeEvent` (Task 1) — `onTime`, `localDay`, `isOpen`.
+- Produces:
+  - `enum DayOutcome { success, miss, neutral, pending }`
+  - `class StreakStats { final int current; final int best; final int freezesRemaining; final Map<DateTime, DayOutcome> byDay; static const empty; }` (const ctor; `byDay` keyed by local-midnight day; days absent = neutral).
+  - `StreakStats computeStreak(List<WakeEvent> events, DateTime now, {int freezeCap = 2, int earnEvery = 7})`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `test/domain/streak_test.dart` (uses **local** DateTimes so day-grouping is machine-timezone-independent):
+
+```dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/streak.dart';
+import 'package:rise/domain/wake_event.dart';
+
+void main() {
+  DateTime d(int day) => DateTime(2026, 7, day); // local July 2026 midnights
+  final now = DateTime(2026, 7, 20, 12); // "today" = July 20
+
+  // A local event on the given day; on-time (dismissed +3m), late-miss (+30m),
+  // or open (never dismissed).
+  WakeEvent ev(int day, {required bool onTime, bool open = false}) {
+    final ring = DateTime(2026, 7, day, 6);
+    return WakeEvent(
+      id: 0,
+      alarmId: 1,
+      scheduledAt: ring,
+      firstRingAt: ring,
+      dismissedAt: open ? null : ring.add(Duration(minutes: onTime ? 3 : 30)),
+      onTime: onTime,
+    );
+  }
+
+  test('empty log is all zero', () {
+    final s = computeStreak([], now);
+    expect(s.current, 0);
+    expect(s.best, 0);
+    expect(s.freezesRemaining, 0);
+    expect(s.byDay, isEmpty);
+  });
+
+  test('consecutive on-time days build the streak', () {
+    final s = computeStreak(
+        [ev(17, onTime: true), ev(18, onTime: true), ev(19, onTime: true)], now);
+    expect(s.current, 3);
+    expect(s.best, 3);
+    expect(s.byDay[d(18)], DayOutcome.success);
+  });
+
+  test('a miss breaks the streak when no freeze is banked', () {
+    final s = computeStreak(
+        [ev(17, onTime: true), ev(18, onTime: false), ev(19, onTime: true)], now);
+    expect(s.current, 1); // 17 ok(1), 18 miss→0, 19 ok(1)
+    expect(s.best, 1);
+    expect(s.byDay[d(18)], DayOutcome.miss);
+  });
+
+  test('an earned freeze absorbs a miss and the streak holds', () {
+    final days = [for (var i = 8; i <= 14; i++) ev(i, onTime: true)]; // 7 successes → 1 freeze
+    days.add(ev(15, onTime: false)); // miss, absorbed
+    days.add(ev(16, onTime: true)); // continues
+    final s = computeStreak(days, now);
+    expect(s.current, 8);
+    expect(s.freezesRemaining, 0);
+    expect(s.best, 8);
+  });
+
+  test('freezes are earned every 7 successes and cap at 2', () {
+    final days = [for (var i = 1; i <= 14; i++) ev(i, onTime: true)]; // 14 straight
+    final s = computeStreak(days, now);
+    expect(s.current, 14);
+    expect(s.freezesRemaining, 2);
+  });
+
+  test('no-alarm (neutral) days are skipped, not breaks', () {
+    final s = computeStreak([ev(17, onTime: true), ev(19, onTime: true)], now); // 18 absent
+    expect(s.current, 2);
+    expect(s.byDay.containsKey(d(18)), isFalse);
+  });
+
+  test('today success extends the streak immediately', () {
+    final s = computeStreak([ev(19, onTime: true), ev(20, onTime: true)], now);
+    expect(s.current, 2);
+    expect(s.byDay[d(20)], DayOutcome.success);
+  });
+
+  test('today pending holds the streak but does not extend it', () {
+    final s = computeStreak(
+        [ev(19, onTime: true), ev(20, onTime: false, open: true)], now);
+    expect(s.current, 1);
+    expect(s.byDay[d(20)], DayOutcome.pending);
+  });
+
+  test('a past never-dismissed event is a miss', () {
+    final s = computeStreak(
+        [ev(18, onTime: false, open: true), ev(19, onTime: true)], now);
+    expect(s.byDay[d(18)], DayOutcome.miss);
+    expect(s.current, 1);
+  });
+
+  test('any on-time event makes the whole day a success', () {
+    final s = computeStreak(
+        [ev(19, onTime: false), ev(19, onTime: true)], now);
+    expect(s.byDay[d(19)], DayOutcome.success);
+    expect(s.current, 1);
+  });
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+```bash
+flutter test test/domain/streak_test.dart
+```
+Expected: FAIL — `streak.dart` not found.
+
+- [ ] **Step 3: Write the engine**
+
+Create `lib/domain/streak.dart`:
+
+```dart
+import 'wake_event.dart';
+
+/// How a single local calendar day is judged for the streak.
+enum DayOutcome { success, miss, neutral, pending }
+
+class StreakStats {
+  const StreakStats({
+    required this.current,
+    required this.best,
+    required this.freezesRemaining,
+    required this.byDay,
+  });
+
+  final int current;
+  final int best;
+  final int freezesRemaining;
+
+  /// Keyed by local-midnight day. Days absent from the map are neutral.
+  final Map<DateTime, DayOutcome> byDay;
+
+  static const empty = StreakStats(
+      current: 0, best: 0, freezesRemaining: 0, byDay: <DateTime, DayOutcome>{});
+}
+
+/// Folds the wake-event log into streak stats. Pure and deterministic: the
+/// streak is always recomputed from events, never stored, so it cannot desync.
+///
+/// - A day SUCCEEDS if it has any on-time event.
+/// - A past day with rings but no on-time dismissal is a MISS.
+/// - Today with rings but not yet an on-time success is PENDING (streak holds).
+/// - A day with no events is NEUTRAL (absent from [StreakStats.byDay]; skipped).
+/// - A freeze (earned 1 per [earnEvery] consecutive successes, capped at
+///   [freezeCap]) is consumed by a miss before the streak breaks.
+StreakStats computeStreak(
+  List<WakeEvent> events,
+  DateTime now, {
+  int freezeCap = 2,
+  int earnEvery = 7,
+}) {
+  final ln = now.toLocal();
+  final today = DateTime(ln.year, ln.month, ln.day);
+
+  // A day is on-time if ANY of its events is on-time.
+  final hasOnTime = <DateTime, bool>{};
+  for (final e in events) {
+    final day = e.localDay;
+    hasOnTime[day] = (hasOnTime[day] ?? false) || e.onTime;
+  }
+
+  final byDay = <DateTime, DayOutcome>{};
+  hasOnTime.forEach((day, onTime) {
+    if (day.isAfter(today)) return; // ignore future days (shouldn't occur)
+    if (onTime) {
+      byDay[day] = DayOutcome.success;
+    } else if (day.isAtSameMomentAs(today)) {
+      byDay[day] = DayOutcome.pending;
+    } else {
+      byDay[day] = DayOutcome.miss;
+    }
+  });
+
+  // Fold every past day, plus today only once it is already a success.
+  final foldDays = byDay.keys
+      .where((day) => day.isBefore(today) || byDay[day] == DayOutcome.success)
+      .toList()
+    ..sort();
+
+  var run = 0;
+  var best = 0;
+  var freezes = 0;
+  for (final day in foldDays) {
+    switch (byDay[day]) {
+      case DayOutcome.success:
+        run++;
+        if (run % earnEvery == 0 && freezes < freezeCap) freezes++;
+        if (run > best) best = run;
+      case DayOutcome.miss:
+        if (freezes > 0) {
+          freezes--; // absorbed — the run holds
+        } else {
+          run = 0;
+        }
+      case DayOutcome.neutral:
+      case DayOutcome.pending:
+      case null:
+        break;
+    }
+  }
+
+  return StreakStats(
+      current: run, best: best, freezesRemaining: freezes, byDay: byDay);
+}
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+```bash
+flutter test test/domain/streak_test.dart
+```
+Expected: PASS — 10 tests green.
+
+- [ ] **Step 5: Analyze and commit**
+
+```bash
+flutter analyze
+git add lib/domain/streak.dart test/domain/streak_test.dart
+git commit -m "feat(domain): add pure streak engine"
+```
+
+---
+
+## Remaining tasks (Tasks 3–9 — full code written just before each is executed)
+
+Each gets its complete code just before dispatch (same flow used for Plan 3). Summary + interfaces:
+
 - **Task 3 — WakeEvents table** (modify `database.dart`): `@DataClassName('WakeEventRow')` table `WakeEvents` mirroring the entity columns; `schemaVersion` 3; idempotent `from < 3` migration guarded by a new `_tableExists(name)` helper; register in `@DriftDatabase(tables: [Alarms, WakeEvents])`. Migration-idempotency test.
 - **Task 4 — WakeEventRepository** (`wake_event_repository.dart`): `openRing({alarmId, scheduledAt, firstRingAt, label}) → Future<int>` (reuse an open event for the alarm within 6 h, else insert); `finalizeDismiss({alarmId, dismissedAt, method}) → Future<void>` (find open event, set `dismissedAt`/`method`/`onTime = dismissedAt−firstRingAt ≤ 15 min`; no-op if none); `watchAll() → Stream<List<WakeEvent>>`. Tests: reuse-window, onTime boundary 14:59/15:01, no-op on closed/missing.
 - **Task 5 — WakeRecorder + providers** (`wake_recorder.dart`, `wake_providers.dart`; expose `RiseDatabase` on `AlarmSyncService`): `WakeRecorder(repo, alarmRepo)` with `openRing(int alarmId)` (looks up the alarm → label + `scheduledAt` = today's local h:m→UTC) and `finalizeDismiss(int alarmId, {String? method})`; providers `wakeEventRepositoryProvider`, `wakeRecorderProvider`, `wakeEventsProvider`, `streakProvider = computeStreak(events, DateTime.now())`.
