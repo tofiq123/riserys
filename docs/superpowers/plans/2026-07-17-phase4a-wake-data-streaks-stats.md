@@ -898,7 +898,234 @@ git commit -m "feat(data): add WakeEventRepository (open-on-ring, finalize-on-di
 
 ---
 
-## Remaining tasks (Tasks 5–9 — full code written just before each is executed)
+### Task 5: WakeRecorder + Riverpod providers
+
+**Files:**
+- Modify: `lib/data/local/alarm_repository.dart` (expose the shared `RiseDatabase`)
+- Create: `lib/data/wake_recorder.dart`
+- Create: `lib/ui/state/wake_providers.dart`
+- Test: `test/data/wake_recorder_test.dart`
+- Test: `test/ui/state/wake_providers_test.dart`
+
+**Interfaces:**
+- Consumes: `WakeEventRepository` (Task 4), `AlarmRepository` (`all()`, and a new `database` getter), `computeStreak`/`StreakStats` (Task 2), `WakeEvent` (Task 1), `alarmRepositoryProvider` (existing, `lib/ui/state/alarm_providers.dart`).
+- Produces:
+  - `RiseDatabase get database` on `AlarmRepository`.
+  - `class WakeRecorder` — `WakeRecorder(WakeEventRepository events, AlarmRepository alarms)`; `Future<void> openRing(int alarmId)`; `Future<void> finalizeDismiss(int alarmId, {String? method})`.
+  - Providers: `wakeEventRepositoryProvider` (`Provider<WakeEventRepository>`), `wakeRecorderProvider` (`Provider<WakeRecorder>`), `wakeEventsProvider` (`StreamProvider<List<WakeEvent>>`), `streakProvider` (`Provider<StreakStats>`).
+
+- [ ] **Step 1: Expose the database on AlarmRepository**
+
+In `lib/data/local/alarm_repository.dart`, add this getter (just after the `final RiseDatabase _db;` field, near the top of the class):
+
+```dart
+  /// The underlying database, so a sibling repository (e.g. WakeEventRepository)
+  /// can be built over the SAME handle — two handles to the file would drift.
+  RiseDatabase get database => _db;
+```
+
+- [ ] **Step 2: Write the failing WakeRecorder test**
+
+Create `test/data/wake_recorder_test.dart`:
+
+```dart
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/local/alarm_repository.dart';
+import 'package:rise/data/local/database.dart';
+import 'package:rise/data/local/wake_event_repository.dart';
+import 'package:rise/data/wake_recorder.dart';
+import 'package:rise/domain/alarm.dart';
+
+void main() {
+  late RiseDatabase db;
+  late WakeEventRepository events;
+  late AlarmRepository alarms;
+  late WakeRecorder rec;
+
+  setUp(() {
+    db = RiseDatabase(NativeDatabase.memory());
+    events = WakeEventRepository(db);
+    alarms = AlarmRepository(db);
+    rec = WakeRecorder(events, alarms);
+  });
+  tearDown(() => db.close());
+
+  test('openRing opens an event with the alarm label and today\'s scheduled time',
+      () async {
+    final saved =
+        await alarms.upsert(const Alarm(id: 0, hour: 6, minute: 30, label: 'Run'));
+    await rec.openRing(saved.id);
+    final all = await events.all();
+    expect(all, hasLength(1));
+    final e = all.single;
+    expect(e.alarmId, saved.id);
+    expect(e.label, 'Run');
+    expect(e.isOpen, isTrue);
+    final s = e.scheduledAt.toLocal();
+    expect(s.hour, 6);
+    expect(s.minute, 30);
+  });
+
+  test('finalizeDismiss closes the open event with the method', () async {
+    final saved =
+        await alarms.upsert(const Alarm(id: 0, hour: 6, minute: 30, label: 'Run'));
+    await rec.openRing(saved.id);
+    await rec.finalizeDismiss(saved.id, method: 'mission');
+    final e = (await events.all()).single;
+    expect(e.isOpen, isFalse);
+    expect(e.method, 'mission');
+  });
+
+  test('openRing for an unknown alarm falls back to a default label', () async {
+    await rec.openRing(999);
+    final e = (await events.all()).single;
+    expect(e.label, 'Alarm');
+    expect(e.alarmId, 999);
+  });
+}
+```
+
+- [ ] **Step 3: Run to verify it fails**
+
+```bash
+flutter test test/data/wake_recorder_test.dart
+```
+Expected: FAIL — `wake_recorder.dart` not found (and/or `database` getter missing).
+
+- [ ] **Step 4: Write WakeRecorder**
+
+Create `lib/data/wake_recorder.dart`:
+
+```dart
+import 'package:collection/collection.dart';
+
+import 'local/alarm_repository.dart';
+import 'local/wake_event_repository.dart';
+
+/// Bridges the ring flow to the wake-event log: opens an event when an alarm
+/// starts ringing and finalises it on dismissal. Callers invoke these
+/// best-effort — a stats-write failure must never block the ring.
+class WakeRecorder {
+  WakeRecorder(this._events, this._alarms);
+
+  final WakeEventRepository _events;
+  final AlarmRepository _alarms;
+
+  Future<void> openRing(int alarmId) async {
+    final alarm = (await _alarms.all()).firstWhereOrNull((a) => a.id == alarmId);
+    final now = DateTime.now();
+    await _events.openRing(
+      alarmId: alarmId,
+      scheduledAt: _scheduledFor(alarm?.hour, alarm?.minute, now),
+      firstRingAt: now,
+      label: alarm?.label ?? 'Alarm',
+    );
+  }
+
+  Future<void> finalizeDismiss(int alarmId, {String? method}) =>
+      _events.finalizeDismiss(
+          alarmId: alarmId, dismissedAt: DateTime.now(), method: method);
+
+  /// The alarm's scheduled instant for the firing that just happened: today's
+  /// local h:m, falling back to [now] when the alarm can't be found.
+  static DateTime _scheduledFor(int? hour, int? minute, DateTime now) {
+    if (hour == null || minute == null) return now;
+    final l = now.toLocal();
+    return DateTime(l.year, l.month, l.day, hour, minute);
+  }
+}
+```
+
+- [ ] **Step 5: Run to verify it passes**
+
+```bash
+flutter test test/data/wake_recorder_test.dart
+```
+Expected: PASS — 3 tests green.
+
+- [ ] **Step 6: Write the providers + their test**
+
+Create `lib/ui/state/wake_providers.dart`:
+
+```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../data/local/wake_event_repository.dart';
+import '../../data/wake_recorder.dart';
+import '../../domain/streak.dart';
+import '../../domain/wake_event.dart';
+import 'alarm_providers.dart';
+
+/// The wake-event store, built over the same database handle the alarm
+/// repository uses.
+final wakeEventRepositoryProvider = Provider<WakeEventRepository>(
+    (ref) => WakeEventRepository(ref.watch(alarmRepositoryProvider).database));
+
+final wakeRecorderProvider = Provider<WakeRecorder>((ref) => WakeRecorder(
+    ref.watch(wakeEventRepositoryProvider), ref.watch(alarmRepositoryProvider)));
+
+final wakeEventsProvider = StreamProvider<List<WakeEvent>>(
+    (ref) => ref.watch(wakeEventRepositoryProvider).watchAll());
+
+/// The streak recomputed from the live event log.
+final streakProvider = Provider<StreakStats>((ref) {
+  final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
+  return computeStreak(events, DateTime.now());
+});
+```
+
+Create `test/ui/state/wake_providers_test.dart`:
+
+```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/domain/wake_event.dart';
+import 'package:rise/ui/state/wake_providers.dart';
+
+void main() {
+  test('streakProvider is empty with no events', () async {
+    final c = ProviderContainer(overrides: [
+      wakeEventsProvider.overrideWith((ref) => Stream.value(const <WakeEvent>[])),
+    ]);
+    addTearDown(c.dispose);
+    await c.read(wakeEventsProvider.future);
+    expect(c.read(streakProvider).current, 0);
+  });
+
+  test('streakProvider counts an on-time event today as a streak of 1', () async {
+    final today = DateTime.now();
+    final e = WakeEvent(
+      id: 1,
+      alarmId: 1,
+      scheduledAt: today,
+      firstRingAt: today,
+      dismissedAt: today.add(const Duration(minutes: 2)),
+      onTime: true,
+    );
+    final c = ProviderContainer(overrides: [
+      wakeEventsProvider.overrideWith((ref) => Stream.value([e])),
+    ]);
+    addTearDown(c.dispose);
+    await c.read(wakeEventsProvider.future);
+    expect(c.read(streakProvider).current, 1);
+  });
+}
+```
+
+- [ ] **Step 7: Run providers test, whole suite, analyze, commit**
+
+```bash
+flutter test test/ui/state/wake_providers_test.dart
+flutter test
+flutter analyze
+git add lib/data/local/alarm_repository.dart lib/data/wake_recorder.dart lib/ui/state/wake_providers.dart test/data/wake_recorder_test.dart test/ui/state/wake_providers_test.dart
+git commit -m "feat(data): add WakeRecorder and wake/streak providers"
+```
+
+---
+
+## Remaining tasks (Tasks 6–9 — full code written just before each is executed)
 
 Each gets its complete code just before dispatch (same flow used for Plan 3). Summary + interfaces:
 
