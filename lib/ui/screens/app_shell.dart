@@ -12,6 +12,7 @@ import 'create_edit_screen.dart';
 import 'home_screen.dart';
 import 'profile_screen.dart';
 import 'ring_screen.dart';
+import 'stats_screen.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, this.permissions = const NativePermissionGateway()});
@@ -51,15 +52,16 @@ class _AppShellState extends ConsumerState<AppShell> {
             title: 'Crew',
             body: 'Wake up with friends and keep each other honest. Coming soon.');
       case 2:
-        return const _ComingSoon(
-            icon: Icons.bedtime_outlined,
-            title: 'Sleep',
-            body: 'Sleep insights and smart wake windows. Coming soon.');
+        return const StatsScreen();
       case 3:
         return ProfileScreen(permissions: widget.permissions);
       default:
         return HomeScreen(
-            onNew: _openNew, onEdit: _openEdit, onPreview: _preview);
+          onNew: _openNew,
+          onEdit: _openEdit,
+          onPreview: _preview,
+          onStreak: () => setState(() => _tab = 2),
+        );
     }
   }
 
@@ -100,7 +102,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     const items = [
       (icon: Icons.alarm, label: 'Alarms'),
       (icon: Icons.groups_outlined, label: 'Crew'),
-      (icon: Icons.bedtime_outlined, label: 'Sleep'),
+      (icon: Icons.insights_outlined, label: 'Stats'),
       (icon: Icons.person_outline, label: 'Profile'),
     ];
     return Container(

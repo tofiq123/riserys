@@ -5,12 +5,14 @@ import 'package:rise/data/native/alarm_api.g.dart';
 import 'package:rise/data/permission_gateway.dart';
 import 'package:rise/domain/alarm.dart';
 import 'package:rise/domain/scheduled_occurrence.dart';
+import 'package:rise/domain/wake_event.dart';
 import 'package:rise/ui/components/toast.dart';
 import 'package:rise/ui/screens/app_shell.dart';
 import 'package:rise/ui/screens/create_edit_screen.dart';
 import 'package:rise/ui/screens/home_screen.dart';
 import 'package:rise/ui/screens/profile_screen.dart';
 import 'package:rise/ui/screens/ring_screen.dart';
+import 'package:rise/ui/screens/stats_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
 import 'package:rise/domain/streak.dart';
 import 'package:rise/ui/state/wake_providers.dart';
@@ -36,6 +38,7 @@ List<Override> _overrides(List<Alarm> alarms, ScheduledOccurrence? next) => [
       alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
       nextOccurrenceProvider.overrideWith((ref) async => next),
       streakProvider.overrideWithValue(StreakStats.empty),
+      wakeEventsProvider.overrideWith((ref) => Stream.value(const <WakeEvent>[])),
     ];
 
 Widget _host(ProviderContainer c) => UncontrolledProviderScope(
@@ -107,5 +110,23 @@ void main() {
     await t.pump();
     await t.pump();
     expect(find.byType(RingScreen), findsOneWidget);
+  });
+
+  testWidgets('the Stats tab shows the Stats screen', (t) async {
+    await t.pumpWidget(_host(_container()));
+    await t.pump();
+    await t.tap(find.text('Stats')); // the tab label
+    await t.pump();
+    expect(find.byType(StatsScreen), findsOneWidget);
+    expect(find.byType(HomeScreen), findsNothing);
+  });
+
+  testWidgets('tapping the Home streak pill deep-links to the Stats tab', (t) async {
+    await t.pumpWidget(_host(_container()));
+    await t.pump();
+    // On Home the streak is empty, so the pill reads "Start".
+    await t.tap(find.text('Start'));
+    await t.pump();
+    expect(find.byType(StatsScreen), findsOneWidget);
   });
 }
