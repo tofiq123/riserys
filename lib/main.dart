@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 
+import 'config/supabase_config.dart';
 import 'data/alarm_sync_service.dart';
 import 'data/app_settings.dart';
 import 'data/local/alarm_repository.dart';
@@ -32,6 +34,21 @@ Future<void> reconcileEntrypoint() async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   tzdata.initializeTimeZones();
+
+  // Optional social backend. Additive and best-effort: a failure here must
+  // never stop the local alarm app from launching.
+  if (SupabaseConfig.isConfigured) {
+    try {
+      await Supabase.initialize(
+        url: SupabaseConfig.url,
+        // `anonKey` is deprecated in favor of `publishableKey` as of
+        // supabase_flutter 2.16 — same value (the dashboard's anon key).
+        publishableKey: SupabaseConfig.anonKey,
+      );
+    } catch (e) {
+      debugPrint('Rise: Supabase init failed (social disabled): $e');
+    }
+  }
 
   // App preferences (the onboarding flag). Independent of the alarm engine, so
   // a failure here must not stop the app from launching — and must not trap the

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/auth/auth_service.dart';
 import 'package:rise/data/native/alarm_api.g.dart';
 import 'package:rise/data/permission_gateway.dart';
 import 'package:rise/domain/alarm.dart';
@@ -14,8 +15,10 @@ import 'package:rise/ui/screens/home_screen.dart';
 import 'package:rise/ui/screens/profile_screen.dart';
 import 'package:rise/ui/screens/ring_screen.dart';
 import 'package:rise/ui/screens/stats_screen.dart';
+import 'package:rise/ui/screens/username_claim_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
 import 'package:rise/domain/streak.dart';
+import 'package:rise/ui/state/auth_providers.dart';
 import 'package:rise/ui/state/settings_providers.dart';
 import 'package:rise/ui/state/wake_providers.dart';
 
@@ -50,8 +53,10 @@ Widget _host(ProviderContainer c) => UncontrolledProviderScope(
     );
 
 ProviderContainer _container(
-    {List<Alarm> alarms = const [], ScheduledOccurrence? next}) {
-  final c = ProviderContainer(overrides: _overrides(alarms, next));
+    {List<Alarm> alarms = const [],
+    ScheduledOccurrence? next,
+    List<Override> extra = const []}) {
+  final c = ProviderContainer(overrides: [..._overrides(alarms, next), ...extra]);
   addTearDown(c.dispose);
   return c;
 }
@@ -131,5 +136,34 @@ void main() {
     await t.tap(find.text('Start'));
     await t.pump();
     expect(find.byType(StatsScreen), findsOneWidget);
+  });
+
+  testWidgets('a signed-in account with no username shows the claim screen over the shell',
+      (t) async {
+    final fake = FakeAuthService();
+    await fake.signInWithGoogle(); // account with needsUsername == true
+    addTearDown(fake.dispose);
+    await t.pumpWidget(_host(_container(
+        extra: [authServiceProvider.overrideWithValue(fake)])));
+    await t.pumpAndSettle();
+
+    expect(find.byType(UsernameClaimScreen), findsOneWidget);
+    expect(find.text('Claim your handle'), findsOneWidget);
+    // The tab bar is hidden while claiming.
+    expect(find.text('Alarms'), findsNothing);
+  });
+
+  testWidgets('a claimed account shows the shell, not the claim screen',
+      (t) async {
+    final fake = FakeAuthService();
+    await fake.signInWithGoogle();
+    await fake.claimUsername('ada', displayName: 'Ada');
+    addTearDown(fake.dispose);
+    await t.pumpWidget(_host(_container(
+        extra: [authServiceProvider.overrideWithValue(fake)])));
+    await t.pumpAndSettle();
+
+    expect(find.byType(UsernameClaimScreen), findsNothing);
+    expect(find.byType(HomeScreen), findsOneWidget);
   });
 }

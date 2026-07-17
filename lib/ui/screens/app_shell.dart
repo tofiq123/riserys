@@ -6,6 +6,7 @@ import '../../domain/alarm.dart';
 import '../components/toast.dart';
 import '../missions/mission_host.dart';
 import '../state/alarm_providers.dart';
+import '../state/auth_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'create_edit_screen.dart';
@@ -14,6 +15,7 @@ import 'profile_screen.dart';
 import 'ring_screen.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
+import 'username_claim_screen.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, this.permissions = const NativePermissionGateway()});
@@ -73,10 +75,12 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   Widget build(BuildContext context) {
     final editing = ref.watch(draftProvider) != null;
+    final account = ref.watch(accountProvider).value;
+    final needsClaim = account != null && account.needsUsername;
     final toast = ref.watch(toastProvider);
 
     return PopScope(
-      canPop: !editing,
+      canPop: !editing && !needsClaim,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && editing) ref.read(draftProvider.notifier).clear();
       },
@@ -95,10 +99,19 @@ class _AppShellState extends ConsumerState<AppShell> {
                     child: CreateEditScreen(onDone: () {}),
                   ),
                 ),
+              if (needsClaim)
+                Positioned.fill(
+                  child: Material(
+                    color: RiseColors.appBg,
+                    child: UsernameClaimScreen(
+                      initialDisplayName: account.displayName,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
-        bottomNavigationBar: editing ? null : _tabBar(),
+        bottomNavigationBar: (editing || needsClaim) ? null : _tabBar(),
       ),
     );
   }
