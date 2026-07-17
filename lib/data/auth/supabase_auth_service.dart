@@ -110,12 +110,15 @@ class SupabaseAuthService implements AuthService {
 
   @override
   Future<bool> isUsernameAvailable(String username) async {
-    final rows = await _client
-        .from('profiles')
-        .select('id')
-        .eq('username', username.toLowerCase())
-        .limit(1);
-    return rows.isEmpty;
+    // A SECURITY DEFINER RPC (see supabase/migrations/0001_profiles.sql): under
+    // own-row-only RLS a direct select can't see other users' rows, so the RPC
+    // checks existence server-side and returns just a boolean. The DB `unique`
+    // constraint remains the real guard against a check→insert race.
+    final result = await _client.rpc(
+      'username_available',
+      params: {'name': username.toLowerCase()},
+    );
+    return result == true;
   }
 
   @override
