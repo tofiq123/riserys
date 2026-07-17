@@ -2,6 +2,7 @@ node_modules/
 .dart_tool/
 build/
 .env
+*.env.json
 *.log
 .superpowers/
 .flutter-plugins
