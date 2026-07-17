@@ -93,4 +93,33 @@ void main() {
     expect(s.byDay[d(19)], DayOutcome.success);
     expect(s.current, 1);
   });
+
+  test('best streak survives a later reset', () {
+    final days = [for (var i = 8; i <= 12; i++) ev(i, onTime: true)]; // 5 successes, no freeze yet
+    days.add(ev(13, onTime: false)); // miss, nothing banked → resets run
+    days.add(ev(14, onTime: true));
+    days.add(ev(15, onTime: true)); // rebuild to 2
+    final s = computeStreak(days, now);
+    expect(s.current, 2);
+    expect(s.best, 5); // best must outlive the reset
+    expect(s.freezesRemaining, 0);
+  });
+
+  test('freezes never exceed the cap past the third threshold', () {
+    final days = [for (var i = 1; i <= 21; i++) ev(i, onTime: true)]; // thresholds at 7, 14, 21
+    final s = computeStreak(days, DateTime(2026, 7, 25, 12));
+    expect(s.current, 21);
+    expect(s.freezesRemaining, 2); // capped at 2, NOT 3
+  });
+
+  test('a second miss after the freeze is spent resets the run', () {
+    final days = [for (var i = 1; i <= 7; i++) ev(i, onTime: true)]; // run 7 → earn 1 freeze
+    days.add(ev(8, onTime: false)); // miss absorbed by the freeze (run holds at 7)
+    days.add(ev(9, onTime: false)); // miss with no freeze left → reset
+    days.add(ev(10, onTime: true)); // rebuild to 1
+    final s = computeStreak(days, now);
+    expect(s.current, 1);
+    expect(s.best, 7);
+    expect(s.freezesRemaining, 0);
+  });
 }
