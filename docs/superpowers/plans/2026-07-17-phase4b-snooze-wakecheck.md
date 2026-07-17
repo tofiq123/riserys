@@ -1296,13 +1296,269 @@ git commit -m "feat(ui): add the Settings screen (snooze + wake-check editors) +
 
 ---
 
-## Remaining tasks (Tasks 7–10 — full code written just before each is executed)
+### Task 7: Wake-check native (Pigeon contract + Android Kotlin)
 
-Each gets its complete code just before dispatch. Summary + interfaces:
-- **Task 7 — Pigeon contract** (`pigeons/alarm_api.dart`: `void scheduleWakeCheck(NativeAlarm alarm, int checkAtEpochMs)`, `void cancelWakeCheck(int alarmId)`; regenerate the Dart/Kotlin/Swift). Compile/analyze check.
-- **Task 5 — Ring-screen Snooze button** (`ring_screen.dart`: reads `settingsProvider` + the open event's `snoozeCount`; shows "Snooze N min" while under budget; injectable `snoozeAlarm`; on snooze, pop). Widget tests: shows/hides per budget; snooze calls the action with the right duration; `maxCount==0` hides it.
-- **Task 6 — Settings screen** (`settings_screen.dart`: Snooze section — max-count stepper 0–5, length mode Shrinking/5/10/15; Wake-up-check section — toggle + delay stepper 1–30; all via `settingsProvider`. `profile_screen.dart` gains a "Settings" row; `app_shell.dart` routes to it). Widget tests: renders values, edits persist.
-- **Task 7 — Pigeon contract** (`pigeons/alarm_api.dart`: `void scheduleWakeCheck(NativeAlarm alarm, int checkAtEpochMs)`, `void cancelWakeCheck(int alarmId)`; regenerate `alarm_api.g.dart`/`AlarmApi.g.kt`/`AlarmApi.g.swift` via `dart run pigeon`). Compile check (analyze + build).
-- **Task 8 — Android wake-check native** (`WakeCheckReceiver.kt` posts the "Still up?" notification + relies on a pre-armed re-fire; `WakeCheckActionReceiver.kt` handles "I'm up" → cancel re-fire + notification; `AlarmHostApiImpl.kt` implements `scheduleWakeCheck` [arm notification trigger at `checkAt` + re-fire at `checkAt+100s` through the existing `AlarmScheduler`/`AlarmReceiver` path with a DISTINCT request-code namespace] and `cancelWakeCheck`; a "Wake check" notification channel; manifest registers both receivers). Reuses `AlarmScheduler`/`AlarmReceiver` (read them first). Device-verified (no unit tests for AlarmManager/receivers).
-- **Task 9 — Dart wake-check wiring** (`alarm_sync_service.dart` or the dismiss path: on a real dismissal, if `wakeCheckEnabled`, call `scheduleWakeCheck(nativeAlarm, now+delay)`; call `cancelWakeCheck` on alarm delete and when the feature is disabled). Best-effort. Tests with a fake platform verifying the call is/ isn't made per setting.
-- **Task 10 — Device verification** (Samsung): snooze shrinking + budget exhaustion + reboot-during-snooze; "Still up?" notification at the delay; "I'm up" cancels the re-fire; ignore → re-ring with mission; disabling the feature; notifications-off degradation. Record in `docs/superpowers/reliability/2026-07-18-phase4b-device-results.md`. Finish line before merge.
+**Files:**
+- Modify: `pigeons/alarm_api.dart` + regenerate (`alarm_api.g.dart`, `AlarmApi.g.kt`, `AlarmApi.g.swift`)
+- Create: `android/app/src/main/kotlin/com/riseapp/rise/WakeCheckScheduler.kt`
+- Create: `android/app/src/main/kotlin/com/riseapp/rise/WakeCheckReceiver.kt`
+- Create: `android/app/src/main/kotlin/com/riseapp/rise/WakeCheckActionReceiver.kt`
+- Modify: `android/app/src/main/kotlin/com/riseapp/rise/AlarmHostApiImpl.kt`
+- Modify: `android/app/src/main/AndroidManifest.xml`
+
+**Interfaces:**
+- Produces: `AlarmHostApi.scheduleWakeCheck(NativeAlarm alarm, int checkAtEpochMs)` + `cancelWakeCheck(int alarmId)` (Pigeon, callable from Dart in Task 8); the Android implementation.
+
+> No unit tests — `AlarmManager`, receivers, and notifications are only verifiable on-device (Task 9). This task's gate is `flutter build apk --release` (compiles the Kotlin) + `flutter analyze`. Combined with the contract because regenerating Pigeon without the Kotlin impl leaves `AlarmHostApiImpl` not implementing the interface → build fails.
+
+- [ ] **Step 1: Extend the Pigeon contract**
+
+In `pigeons/alarm_api.dart`, add to the `@HostApi() abstract class AlarmHostApi` (after `reconcileNotifications`):
+
+```dart
+  /// Schedules the post-dismissal "still up?" check for [alarm]: a notification
+  /// at [checkAtEpochMs] (absolute UTC ms) and, if the user does not confirm
+  /// within 100s, a re-fire of [alarm] through the normal ring path. Android
+  /// only for now; a no-op on platforms without the impl.
+  void scheduleWakeCheck(NativeAlarm alarm, int checkAtEpochMs);
+
+  /// Cancels any pending wake-check (notification + re-fire) for [alarmId].
+  void cancelWakeCheck(int alarmId);
+```
+
+- [ ] **Step 2: Regenerate the Pigeon code**
+
+```bash
+dart run pigeon --input pigeons/alarm_api.dart
+```
+Expected: `alarm_api.g.dart`, `AlarmApi.g.kt`, `AlarmApi.g.swift` regenerate with the two new methods. (`alarm_api.g.dart` is committed — it is the one `.g.dart` exception in `.gitignore`.)
+
+- [ ] **Step 3: Create `WakeCheckScheduler.kt`**
+
+```kotlin
+package com.riseapp.rise
+
+import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.util.Log
+import androidx.core.app.NotificationCompat
+
+/**
+ * The post-dismissal "still up?" wake-up check. Two OS-scheduled events, so it
+ * works with the app dead: a notification at checkAt, and a re-fire at
+ * checkAt + [RESPONSE_WINDOW_MS] that re-enters the normal ring path
+ * ([AlarmReceiver] -> foreground service -> [RingActivity]). Tapping "I'm up"
+ * ([WakeCheckActionReceiver]) cancels the re-fire.
+ *
+ * Request codes live in dedicated high namespaces so they never collide with an
+ * alarm's own scheduled PendingIntent (small ids) or the immediate-recovery
+ * code (Int.MAX_VALUE). Alarm ids come from a local autoincrement and never
+ * approach these bases.
+ */
+object WakeCheckScheduler {
+    private const val TAG = "WakeCheck"
+    const val CHANNEL_ID = "rise_wake_check"
+    const val RESPONSE_WINDOW_MS = 100_000L
+
+    const val EXTRA_ALARM_ID = "wc_alarmId"
+
+    private const val NOTIF_TRIGGER_BASE = 500_000_000
+    private const val REFIRE_BASE = 600_000_000
+    private const val NOTIFICATION_ID_BASE = 700_000_000
+    private const val ACTION_BASE = 800_000_000
+
+    private fun am(c: Context): AlarmManager =
+        c.getSystemService(AlarmManager::class.java)
+
+    private fun nm(c: Context): NotificationManager =
+        c.getSystemService(NotificationManager::class.java)
+
+    fun schedule(context: Context, alarm: NativeAlarm, checkAtMs: Long) {
+        val id = alarm.id.toInt()
+
+        // 1) Notification trigger at checkAt.
+        val notifIntent = Intent(context, WakeCheckReceiver::class.java).apply {
+            putExtra(EXTRA_ALARM_ID, id)
+            putExtra(AlarmScheduler.EXTRA_LABEL, alarm.label)
+        }
+        val notifPi = PendingIntent.getBroadcast(
+            context, NOTIF_TRIGGER_BASE + id, notifIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        am(context).setExactAndAllowWhileIdle(
+            AlarmManager.RTC_WAKEUP, checkAtMs, notifPi
+        )
+
+        // 2) Re-fire at checkAt + response window, via the normal ring path.
+        val refireAt = checkAtMs + RESPONSE_WINDOW_MS
+        val fireIntent = Intent(context, AlarmReceiver::class.java).apply {
+            putExtra(AlarmScheduler.EXTRA_ALARM_ID, id)
+            putExtra(AlarmScheduler.EXTRA_LABEL, alarm.label)
+            putExtra(AlarmScheduler.EXTRA_SOUND, alarm.soundAsset)
+            putExtra(AlarmScheduler.EXTRA_VIBRATE, alarm.vibrate)
+        }
+        val firePi = PendingIntent.getBroadcast(
+            context, REFIRE_BASE + id, fireIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val showPi = PendingIntent.getActivity(
+            context, REFIRE_BASE + id,
+            Intent(context, RingActivity::class.java)
+                .putExtra(AlarmScheduler.EXTRA_ALARM_ID, id),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        am(context).setAlarmClock(
+            AlarmManager.AlarmClockInfo(refireAt, showPi), firePi
+        )
+        Log.i(TAG, "wake-check $id: notify@$checkAtMs refire@$refireAt")
+    }
+
+    fun cancel(context: Context, alarmId: Int) {
+        val notifPi = PendingIntent.getBroadcast(
+            context, NOTIF_TRIGGER_BASE + alarmId,
+            Intent(context, WakeCheckReceiver::class.java),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        )
+        if (notifPi != null) {
+            am(context).cancel(notifPi)
+            notifPi.cancel()
+        }
+        val firePi = PendingIntent.getBroadcast(
+            context, REFIRE_BASE + alarmId,
+            Intent(context, AlarmReceiver::class.java),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        )
+        if (firePi != null) {
+            am(context).cancel(firePi)
+            firePi.cancel()
+        }
+        nm(context).cancel(NOTIFICATION_ID_BASE + alarmId)
+        Log.i(TAG, "wake-check $alarmId cancelled")
+    }
+
+    private fun createChannel(context: Context) {
+        val channel = NotificationChannel(
+            CHANNEL_ID, "Wake-up check", NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Checks you are still awake after dismissing an alarm."
+        }
+        nm(context).createNotificationChannel(channel)
+    }
+
+    /** Posts the "Still up?" notification with an "I'm up" action. */
+    fun showStillUp(context: Context, alarmId: Int, label: String) {
+        createChannel(context)
+        val imUp = PendingIntent.getBroadcast(
+            context, ACTION_BASE + alarmId,
+            Intent(context, WakeCheckActionReceiver::class.java)
+                .putExtra(EXTRA_ALARM_ID, alarmId),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setContentTitle("Still up?")
+            .setContentText("Tap \"I'm up\", or $label rings again.")
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .addAction(0, "I'm up", imUp)
+            .setAutoCancel(true)
+            .build()
+        nm(context).notify(NOTIFICATION_ID_BASE + alarmId, notification)
+    }
+}
+```
+
+- [ ] **Step 4: Create the two receivers**
+
+`WakeCheckReceiver.kt`:
+
+```kotlin
+package com.riseapp.rise
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+
+/** Fires at the check time: posts the "Still up?" notification. The re-fire
+ * was already armed by [WakeCheckScheduler.schedule]. */
+class WakeCheckReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val id = intent.getIntExtra(WakeCheckScheduler.EXTRA_ALARM_ID, -1)
+        if (id < 0) return
+        val label = intent.getStringExtra(AlarmScheduler.EXTRA_LABEL) ?: "your alarm"
+        WakeCheckScheduler.showStillUp(context, id, label)
+    }
+}
+```
+
+`WakeCheckActionReceiver.kt`:
+
+```kotlin
+package com.riseapp.rise
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+
+/** "I'm up" tapped: cancel the pending re-fire and dismiss the notification. */
+class WakeCheckActionReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val id = intent.getIntExtra(WakeCheckScheduler.EXTRA_ALARM_ID, -1)
+        if (id < 0) return
+        WakeCheckScheduler.cancel(context, id)
+    }
+}
+```
+
+- [ ] **Step 5: Implement the host-API methods**
+
+In `AlarmHostApiImpl.kt`, add (the generated `AlarmHostApi` interface now requires them):
+
+```kotlin
+    override fun scheduleWakeCheck(alarm: NativeAlarm, checkAtEpochMs: Long) {
+        WakeCheckScheduler.schedule(context, alarm, checkAtEpochMs)
+    }
+
+    override fun cancelWakeCheck(alarmId: Long) {
+        WakeCheckScheduler.cancel(context, alarmId.toInt())
+    }
+```
+
+- [ ] **Step 6: Register the receivers in the manifest**
+
+In `android/app/src/main/AndroidManifest.xml`, inside `<application>` (next to the existing `<receiver android:name=".AlarmReceiver" ...>`), add:
+
+```xml
+        <receiver android:name=".WakeCheckReceiver" android:exported="false" />
+        <receiver android:name=".WakeCheckActionReceiver" android:exported="false" />
+```
+
+- [ ] **Step 7: Compile the whole app + analyze**
+
+```bash
+flutter analyze
+flutter build apk --release
+```
+Expected: `No issues found!`; `✓ Built ...app-release.apk`. (The APK build compiles the Kotlin — this is the task's gate. `flutter test` is unaffected, but run it too to confirm nothing regressed.)
+
+```bash
+flutter test
+```
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add pigeons/alarm_api.dart lib/data/native/alarm_api.g.dart android/app/src/main/kotlin/com/riseapp/rise/WakeCheckScheduler.kt android/app/src/main/kotlin/com/riseapp/rise/WakeCheckReceiver.kt android/app/src/main/kotlin/com/riseapp/rise/WakeCheckActionReceiver.kt android/app/src/main/kotlin/com/riseapp/rise/AlarmApi.g.kt android/app/src/main/kotlin/com/riseapp/rise/AlarmHostApiImpl.kt android/app/src/main/AndroidManifest.xml ios/Runner/AlarmApi.g.swift
+git commit -m "feat(native): add the Android wake-up-check (notification + re-fire)"
+```
+
+---
+
+## Remaining tasks (Tasks 8–9 — full code / protocol just before execution)
+
+- **Task 8 — Dart wake-check wiring**: the ring screen, on a successful real dismissal (`record == true`), if `settings.wakeCheckEnabled`, calls an injectable `armWakeCheck(alarm, Duration(minutes: settings.wakeCheckDelayMinutes))` (default: build a `NativeAlarm` from the alarm + `AlarmHostApi().scheduleWakeCheck(nativeAlarm, now + delay)`), best-effort. `AlarmMutations.delete` best-effort `cancelWakeCheck(id)`. Widget tests (inject a recording `armWakeCheck`): called with the right delay when enabled+record; NOT called when disabled or when `record == false`.
+- **Task 9 — Device verification** (Samsung): the full loop — "Still up?" notification appears at the configured delay after dismissal; "I'm up" cancels the re-fire; ignoring it → the alarm re-rings with its mission; toggling the feature off stops new checks; notifications-off degrades to always-re-ring; plus a regression pass on snooze + Plan-1/3/4a behaviors. Record in `docs/superpowers/reliability/2026-07-18-phase4b-device-results.md`. Finish line before merge.
