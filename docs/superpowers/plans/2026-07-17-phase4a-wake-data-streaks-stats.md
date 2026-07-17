@@ -657,7 +657,248 @@ git commit -m "feat(data): add wake_events table with idempotent v3 migration"
 
 ---
 
-## Remaining tasks (Tasks 4–9 — full code written just before each is executed)
+### Task 4: WakeEventRepository
+
+**Files:**
+- Create: `lib/data/local/wake_event_repository.dart`
+- Test: `test/data/wake_event_repository_test.dart`
+
+**Interfaces:**
+- Consumes: `RiseDatabase` + `db.wakeEvents`/`WakeEventRow`/`WakeEventsCompanion` (Task 3); `WakeEvent` (Task 1).
+- Produces: `class WakeEventRepository` — `WakeEventRepository(RiseDatabase db)`; `static const reuseWindow = Duration(hours: 6)`, `static const grace = Duration(minutes: 15)`; `Future<int> openRing({required int alarmId, required DateTime scheduledAt, required DateTime firstRingAt, required String label})`; `Future<void> finalizeDismiss({required int alarmId, required DateTime dismissedAt, String? method})`; `Stream<List<WakeEvent>> watchAll()`; `Future<List<WakeEvent>> all()`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/data/wake_event_repository_test.dart`:
+
+```dart
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/local/database.dart';
+import 'package:rise/data/local/wake_event_repository.dart';
+
+void main() {
+  late RiseDatabase db;
+  late WakeEventRepository repo;
+
+  setUp(() {
+    db = RiseDatabase(NativeDatabase.memory());
+    repo = WakeEventRepository(db);
+  });
+  tearDown(() => db.close());
+
+  final ring = DateTime.utc(2026, 7, 17, 6, 0);
+
+  test('openRing inserts a new open event', () async {
+    final id = await repo.openRing(
+        alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    final all = await repo.all();
+    expect(all, hasLength(1));
+    expect(all.single.id, id);
+    expect(all.single.isOpen, isTrue);
+    expect(all.single.label, 'Run');
+  });
+
+  test('openRing reuses an open event within the reuse window', () async {
+    final id1 = await repo.openRing(
+        alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    final id2 = await repo.openRing(
+        alarmId: 1,
+        scheduledAt: ring,
+        firstRingAt: ring.add(const Duration(minutes: 9)),
+        label: 'Run');
+    expect(id2, id1);
+    expect(await repo.all(), hasLength(1));
+  });
+
+  test('openRing starts a new event past the reuse window', () async {
+    await repo.openRing(alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    await repo.openRing(
+        alarmId: 1,
+        scheduledAt: ring,
+        firstRingAt: ring.add(const Duration(hours: 7)),
+        label: 'Run');
+    expect(await repo.all(), hasLength(2));
+  });
+
+  test('openRing does not reuse a different alarm\'s open event', () async {
+    final a = await repo.openRing(alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'A');
+    final b = await repo.openRing(alarmId: 2, scheduledAt: ring, firstRingAt: ring, label: 'B');
+    expect(b, isNot(a));
+    expect(await repo.all(), hasLength(2));
+  });
+
+  test('finalizeDismiss within grace marks onTime true', () async {
+    await repo.openRing(alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    await repo.finalizeDismiss(
+        alarmId: 1,
+        dismissedAt: ring.add(const Duration(minutes: 14, seconds: 59)),
+        method: 'mission');
+    final e = (await repo.all()).single;
+    expect(e.isOpen, isFalse);
+    expect(e.onTime, isTrue);
+    expect(e.method, 'mission');
+  });
+
+  test('finalizeDismiss past grace marks onTime false', () async {
+    await repo.openRing(alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    await repo.finalizeDismiss(
+        alarmId: 1,
+        dismissedAt: ring.add(const Duration(minutes: 15, seconds: 1)),
+        method: 'slide');
+    expect((await repo.all()).single.onTime, isFalse);
+  });
+
+  test('finalizeDismiss is a no-op when nothing is open', () async {
+    await repo.finalizeDismiss(alarmId: 99, dismissedAt: ring, method: 'slide');
+    expect(await repo.all(), isEmpty);
+  });
+
+  test('finalizeDismiss closes only the open event, leaving closed ones', () async {
+    await repo.openRing(alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    await repo.finalizeDismiss(
+        alarmId: 1, dismissedAt: ring.add(const Duration(minutes: 3)), method: 'mission');
+    await repo.openRing(
+        alarmId: 1,
+        scheduledAt: ring,
+        firstRingAt: ring.add(const Duration(hours: 24)),
+        label: 'Run');
+    await repo.finalizeDismiss(
+        alarmId: 1,
+        dismissedAt: ring.add(const Duration(hours: 24, minutes: 2)),
+        method: 'slide');
+    final all = await repo.all();
+    expect(all, hasLength(2));
+    expect(all.where((e) => e.isOpen), isEmpty);
+    expect(all.map((e) => e.method).toSet(), {'mission', 'slide'});
+  });
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+```bash
+flutter test test/data/wake_event_repository_test.dart
+```
+Expected: FAIL — `wake_event_repository.dart` not found.
+
+- [ ] **Step 3: Write the repository**
+
+Create `lib/data/local/wake_event_repository.dart`:
+
+```dart
+import 'package:drift/drift.dart';
+
+import '../../domain/wake_event.dart';
+import 'database.dart';
+
+/// Reads and writes wake events. Opens an event when a firing starts and
+/// finalises it on dismissal; an event left open is a miss.
+class WakeEventRepository {
+  WakeEventRepository(this._db);
+
+  final RiseDatabase _db;
+
+  /// Two rings for the same alarm within this window are the same firing (a
+  /// snooze re-fire or a ring-screen re-mount), not a new one.
+  static const reuseWindow = Duration(hours: 6);
+
+  /// Dismissing within this of the first ring counts as on time.
+  static const grace = Duration(minutes: 15);
+
+  static WakeEvent _toDomain(WakeEventRow r) => WakeEvent(
+        id: r.id,
+        alarmId: r.alarmId,
+        scheduledAt: r.scheduledAt,
+        firstRingAt: r.firstRingAt,
+        dismissedAt: r.dismissedAt,
+        method: r.method,
+        snoozeCount: r.snoozeCount,
+        missionFailures: r.missionFailures,
+        onTime: r.onTime,
+        label: r.label,
+      );
+
+  Future<WakeEventRow?> _openRowFor(int alarmId) =>
+      (_db.select(_db.wakeEvents)
+            ..where((t) => t.alarmId.equals(alarmId) & t.dismissedAt.isNull())
+            ..orderBy([(t) => OrderingTerm.desc(t.firstRingAt)])
+            ..limit(1))
+          .getSingleOrNull();
+
+  /// Opens (or reuses) the wake event for a firing; returns its id.
+  Future<int> openRing({
+    required int alarmId,
+    required DateTime scheduledAt,
+    required DateTime firstRingAt,
+    required String label,
+  }) async {
+    final existing = await _openRowFor(alarmId);
+    if (existing != null &&
+        firstRingAt.toUtc().difference(existing.firstRingAt).abs() <=
+            reuseWindow) {
+      return existing.id;
+    }
+    return _db.into(_db.wakeEvents).insert(WakeEventsCompanion.insert(
+          alarmId: alarmId,
+          scheduledAt: scheduledAt.toUtc(),
+          firstRingAt: firstRingAt.toUtc(),
+          label: Value(label),
+        ));
+  }
+
+  /// Finalises the open event for [alarmId]; no-op if none is open.
+  Future<void> finalizeDismiss({
+    required int alarmId,
+    required DateTime dismissedAt,
+    String? method,
+  }) async {
+    final open = await _openRowFor(alarmId);
+    if (open == null) return;
+    final onTime =
+        dismissedAt.toUtc().difference(open.firstRingAt) <= grace;
+    await (_db.update(_db.wakeEvents)..where((t) => t.id.equals(open.id))).write(
+      WakeEventsCompanion(
+        dismissedAt: Value(dismissedAt.toUtc()),
+        method: Value(method),
+        onTime: Value(onTime),
+      ),
+    );
+  }
+
+  Stream<List<WakeEvent>> watchAll() => (_db.select(_db.wakeEvents)
+        ..orderBy([(t) => OrderingTerm.desc(t.firstRingAt)]))
+      .watch()
+      .map((rows) => rows.map(_toDomain).toList());
+
+  Future<List<WakeEvent>> all() async {
+    final rows = await (_db.select(_db.wakeEvents)
+          ..orderBy([(t) => OrderingTerm.desc(t.firstRingAt)]))
+        .get();
+    return rows.map(_toDomain).toList();
+  }
+}
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+```bash
+flutter test test/data/wake_event_repository_test.dart
+```
+Expected: PASS — 8 tests green.
+
+- [ ] **Step 5: Whole suite, analyze, commit**
+
+```bash
+flutter test
+flutter analyze
+git add lib/data/local/wake_event_repository.dart test/data/wake_event_repository_test.dart
+git commit -m "feat(data): add WakeEventRepository (open-on-ring, finalize-on-dismiss)"
+```
+
+---
+
+## Remaining tasks (Tasks 5–9 — full code written just before each is executed)
 
 Each gets its complete code just before dispatch (same flow used for Plan 3). Summary + interfaces:
 
