@@ -1360,7 +1360,247 @@ git commit -m "feat(ui): record wake events from the ring flow (open on ring, fi
 
 ---
 
-## Remaining tasks (Tasks 7–9 — full code written just before each is executed)
+### Task 7: Live Home streak pill
+
+**Files:**
+- Modify: `lib/ui/screens/home_screen.dart`
+- Modify: `test/ui/screens/home_screen_test.dart`
+- Modify: `test/ui/screens/app_shell_test.dart` (add the `streakProvider` override so it keeps passing)
+
+**Interfaces:**
+- Consumes: `streakProvider` (Task 5).
+- Produces: `HomeScreen` gains `VoidCallback? onStreak`; the header renders a live flame+count pill from `streakProvider` (muted "Start" at 0) that calls `onStreak` when tapped.
+
+> `HomeScreen` now reads `streakProvider`, whose default chain reaches the (test-unconfigured) alarm service — so every test that renders `HomeScreen` must override `streakProvider`. This task adds that override to both `home_screen_test.dart` and `app_shell_test.dart`. `onStreak` is nullable; the app shell wires the real deep-link in Task 9 (until then the pill is inert, which is fine).
+
+- [ ] **Step 1: Edit `home_screen.dart`**
+
+Add the import (after the existing `import '../state/alarm_providers.dart';`):
+
+```dart
+import '../state/wake_providers.dart';
+```
+
+Change the constructor + fields — replace:
+
+```dart
+  const HomeScreen({
+    super.key,
+    required this.onNew,
+    required this.onEdit,
+    required this.onPreview,
+  });
+
+  final VoidCallback onNew;
+  final void Function(Alarm) onEdit;
+  final VoidCallback onPreview;
+```
+
+with:
+
+```dart
+  const HomeScreen({
+    super.key,
+    required this.onNew,
+    required this.onEdit,
+    required this.onPreview,
+    this.onStreak,
+  });
+
+  final VoidCallback onNew;
+  final void Function(Alarm) onEdit;
+  final VoidCallback onPreview;
+
+  /// Opens Stats (the app shell switches tab). Null leaves the pill inert.
+  final VoidCallback? onStreak;
+```
+
+Replace the whole `_header()` method with the pill-carrying header plus a `_streakPill()` method:
+
+```dart
+  Widget _header() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Flexible(
+          child: Text(_greeting(),
+              style: RiseText.display, overflow: TextOverflow.ellipsis),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _streakPill(),
+            const SizedBox(width: 10),
+            Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                  color: RiseColors.primary, shape: BoxShape.circle),
+              child: const Icon(Icons.person,
+                  color: RiseColors.primaryText, size: 20),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _streakPill() {
+    final streak = ref.watch(streakProvider);
+    final has = streak.current > 0;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onStreak,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        decoration: BoxDecoration(
+          color: has ? RiseColors.accentSoft : RiseColors.surface2,
+          borderRadius: BorderRadius.circular(RiseRadii.pill),
+          border: Border.all(color: RiseColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.local_fire_department,
+                size: 16,
+                color: has ? RiseColors.waking : RiseColors.textFaint),
+            const SizedBox(width: 5),
+            Text(has ? '${streak.current}' : 'Start',
+                style: RiseText.mono(
+                    size: 14,
+                    weight: FontWeight.w700,
+                    color: has ? RiseColors.text : RiseColors.textDim)),
+          ],
+        ),
+      ),
+    );
+  }
+```
+
+- [ ] **Step 2: Update `home_screen_test.dart`**
+
+Add these imports (after `import 'package:rise/ui/state/alarm_providers.dart';`):
+
+```dart
+import 'package:rise/domain/streak.dart';
+import 'package:rise/ui/state/wake_providers.dart';
+```
+
+Replace the `_host` function with (adds `streak` + `onStreak`, overrides `streakProvider`):
+
+```dart
+Widget _host({
+  required List<Alarm> alarms,
+  required _RecordingMutations mutations,
+  VoidCallback? onNew,
+  void Function(Alarm)? onEdit,
+  VoidCallback? onStreak,
+  StreakStats streak = StreakStats.empty,
+}) {
+  return ProviderScope(
+    overrides: [
+      alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
+      nextOccurrenceProvider.overrideWith((ref) async => null),
+      alarmMutationsProvider.overrideWithValue(mutations),
+      streakProvider.overrideWithValue(streak),
+    ],
+    child: MaterialApp(
+      home: HomeScreen(
+        onNew: onNew ?? () {},
+        onEdit: onEdit ?? (_) {},
+        onPreview: () {},
+        onStreak: onStreak,
+      ),
+    ),
+  );
+}
+```
+
+Add these three tests inside `main()`:
+
+```dart
+  testWidgets('the streak pill shows the current streak', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [],
+      mutations: _RecordingMutations(),
+      streak: const StreakStats(
+          current: 5, best: 7, freezesRemaining: 1, byDay: {}),
+    ));
+    await t.pump();
+    expect(find.text('5'), findsOneWidget);
+  });
+
+  testWidgets('the streak pill shows Start when there is no streak', (t) async {
+    await t.pumpWidget(
+        _host(alarms: const [], mutations: _RecordingMutations()));
+    await t.pump();
+    expect(find.text('Start'), findsOneWidget);
+  });
+
+  testWidgets('tapping the streak pill calls onStreak', (t) async {
+    var tapped = false;
+    await t.pumpWidget(_host(
+      alarms: const [],
+      mutations: _RecordingMutations(),
+      streak: const StreakStats(
+          current: 3, best: 3, freezesRemaining: 0, byDay: {}),
+      onStreak: () => tapped = true,
+    ));
+    await t.pump();
+    await t.tap(find.text('3'));
+    await t.pump();
+    expect(tapped, isTrue);
+  });
+```
+
+- [ ] **Step 3: Update `app_shell_test.dart`**
+
+Add these imports (after `import 'package:rise/ui/state/alarm_providers.dart';`):
+
+```dart
+import 'package:rise/domain/streak.dart';
+import 'package:rise/ui/state/wake_providers.dart';
+```
+
+Add the `streakProvider` override to `_overrides` — replace:
+
+```dart
+List<Override> _overrides(List<Alarm> alarms, ScheduledOccurrence? next) => [
+      alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
+      nextOccurrenceProvider.overrideWith((ref) async => next),
+    ];
+```
+
+with:
+
+```dart
+List<Override> _overrides(List<Alarm> alarms, ScheduledOccurrence? next) => [
+      alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
+      nextOccurrenceProvider.overrideWith((ref) async => next),
+      streakProvider.overrideWithValue(StreakStats.empty),
+    ];
+```
+
+- [ ] **Step 4: Run the affected tests, whole suite, analyze**
+
+```bash
+flutter test test/ui/screens/home_screen_test.dart test/ui/screens/app_shell_test.dart
+flutter test
+flutter analyze
+```
+Expected: Home tests (existing + 3 new) and app-shell tests all green; whole suite green; `No issues found!`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/ui/screens/home_screen.dart test/ui/screens/home_screen_test.dart test/ui/screens/app_shell_test.dart
+git commit -m "feat(ui): make the Home streak pill live and tappable"
+```
+
+---
+
+## Remaining tasks (Tasks 8–9 — full code written just before each is executed)
 
 Each gets its complete code just before dispatch (same flow used for Plan 3). Summary + interfaces:
 
