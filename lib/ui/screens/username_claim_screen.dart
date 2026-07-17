@@ -55,6 +55,9 @@ class _UsernameClaimScreenState extends ConsumerState<UsernameClaimScreen> {
   Future<void> _onUsernameChanged(String _) async {
     setState(() => _error = null);
     if (!_formatValid) {
+      // Invalidate any in-flight check so its result can't land as a stale
+      // "available" for text that is no longer valid.
+      _checkToken++;
       setState(() {
         _available = null;
         _checking = false;
@@ -153,7 +156,6 @@ class _UsernameClaimScreenState extends ConsumerState<UsernameClaimScreen> {
           TextField(
             key: const Key('displayname-field'),
             controller: _displayName,
-            onChanged: (_) => setState(() {}),
             textCapitalization: TextCapitalization.words,
             inputFormatters: [LengthLimitingTextInputFormatter(40)],
             style: RiseText.body,
