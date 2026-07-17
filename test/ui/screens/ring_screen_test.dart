@@ -58,6 +58,14 @@ class _RecordingRecorder implements WakeRecorder {
       finalized.add((alarmId, method));
 }
 
+class _ThrowingRecorder implements WakeRecorder {
+  @override
+  Future<void> openRing(int alarmId) async => throw StateError('wake db down');
+  @override
+  Future<void> finalizeDismiss(int alarmId, {String? method}) async =>
+      throw StateError('wake db down');
+}
+
 void main() {
   testWidgets('no-mission alarm shows slide-to-wake; sliding dismisses', (t) async {
     int? dismissed;
@@ -222,5 +230,29 @@ void main() {
     await t.pump(const Duration(milliseconds: 20));
     expect(rec.opened, isEmpty);
     expect(rec.finalized, isEmpty);
+  });
+
+  testWidgets('a failing wake recorder never blocks dismissal (best-effort)', (t) async {
+    var done = false;
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        alarmsProvider.overrideWith((ref) =>
+            Stream.value(const [Alarm(id: 5, hour: 6, minute: 30)])),
+        wakeRecorderProvider.overrideWithValue(_ThrowingRecorder()),
+      ],
+      child: MaterialApp(
+        home: RingScreen(
+          alarmId: 5,
+          record: true,
+          dismissAlarm: (_) async {},
+          onDismissed: () => done = true,
+        ),
+      ),
+    ));
+    await t.pump(); // openRing throws internally, is caught — screen is fine
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(done, isTrue); // finalize threw, was caught — onDismissed still fired
   });
 }
