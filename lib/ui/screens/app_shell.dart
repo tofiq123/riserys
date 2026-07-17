@@ -12,6 +12,7 @@ import 'create_edit_screen.dart';
 import 'home_screen.dart';
 import 'profile_screen.dart';
 import 'ring_screen.dart';
+import 'settings_screen.dart';
 import 'stats_screen.dart';
 
 class AppShell extends ConsumerStatefulWidget {
@@ -44,7 +45,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     ));
   }
 
-  Widget _activeTab() {
+  Widget _activeTab(BuildContext context) {
     switch (_tab) {
       case 1:
         return const _ComingSoon(
@@ -54,7 +55,11 @@ class _AppShellState extends ConsumerState<AppShell> {
       case 2:
         return const StatsScreen();
       case 3:
-        return ProfileScreen(permissions: widget.permissions);
+        return ProfileScreen(
+          permissions: widget.permissions,
+          onSettings: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen())),
+        );
       default:
         return HomeScreen(
           onNew: _openNew,
@@ -82,7 +87,7 @@ class _AppShellState extends ConsumerState<AppShell> {
           onHide: () => ref.read(toastProvider.notifier).state = null,
           child: Stack(
             children: [
-              _activeTab(),
+              _activeTab(context),
               if (editing)
                 Positioned.fill(
                   child: Material(

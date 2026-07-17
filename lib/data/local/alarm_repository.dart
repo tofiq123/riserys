@@ -36,6 +36,7 @@ class AlarmRepository {
         mission: row.mission,
         missionDiff: row.missionDiff,
         lastDismissedAt: row.lastDismissedAt,
+        snoozedUntil: row.snoozedUntil,
       );
 
   Future<List<Alarm>> all() async {
@@ -61,6 +62,7 @@ class AlarmRepository {
       mission: Value(alarm.mission),
       missionDiff: Value(alarm.missionDiff),
       lastDismissedAt: Value(alarm.lastDismissedAt),
+      snoozedUntil: Value(alarm.snoozedUntil),
     );
 
     if (alarm.id == 0) {
@@ -92,7 +94,18 @@ class AlarmRepository {
       AlarmsCompanion(
         lastDismissedAt: Value(at.toUtc()),
         enabled: isOneShot ? const Value(false) : const Value.absent(),
+        snoozedUntil: const Value(null),
       ),
     );
   }
+
+  /// Defers the alarm's next firing to [at] (a snooze). Cleared by
+  /// [clearSnoozedUntil] or [recordDismissed].
+  Future<void> setSnoozedUntil(int id, DateTime at) =>
+      (_db.update(_db.alarms)..where((t) => t.id.equals(id)))
+          .write(AlarmsCompanion(snoozedUntil: Value(at.toUtc())));
+
+  Future<void> clearSnoozedUntil(int id) =>
+      (_db.update(_db.alarms)..where((t) => t.id.equals(id)))
+          .write(const AlarmsCompanion(snoozedUntil: Value(null)));
 }

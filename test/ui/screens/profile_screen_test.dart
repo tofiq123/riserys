@@ -32,6 +32,12 @@ Future<void> _pump(WidgetTester t, Widget widget) async {
   await t.pumpWidget(widget);
 }
 
+AlarmPermissions _perms() => AlarmPermissions(
+    notifications: false,
+    exactAlarm: false,
+    fullScreenIntent: false,
+    batteryUnrestricted: false);
+
 void main() {
   testWidgets('shows profile, reliability permissions, and about', (t) async {
     await _pump(
@@ -52,5 +58,23 @@ void main() {
     expect(find.text('Guest'), findsOneWidget);
     expect(find.text('Grant'), findsNWidgets(4));
     expect(find.text('1.0.0'), findsOneWidget);
+  });
+
+  testWidgets('tapping the Settings row calls onSettings', (t) async {
+    var tapped = false;
+    await _pump(
+        t,
+        MaterialApp(
+          home: Scaffold(
+            body: ProfileScreen(
+              permissions: _FakeGateway(_perms()),
+              onSettings: () => tapped = true,
+            ),
+          ),
+        ));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Settings'));
+    await t.pump();
+    expect(tapped, isTrue);
   });
 }

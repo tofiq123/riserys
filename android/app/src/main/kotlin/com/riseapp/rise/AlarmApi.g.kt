@@ -518,6 +518,15 @@ interface AlarmHostApi {
    * fallback). A full replace, like [reconcile]. No-op on Android.
    */
   fun reconcileNotifications(requests: List<NotificationRequest>)
+  /**
+   * Schedules the post-dismissal "still up?" check for [alarm]: a notification
+   * at [checkAtEpochMs] (absolute UTC ms) and, if the user does not confirm
+   * within 100s, a re-fire of [alarm] through the normal ring path. Android
+   * only for now; a no-op on platforms without the impl.
+   */
+  fun scheduleWakeCheck(alarm: NativeAlarm, checkAtEpochMs: Long)
+  /** Cancels any pending wake-check (notification + re-fire) for [alarmId]. */
+  fun cancelWakeCheck(alarmId: Long)
 
   companion object {
     /** The codec used by AlarmHostApi. */
@@ -731,6 +740,43 @@ interface AlarmHostApi {
             val requestsArg = args[0] as List<NotificationRequest>
             val wrapped: List<Any?> = try {
               api.reconcileNotifications(requestsArg)
+              listOf(null)
+            } catch (exception: Throwable) {
+              AlarmApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.scheduleWakeCheck$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val alarmArg = args[0] as NativeAlarm
+            val checkAtEpochMsArg = args[1] as Long
+            val wrapped: List<Any?> = try {
+              api.scheduleWakeCheck(alarmArg, checkAtEpochMsArg)
+              listOf(null)
+            } catch (exception: Throwable) {
+              AlarmApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.cancelWakeCheck$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val alarmIdArg = args[0] as Long
+            val wrapped: List<Any?> = try {
+              api.cancelWakeCheck(alarmIdArg)
               listOf(null)
             } catch (exception: Throwable) {
               AlarmApiPigeonUtils.wrapError(exception)

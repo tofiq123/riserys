@@ -177,4 +177,28 @@ void main() {
 
     await sub.cancel();
   });
+
+  test('snoozedUntil round-trips through upsert', () async {
+    final saved = await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30)
+        .copyWith(snoozedUntil: DateTime.utc(2026, 7, 20, 6, 39)));
+    final read = (await repo.all()).firstWhere((a) => a.id == saved.id);
+    expect(read.snoozedUntil, isNotNull);
+    expect(read.snoozedUntil!.toUtc(), DateTime.utc(2026, 7, 20, 6, 39));
+  });
+
+  test('setSnoozedUntil then clearSnoozedUntil', () async {
+    final saved = await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));
+    await repo.setSnoozedUntil(saved.id, DateTime.utc(2026, 7, 20, 6, 39));
+    expect((await repo.all()).single.snoozedUntil, isNotNull);
+    await repo.clearSnoozedUntil(saved.id);
+    expect((await repo.all()).single.snoozedUntil, isNull);
+  });
+
+  test('recordDismissed clears a pending snooze', () async {
+    final saved = await repo.upsert(
+        const Alarm(id: 0, hour: 6, minute: 30, days: {1})
+            .copyWith(snoozedUntil: DateTime.utc(2026, 7, 20, 6, 39)));
+    await repo.recordDismissed(saved.id, DateTime.utc(2026, 7, 20, 6, 40));
+    expect((await repo.all()).single.snoozedUntil, isNull);
+  });
 }

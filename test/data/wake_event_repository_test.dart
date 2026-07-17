@@ -133,4 +133,33 @@ void main() {
     expect(id2, id1); // <= reuseWindow: exactly 6h still the same firing
     expect(await repo.all(), hasLength(1));
   });
+
+  test('bumpSnooze increments the open event\'s snooze count', () async {
+    await repo.openRing(
+        alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    await repo.bumpSnooze(1);
+    await repo.bumpSnooze(1);
+    expect((await repo.all()).single.snoozeCount, 2);
+  });
+
+  test('bumpSnooze is a no-op when nothing is open', () async {
+    await repo.bumpSnooze(99);
+    expect(await repo.all(), isEmpty);
+  });
+
+  test('bumpSnooze only touches the open event, not a closed one', () async {
+    await repo.openRing(
+        alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    await repo.finalizeDismiss(
+        alarmId: 1, dismissedAt: ring.add(const Duration(minutes: 3)), method: 'slide');
+    await repo.openRing(
+        alarmId: 1,
+        scheduledAt: ring,
+        firstRingAt: ring.add(const Duration(hours: 24)),
+        label: 'Run');
+    await repo.bumpSnooze(1);
+    final all = await repo.all();
+    expect(all.firstWhere((e) => e.isOpen).snoozeCount, 1);
+    expect(all.firstWhere((e) => !e.isOpen).snoozeCount, 0);
+  });
 }

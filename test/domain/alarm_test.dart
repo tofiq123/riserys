@@ -63,4 +63,26 @@ void main() {
       expect(a == a.copyWith(), isTrue); // equality includes the new fields
     });
   });
+
+  group('Alarm snoozedUntil', () {
+    test('snoozedUntil round-trips and clears via the sentinel', () {
+      const a = Alarm(id: 1, hour: 6, minute: 30);
+      expect(a.snoozedUntil, isNull);
+      final snoozed = a.copyWith(snoozedUntil: DateTime.utc(2026, 7, 20, 6, 39));
+      expect(snoozed.snoozedUntil, DateTime.utc(2026, 7, 20, 6, 39));
+      // Sentinel clears it back to null (plain copyWith can't express "set null").
+      expect(snoozed.copyWith(clearSnoozedUntil: true).snoozedUntil, isNull);
+      // copyWith without the flag preserves it.
+      expect(snoozed.copyWith(label: 'x').snoozedUntil, DateTime.utc(2026, 7, 20, 6, 39));
+    });
+
+    test('equality treats the same snooze instant across UTC/local as equal', () {
+      final a = const Alarm(id: 1, hour: 6, minute: 30)
+          .copyWith(snoozedUntil: DateTime.utc(2026, 7, 20, 6, 39));
+      final b = const Alarm(id: 1, hour: 6, minute: 30)
+          .copyWith(snoozedUntil: DateTime.utc(2026, 7, 20, 6, 39).toLocal());
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+    });
+  });
 }

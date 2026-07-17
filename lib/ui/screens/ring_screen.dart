@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/alarm_sync_service.dart';
 import '../../data/native/alarm_api.g.dart';
+import '../../data/snooze.dart';
 import '../../domain/alarm.dart';
 import '../components/slide_to_wake.dart';
 import '../state/alarm_providers.dart';
+import '../state/settings_providers.dart';
 import '../state/wake_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
@@ -46,6 +48,26 @@ Future<void> dismissRingingAlarm(int alarmId) async {
   }
 }
 
+/// Arms the post-dismissal wake-up check for [alarm] at now + [delay]. The
+/// re-fire time (checkAt + 100s) is computed natively, so [NativeAlarm.fireAtEpochMs]
+/// is unused here; the label/sound/vibrate carry so the re-fire rings correctly.
+Future<void> defaultArmWakeCheck(Alarm alarm, Duration delay) async {
+  final checkAt = DateTime.now().toUtc().add(delay).millisecondsSinceEpoch;
+  await AlarmHostApi().scheduleWakeCheck(
+    NativeAlarm(
+      id: alarm.id,
+      fireAtEpochMs: 0,
+      label: alarm.label,
+      soundAsset: alarm.soundAsset,
+      vibrate: alarm.vibrate,
+      hour: alarm.hour,
+      minute: alarm.minute,
+      weekdays: alarm.days.toList(),
+    ),
+    checkAt,
+  );
+}
+
 class RingScreen extends ConsumerStatefulWidget {
   const RingScreen({
     super.key,
@@ -54,6 +76,8 @@ class RingScreen extends ConsumerStatefulWidget {
     this.dismissAlarm = dismissRingingAlarm,
     this.missionBuilder,
     this.record = false,
+    this.snooze = snoozeAlarm,
+    this.armWakeCheck = defaultArmWakeCheck,
   });
 
   final int alarmId;
@@ -71,6 +95,14 @@ class RingScreen extends ConsumerStatefulWidget {
   /// mount, finalised on dismiss. Off for previews. Best-effort: a wake-log
   /// failure is logged, never thrown into the ring.
   final bool record;
+
+  /// Snooze action (silence + defer). Injectable for tests; defaults to
+  /// [snoozeAlarm].
+  final Future<void> Function(int alarmId, Duration duration) snooze;
+
+  /// Arms the "still up?" check after a real dismissal. Injectable for tests;
+  /// defaults to [defaultArmWakeCheck].
+  final Future<void> Function(Alarm alarm, Duration delay) armWakeCheck;
 
   @override
   ConsumerState<RingScreen> createState() => _RingScreenState();
@@ -136,10 +168,55 @@ class _RingScreenState extends ConsumerState<RingScreen>
       } catch (e) {
         debugPrint('Rise: wake-finalize failed for ${widget.alarmId}: $e');
       }
+      final settings = ref.read(currentSettingsProvider);
+      if (settings.wakeCheckEnabled) {
+        final alarm = ref
+            .read(alarmsProvider)
+            .value
+            ?.firstWhereOrNull((a) => a.id == widget.alarmId);
+        if (alarm != null) {
+          try {
+            await widget.armWakeCheck(
+                alarm, Duration(minutes: settings.wakeCheckDelayMinutes));
+          } catch (e) {
+            debugPrint('Rise: wake-check schedule failed for ${widget.alarmId}: $e');
+          }
+        }
+      }
     }
     if (!mounted) return;
     widget.onDismissed?.call();
   }
+
+  Future<void> _snooze(Duration d) async {
+    if (_dismissing) return; // shares the dismiss guard
+    setState(() => _dismissing = true);
+    try {
+      await widget.snooze(widget.alarmId, d);
+    } catch (e) {
+      debugPrint('Rise: snooze failed for ${widget.alarmId}: $e');
+      if (mounted) {
+        setState(() {
+          _dismissing = false;
+          _attempt++;
+        });
+      }
+      return;
+    }
+    if (!mounted) return;
+    widget.onDismissed?.call(); // close the ring screen
+  }
+
+  Widget _snoozeButton(int minutes) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _snooze(Duration(minutes: minutes)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text('Snooze $minutes min',
+              style: RiseText.body.copyWith(
+                  color: RiseColors.textDim, fontWeight: FontWeight.w600)),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -147,6 +224,15 @@ class _RingScreenState extends ConsumerState<RingScreen>
         .watch(alarmsProvider)
         .value
         ?.firstWhereOrNull((a) => a.id == widget.alarmId);
+    final settings = ref.watch(currentSettingsProvider);
+    final snoozeCount = ref
+            .watch(wakeEventsProvider)
+            .value
+            ?.firstWhereOrNull((e) => e.alarmId == widget.alarmId && e.isOpen)
+            ?.snoozeCount ??
+        0;
+    final canSnooze = snoozeCount < settings.snoozeMaxCount;
+    final snoozeMinutes = settings.snoozeDurationMinutes(snoozeCount);
     final label = alarm?.label ?? 'Alarm';
     final now = DateTime.now();
     final hour12 = now.hour % 12 == 0 ? 12 : now.hour % 12;
@@ -200,6 +286,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
               Text(label, style: RiseText.title.copyWith(color: RiseColors.textDim)),
               const Spacer(),
               gate,
+              if (canSnooze) _snoozeButton(snoozeMinutes),
             ],
           ),
         ),

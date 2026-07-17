@@ -160,6 +160,25 @@ void main() {
     });
   });
 
+  group('snoozedUntil', () {
+    test('nextOccurrence fires at a future snoozedUntil, overriding the schedule', () {
+      final from = tz.TZDateTime(utc, 2026, 7, 20, 6, 30); // ringing now
+      final alarm = const Alarm(id: 1, hour: 6, minute: 30, days: {1, 2, 3, 4, 5})
+          .copyWith(snoozedUntil: DateTime.utc(2026, 7, 20, 6, 39));
+      final next = nextOccurrence(alarm: alarm, from: from, location: utc);
+      expect(next, tz.TZDateTime(utc, 2026, 7, 20, 6, 39));
+    });
+
+    test('a past snoozedUntil is ignored (the snooze has fired); normal schedule resumes', () {
+      final from = tz.TZDateTime(utc, 2026, 7, 20, 6, 40); // after the snooze fired
+      final alarm = const Alarm(id: 1, hour: 6, minute: 30, days: {1})
+          .copyWith(snoozedUntil: DateTime.utc(2026, 7, 20, 6, 39));
+      final next = nextOccurrence(alarm: alarm, from: from, location: utc);
+      // Monday 6:30 next week (2026-07-20 is a Monday), not the past snooze.
+      expect(next, tz.TZDateTime(utc, 2026, 7, 27, 6, 30));
+    });
+  });
+
   group('previousOccurrence', () {
     test('finds the firing earlier today', () {
       const alarm = Alarm(id: 1, hour: 6, minute: 30);
