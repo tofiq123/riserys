@@ -80,4 +80,28 @@ void main() {
     expect(wakes.last.deltaMinutes, 3);
     expect(wakes.first.hasEvent, isFalse); // 6 days ago: no event
   });
+
+  test('weekWakes prefers the on-time event over a later miss on the same day', () {
+    final now = DateTime(2026, 7, 20, 12);
+    final onTimeEarly = WakeEvent(
+      id: 1,
+      alarmId: 1,
+      scheduledAt: DateTime(2026, 7, 20, 6),
+      firstRingAt: DateTime(2026, 7, 20, 6),
+      dismissedAt: DateTime(2026, 7, 20, 6, 3),
+      onTime: true,
+    );
+    final lateMiss = WakeEvent(
+      id: 2,
+      alarmId: 1,
+      scheduledAt: DateTime(2026, 7, 20, 6),
+      firstRingAt: DateTime(2026, 7, 20, 7), // rang later
+      dismissedAt: DateTime(2026, 7, 20, 7, 40),
+      onTime: false,
+    );
+    // The on-time event represents the day even though the miss rang later.
+    final wakes = weekWakes([lateMiss, onTimeEarly], now);
+    expect(wakes.last.onTime, isTrue);
+    expect(wakes.last.deltaMinutes, 3);
+  });
 }

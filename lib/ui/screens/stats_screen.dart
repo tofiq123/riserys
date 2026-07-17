@@ -14,11 +14,6 @@ DateTime _todayLocal(DateTime now) {
   return DateTime(l.year, l.month, l.day);
 }
 
-DateTime _dayOf(DateTime t) {
-  final l = t.toLocal();
-  return DateTime(l.year, l.month, l.day);
-}
-
 /// The representative wake for one local day.
 class DayWake {
   const DayWake(this.day,
@@ -38,7 +33,7 @@ List<DayWake> weekWakes(List<WakeEvent> events, DateTime now) {
   final today = _todayLocal(now);
   final byDay = <DateTime, WakeEvent>{};
   for (final e in events) {
-    final d = _dayOf(e.firstRingAt);
+    final d = e.localDay;
     final cur = byDay[d];
     final better = cur == null ||
         (e.onTime && !cur.onTime) ||
@@ -122,7 +117,7 @@ class StatsScreen extends ConsumerWidget {
       );
 
   Widget _streakCard(StreakStats s) => RiseCard(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(RiseSpacing.screen),
         child: Column(
           children: [
             Row(
