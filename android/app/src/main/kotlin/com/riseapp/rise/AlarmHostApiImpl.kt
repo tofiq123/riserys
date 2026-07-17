@@ -129,6 +129,14 @@ class AlarmHostApiImpl(
         // The sync service only calls this when supportsSystemAlarms is false.
     }
 
+    override fun scheduleWakeCheck(alarm: NativeAlarm, checkAtEpochMs: Long) {
+        WakeCheckScheduler.schedule(context, alarm, checkAtEpochMs)
+    }
+
+    override fun cancelWakeCheck(alarmId: Long) {
+        WakeCheckScheduler.cancel(context, alarmId.toInt())
+    }
+
     /**
      * Pigeon alarm ids are Long, but the Intent extra AlarmService reads
      * (EXTRA_ALARM_ID) is an Int. A bare `.toInt()` truncates silently on

@@ -134,4 +134,13 @@ abstract class AlarmHostApi {
   /// Replaces the platform's entire scheduled notification set (the iOS 16–25
   /// fallback). A full replace, like [reconcile]. No-op on Android.
   void reconcileNotifications(List<NotificationRequest> requests);
+
+  /// Schedules the post-dismissal "still up?" check for [alarm]: a notification
+  /// at [checkAtEpochMs] (absolute UTC ms) and, if the user does not confirm
+  /// within 100s, a re-fire of [alarm] through the normal ring path. Android
+  /// only for now; a no-op on platforms without the impl.
+  void scheduleWakeCheck(NativeAlarm alarm, int checkAtEpochMs);
+
+  /// Cancels any pending wake-check (notification + re-fire) for [alarmId].
+  void cancelWakeCheck(int alarmId);
 }

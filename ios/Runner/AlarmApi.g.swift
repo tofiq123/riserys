@@ -484,6 +484,13 @@ protocol AlarmHostApi {
   /// Replaces the platform's entire scheduled notification set (the iOS 16–25
   /// fallback). A full replace, like [reconcile]. No-op on Android.
   func reconcileNotifications(requests: [NotificationRequest]) throws
+  /// Schedules the post-dismissal "still up?" check for [alarm]: a notification
+  /// at [checkAtEpochMs] (absolute UTC ms) and, if the user does not confirm
+  /// within 100s, a re-fire of [alarm] through the normal ring path. Android
+  /// only for now; a no-op on platforms without the impl.
+  func scheduleWakeCheck(alarm: NativeAlarm, checkAtEpochMs: Int64) throws
+  /// Cancels any pending wake-check (notification + re-fire) for [alarmId].
+  func cancelWakeCheck(alarmId: Int64) throws
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -692,6 +699,42 @@ class AlarmHostApiSetup {
       }
     } else {
       reconcileNotificationsChannel.setMessageHandler(nil)
+    }
+    /// Schedules the post-dismissal "still up?" check for [alarm]: a notification
+    /// at [checkAtEpochMs] (absolute UTC ms) and, if the user does not confirm
+    /// within 100s, a re-fire of [alarm] through the normal ring path. Android
+    /// only for now; a no-op on platforms without the impl.
+    let scheduleWakeCheckChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.scheduleWakeCheck\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      scheduleWakeCheckChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let alarmArg = args[0] as! NativeAlarm
+        let checkAtEpochMsArg = args[1] as! Int64
+        do {
+          try api.scheduleWakeCheck(alarm: alarmArg, checkAtEpochMs: checkAtEpochMsArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      scheduleWakeCheckChannel.setMessageHandler(nil)
+    }
+    /// Cancels any pending wake-check (notification + re-fire) for [alarmId].
+    let cancelWakeCheckChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.cancelWakeCheck\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      cancelWakeCheckChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let alarmIdArg = args[0] as! Int64
+        do {
+          try api.cancelWakeCheck(alarmId: alarmIdArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      cancelWakeCheckChannel.setMessageHandler(nil)
     }
   }
 }

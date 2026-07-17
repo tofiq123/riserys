@@ -664,4 +664,45 @@ class AlarmHostApi {
     )
     ;
   }
+
+  /// Schedules the post-dismissal "still up?" check for [alarm]: a notification
+  /// at [checkAtEpochMs] (absolute UTC ms) and, if the user does not confirm
+  /// within 100s, a re-fire of [alarm] through the normal ring path. Android
+  /// only for now; a no-op on platforms without the impl.
+  Future<void> scheduleWakeCheck(NativeAlarm alarm, int checkAtEpochMs) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.scheduleWakeCheck$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[alarm, checkAtEpochMs]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  /// Cancels any pending wake-check (notification + re-fire) for [alarmId].
+  Future<void> cancelWakeCheck(int alarmId) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.cancelWakeCheck$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[alarmId]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
 }
