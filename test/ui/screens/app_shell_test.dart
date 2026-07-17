@@ -12,6 +12,8 @@ import 'package:rise/ui/screens/home_screen.dart';
 import 'package:rise/ui/screens/profile_screen.dart';
 import 'package:rise/ui/screens/ring_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
+import 'package:rise/domain/streak.dart';
+import 'package:rise/ui/state/wake_providers.dart';
 
 class _FakeGateway implements PermissionGateway {
   @override
@@ -33,6 +35,7 @@ class _FakeGateway implements PermissionGateway {
 List<Override> _overrides(List<Alarm> alarms, ScheduledOccurrence? next) => [
       alarmsProvider.overrideWith((ref) => Stream.value(alarms)),
       nextOccurrenceProvider.overrideWith((ref) async => next),
+      streakProvider.overrideWithValue(StreakStats.empty),
     ];
 
 Widget _host(ProviderContainer c) => UncontrolledProviderScope(
