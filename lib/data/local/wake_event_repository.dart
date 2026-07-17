@@ -77,6 +77,15 @@ class WakeEventRepository {
     );
   }
 
+  /// Increments the open event's snooze count (called when the user snoozes).
+  /// No-op if none is open.
+  Future<void> bumpSnooze(int alarmId) async {
+    final open = await _openRowFor(alarmId);
+    if (open == null) return;
+    await (_db.update(_db.wakeEvents)..where((t) => t.id.equals(open.id)))
+        .write(WakeEventsCompanion(snoozeCount: Value(open.snoozeCount + 1)));
+  }
+
   Stream<List<WakeEvent>> watchAll() => (_db.select(_db.wakeEvents)
         ..orderBy([(t) => OrderingTerm.desc(t.firstRingAt)]))
       .watch()
