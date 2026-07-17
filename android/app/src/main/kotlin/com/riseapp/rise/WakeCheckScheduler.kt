@@ -42,20 +42,9 @@ object WakeCheckScheduler {
     fun schedule(context: Context, alarm: NativeAlarm, checkAtMs: Long) {
         val id = alarm.id.toInt()
 
-        // 1) Notification trigger at checkAt.
-        val notifIntent = Intent(context, WakeCheckReceiver::class.java).apply {
-            putExtra(EXTRA_ALARM_ID, id)
-            putExtra(AlarmScheduler.EXTRA_LABEL, alarm.label)
-        }
-        val notifPi = PendingIntent.getBroadcast(
-            context, NOTIF_TRIGGER_BASE + id, notifIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        am(context).setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP, checkAtMs, notifPi
-        )
-
-        // 2) Re-fire at checkAt + response window, via the normal ring path.
+        // 1) Re-fire at checkAt + response window, via the normal ring path.
+        // Armed first: setAlarmClock is exempt from the exact-alarm permission,
+        // so this is the safety net that always works.
         val refireAt = checkAtMs + RESPONSE_WINDOW_MS
         val fireIntent = Intent(context, AlarmReceiver::class.java).apply {
             putExtra(AlarmScheduler.EXTRA_ALARM_ID, id)
@@ -76,6 +65,27 @@ object WakeCheckScheduler {
         am(context).setAlarmClock(
             AlarmManager.AlarmClockInfo(refireAt, showPi), firePi
         )
+
+        // 2) Notification trigger at checkAt, best-effort. Requires the
+        // exact-alarm permission; if it's off, the re-fire above still fires.
+        val notifIntent = Intent(context, WakeCheckReceiver::class.java).apply {
+            putExtra(EXTRA_ALARM_ID, id)
+            putExtra(AlarmScheduler.EXTRA_LABEL, alarm.label)
+        }
+        val notifPi = PendingIntent.getBroadcast(
+            context, NOTIF_TRIGGER_BASE + id, notifIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        try {
+            am(context).setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP, checkAtMs, notifPi
+            )
+        } catch (e: SecurityException) {
+            // No exact-alarm permission: the "still up?" notification won't show,
+            // but the re-fire above is already armed, so the check degrades to
+            // "always re-rings" rather than vanishing.
+            Log.w(TAG, "wake-check $id notification not armed: $e")
+        }
         Log.i(TAG, "wake-check $id: notify@$checkAtMs refire@$refireAt")
     }
 
