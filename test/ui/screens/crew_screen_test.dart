@@ -3,11 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/auth/auth_service.dart';
 import 'package:rise/data/crew/crew_service.dart';
+import 'package:rise/data/status/status_service.dart';
 import 'package:rise/domain/crew_member.dart';
 import 'package:rise/domain/crew_state.dart';
+import 'package:rise/domain/crew_status.dart';
+import 'package:rise/ui/components/rise_card.dart';
 import 'package:rise/ui/screens/crew_screen.dart';
 import 'package:rise/ui/state/auth_providers.dart';
 import 'package:rise/ui/state/crew_providers.dart';
+import 'package:rise/ui/state/status_providers.dart';
 
 CrewMember _m(String id, String username) => CrewMember(
     id: id, username: username, displayName: username, avatarColor: '#7C9CF4');
@@ -16,6 +20,7 @@ Future<FakeCrewService> _pumpSignedIn(
   WidgetTester t, {
   CrewState initial = CrewState.empty,
   List<CrewMember> directory = const [],
+  Map<String, CrewStatus> statuses = const {},
 }) async {
   final auth = FakeAuthService();
   await auth.signInWithGoogle();
@@ -24,6 +29,8 @@ Future<FakeCrewService> _pumpSignedIn(
   final crew = FakeCrewService(
       selfId: auth.current!.id, initial: initial, directory: directory);
   addTearDown(crew.dispose);
+  final status = FakeStatusService(initial: statuses);
+  addTearDown(status.dispose);
 
   t.view.physicalSize = const Size(2400, 8000);
   t.view.devicePixelRatio = 3.0;
@@ -33,6 +40,7 @@ Future<FakeCrewService> _pumpSignedIn(
     overrides: [
       authServiceProvider.overrideWithValue(auth),
       crewServiceProvider.overrideWithValue(crew),
+      statusServiceProvider.overrideWithValue(status),
     ],
     child: const MaterialApp(home: Scaffold(body: CrewScreen())),
   ));
@@ -98,5 +106,26 @@ void main() {
     await t.tap(find.text('Cancel'));
     await t.pumpAndSettle();
     expect(crew.current.outgoing, isEmpty);
+  });
+
+  testWidgets('a crew member shows their live status label', (t) async {
+    await _pumpSignedIn(t,
+        initial: CrewState(friends: [_m('u1', 'ada')]),
+        statuses: {'u1': CrewStatus.waking});
+    // Scoped to ada's own row: the always-visible legend also renders the
+    // word "Waking", so an unscoped find.text('Waking') would over-match.
+    final row = find.ancestor(of: find.text('@ada'), matching: find.byType(RiseCard));
+    expect(find.descendant(of: row, matching: find.text('Waking')),
+        findsOneWidget);
+  });
+
+  testWidgets('a member with unknown status shows no status label', (t) async {
+    await _pumpSignedIn(t, initial: CrewState(friends: [_m('u1', 'ada')]));
+    // no status seeded -> unknown -> no label on ada's row (the legend still
+    // renders these words elsewhere on the page, so scope to ada's row).
+    final row = find.ancestor(of: find.text('@ada'), matching: find.byType(RiseCard));
+    expect(find.descendant(of: row, matching: find.text('Awake')), findsNothing);
+    expect(find.descendant(of: row, matching: find.text('Asleep')), findsNothing);
+    expect(find.descendant(of: row, matching: find.text('Waking')), findsNothing);
   });
 }

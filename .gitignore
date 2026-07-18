@@ -4,6 +4,7 @@ build/
 .env
 *.env.json
 *.log
+supabase/.temp/
 .superpowers/
 .flutter-plugins
 .flutter-plugins-dependencies
