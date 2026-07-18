@@ -8,6 +8,7 @@ import '../missions/mission_host.dart';
 import '../state/alarm_providers.dart';
 import '../state/auth_providers.dart';
 import '../status_publisher.dart';
+import '../stats_sync_publisher.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'create_edit_screen.dart';
@@ -79,39 +80,41 @@ class _AppShellState extends ConsumerState<AppShell> {
     final toast = ref.watch(toastProvider);
 
     return StatusPublisherHost(
-      child: PopScope(
-        canPop: !editing && !needsClaim,
-        onPopInvokedWithResult: (didPop, _) {
-          if (!didPop && editing) ref.read(draftProvider.notifier).clear();
-        },
-        child: Scaffold(
-          backgroundColor: RiseColors.appBg,
-          body: ToastHost(
-            message: toast,
-            onHide: () => ref.read(toastProvider.notifier).state = null,
-            child: Stack(
-              children: [
-                _activeTab(context),
-                if (editing)
-                  Positioned.fill(
-                    child: Material(
-                      color: RiseColors.appBg,
-                      child: CreateEditScreen(onDone: () {}),
-                    ),
-                  ),
-                if (needsClaim)
-                  Positioned.fill(
-                    child: Material(
-                      color: RiseColors.appBg,
-                      child: UsernameClaimScreen(
-                        initialDisplayName: account.displayName,
+      child: StatsSyncHost(
+        child: PopScope(
+          canPop: !editing && !needsClaim,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && editing) ref.read(draftProvider.notifier).clear();
+          },
+          child: Scaffold(
+            backgroundColor: RiseColors.appBg,
+            body: ToastHost(
+              message: toast,
+              onHide: () => ref.read(toastProvider.notifier).state = null,
+              child: Stack(
+                children: [
+                  _activeTab(context),
+                  if (editing)
+                    Positioned.fill(
+                      child: Material(
+                        color: RiseColors.appBg,
+                        child: CreateEditScreen(onDone: () {}),
                       ),
                     ),
-                  ),
-              ],
+                  if (needsClaim)
+                    Positioned.fill(
+                      child: Material(
+                        color: RiseColors.appBg,
+                        child: UsernameClaimScreen(
+                          initialDisplayName: account.displayName,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
+            bottomNavigationBar: (editing || needsClaim) ? null : _tabBar(),
           ),
-          bottomNavigationBar: (editing || needsClaim) ? null : _tabBar(),
         ),
       ),
     );
