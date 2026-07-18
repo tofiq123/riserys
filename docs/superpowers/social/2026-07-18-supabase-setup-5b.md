@@ -7,9 +7,9 @@
 1. Supabase → **SQL Editor** → **New query**.
 2. Paste the entire contents of `supabase/migrations/0002_friendships.sql` and **Run**.
 3. Confirm:
-   - **Table Editor** → a `friendships` table with RLS enabled.
-   - **Database → Functions** → `find_user_by_username` and `friendships_block_reverse` exist.
-   - **Database → Triggers** → `friendships_block_reverse_trg` on `friendships`.
+   - **Table Editor** → a `friendships` table with RLS enabled, and (under its indexes) `friendships_pair_unique`.
+   - **Database → Functions** → `find_user_by_username` and `friendships_guard_update` exist.
+   - **Database → Triggers** → `friendships_guard_update_trg` on `friendships`.
 
 *(CLI alternative: `supabase db push`.)*
 
