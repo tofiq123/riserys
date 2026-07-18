@@ -89,7 +89,10 @@ class _StatusPublisherHostState extends ConsumerState<StatusPublisherHost>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    // Only republish while signed in — don't refresh a status for a signed-out
+    // session (the backend also guards this, but defend it here too).
+    if (state == AppLifecycleState.resumed &&
+        ref.read(accountProvider).value != null) {
       unawaited(ref.read(statusPublisherProvider).republish());
     }
   }
