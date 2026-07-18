@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/auth/auth_service.dart';
+import 'package:rise/data/leaderboard/leaderboard_service.dart';
+import 'package:rise/domain/crew_standing.dart';
 import 'package:rise/domain/streak.dart';
 import 'package:rise/domain/wake_event.dart';
+import 'package:rise/domain/wake_stats.dart';
 import 'package:rise/ui/screens/stats_screen.dart';
+import 'package:rise/ui/state/auth_providers.dart';
+import 'package:rise/ui/state/leaderboard_providers.dart';
 import 'package:rise/ui/state/wake_providers.dart';
 
 WakeEvent evOn(DateTime day, {bool onTime = true}) {
@@ -36,7 +42,54 @@ Widget _host({List<WakeEvent> events = const [], StreakStats streak = StreakStat
   );
 }
 
+CrewStanding _standing(String id, String username, int streak, {bool isMe = false}) =>
+    CrewStanding(
+      id: id,
+      username: username,
+      displayName: username,
+      avatarColor: '#7C9CF4',
+      stats: WakeStats(currentStreak: streak, totalWakes: 10, onTimeCount: 8),
+      isMe: isMe,
+    );
+
+Future<void> _pumpSignedIn(WidgetTester t, {List<CrewStanding> standings = const []}) async {
+  final auth = FakeAuthService();
+  await auth.signInWithGoogle();
+  await auth.claimUsername('me', displayName: 'Me');
+  addTearDown(auth.dispose);
+  t.view.physicalSize = const Size(1200, 4000);
+  t.view.devicePixelRatio = 1.0;
+  addTearDown(t.view.reset);
+  await t.pumpWidget(ProviderScope(
+    overrides: [
+      wakeEventsProvider.overrideWith((ref) => Stream.value(const [])),
+      streakProvider.overrideWithValue(StreakStats.empty),
+      authServiceProvider.overrideWithValue(auth),
+      leaderboardServiceProvider.overrideWithValue(
+          FakeLeaderboardService(standings: standings)),
+    ],
+    child: const MaterialApp(home: Scaffold(body: StatsScreen())),
+  ));
+  await t.pumpAndSettle();
+}
+
 void main() {
+  testWidgets('signed out shows the leaderboard sign-in prompt', (t) async {
+    await _pump(t, _host()); // default providers -> account null
+    await t.pumpAndSettle();
+    expect(find.textContaining('Sign in from the Profile tab'), findsOneWidget);
+  });
+
+  testWidgets('signed in renders the ranked crew leaderboard', (t) async {
+    await _pumpSignedIn(t, standings: [
+      _standing('fake-uid', 'me', 5, isMe: true),
+      _standing('u2', 'bo', 3),
+    ]);
+    expect(find.text('CREW LEADERBOARD'), findsOneWidget); // SectionLabel uppercases
+    expect(find.textContaining('@me'), findsOneWidget);
+    expect(find.textContaining('@bo'), findsOneWidget);
+  });
+
   testWidgets('shows an empty state when there are no wake events', (t) async {
     await _pump(t, _host());
     await t.pump();
