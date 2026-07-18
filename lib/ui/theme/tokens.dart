@@ -18,6 +18,7 @@ abstract final class RiseColors {
   static const danger = Color(0xFFEF4444);
   static const positive = Color(0xFF22C55E);
   static const waking = Color(0xFFF59E0B);
+  static const asleep = Color(0xFF6366F1); // indigo — presumed sleeping
 }
 
 abstract final class RiseRadii {

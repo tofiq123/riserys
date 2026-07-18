@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/crew/crew_service.dart';
 import '../../domain/crew_member.dart';
 import '../../domain/crew_state.dart';
+import '../../domain/crew_status.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
 import '../state/auth_providers.dart';
 import '../state/crew_providers.dart';
+import '../state/status_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
@@ -105,6 +107,8 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
     if (account == null) return const _CrewSignedOut();
 
     final crew = ref.watch(crewProvider).value ?? CrewState.empty;
+    final statuses =
+        ref.watch(crewStatusesProvider).value ?? const <String, CrewStatus>{};
 
     return SafeArea(
       child: ListView(
@@ -122,7 +126,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
             const SectionLabel('Requests'),
             const SizedBox(height: 10),
             for (final m in crew.incoming)
-              _memberRow(m,
+              _memberRow(m, statuses[m.id] ?? CrewStatus.unknown,
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     _pill('Accept', _busy ? null : () => _accept(m.id),
                         filled: true),
@@ -132,13 +136,15 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
           ],
           const SizedBox(height: 24),
           const SectionLabel('Your crew'),
+          const SizedBox(height: 6),
+          _legend(),
           const SizedBox(height: 10),
           if (crew.friends.isEmpty)
             Text('No crew yet. Add friends by username above.',
                 style: RiseText.caption)
           else
             for (final m in crew.friends)
-              _memberRow(m,
+              _memberRow(m, statuses[m.id] ?? CrewStatus.unknown,
                   trailing: _pill('Remove', _busy ? null : () => _remove(m.id),
                       danger: true)),
           if (crew.outgoing.isNotEmpty) ...[
@@ -146,7 +152,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
             const SectionLabel('Pending'),
             const SizedBox(height: 10),
             for (final m in crew.outgoing)
-              _memberRow(m,
+              _memberRow(m, statuses[m.id] ?? CrewStatus.unknown,
                   trailing:
                       _pill('Cancel', _busy ? null : () => _cancel(m.id))),
           ],
@@ -202,7 +208,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
         ],
         if (_found != null) ...[
           const SizedBox(height: 10),
-          _memberRow(_found!,
+          _memberRow(_found!, CrewStatus.unknown,
               trailing:
                   _pill('Add', _busy ? null : () => _add(_found!), filled: true)),
         ],
@@ -210,7 +216,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
     );
   }
 
-  Widget _memberRow(CrewMember m, {required Widget trailing}) {
+  Widget _memberRow(CrewMember m, CrewStatus status, {required Widget trailing}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: RiseCard(
@@ -245,10 +251,24 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
                       style:
                           RiseText.body.copyWith(fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis),
-                  Text('@${m.username}',
-                      style:
-                          RiseText.mono(size: 12, color: RiseColors.textDim),
-                      overflow: TextOverflow.ellipsis),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text('@${m.username}',
+                            style: RiseText.mono(
+                                size: 12, color: RiseColors.textDim),
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      if (status != CrewStatus.unknown) ...[
+                        const SizedBox(width: 8),
+                        _statusDot(status),
+                        const SizedBox(width: 4),
+                        Text(_statusLabel(status),
+                            style: RiseText.caption.copyWith(
+                                fontSize: 11, color: _statusColor(status))),
+                      ],
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -259,6 +279,47 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
       ),
     );
   }
+
+  static Color _statusColor(CrewStatus s) => switch (s) {
+        CrewStatus.waking => RiseColors.waking,
+        CrewStatus.awake => RiseColors.positive,
+        CrewStatus.asleep => RiseColors.asleep,
+        CrewStatus.unknown => RiseColors.textFaint,
+      };
+
+  static String _statusLabel(CrewStatus s) => switch (s) {
+        CrewStatus.waking => 'Waking',
+        CrewStatus.awake => 'Awake',
+        CrewStatus.asleep => 'Asleep',
+        CrewStatus.unknown => '',
+      };
+
+  static Widget _statusDot(CrewStatus s) => Container(
+        width: 8,
+        height: 8,
+        decoration:
+            BoxDecoration(color: _statusColor(s), shape: BoxShape.circle),
+      );
+
+  Widget _legend() => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(
+          children: [
+            for (final s in const [
+              CrewStatus.asleep,
+              CrewStatus.waking,
+              CrewStatus.awake,
+            ]) ...[
+              _statusDot(s),
+              const SizedBox(width: 4),
+              Text(_statusLabel(s),
+                  style: RiseText.caption
+                      .copyWith(fontSize: 11, color: RiseColors.textDim)),
+              const SizedBox(width: 12),
+            ],
+          ],
+        ),
+      );
 
   Widget _pill(String label, VoidCallback? onTap,
       {bool filled = false, bool danger = false}) {
