@@ -11,6 +11,7 @@ import 'package:rise/domain/wake_event.dart';
 import 'package:rise/ui/components/toast.dart';
 import 'package:rise/ui/screens/app_shell.dart';
 import 'package:rise/ui/screens/create_edit_screen.dart';
+import 'package:rise/ui/screens/crew_screen.dart';
 import 'package:rise/ui/screens/home_screen.dart';
 import 'package:rise/ui/screens/profile_screen.dart';
 import 'package:rise/ui/screens/ring_screen.dart';
@@ -151,6 +152,14 @@ void main() {
     expect(find.text('Claim your handle'), findsOneWidget);
     // The tab bar is hidden while claiming.
     expect(find.text('Alarms'), findsNothing);
+  });
+
+  testWidgets('the Crew tab shows the Crew screen', (t) async {
+    await t.pumpWidget(_host(_container()));
+    await t.pump();
+    await t.tap(find.text('Crew'));
+    await t.pump();
+    expect(find.byType(CrewScreen), findsOneWidget);
   });
 
   testWidgets('a claimed account shows the shell, not the claim screen',
