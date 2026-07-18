@@ -19,12 +19,27 @@ class SupabaseCrewService implements CrewService {
     // the crew and reloads on every sign-in/out.
     _authSub = _client.auth.onAuthStateChange.listen((state) {
       if (state.session?.user == null) {
-        _current = CrewState.empty;
-        _controller.add(_current);
+        _emit(CrewState.empty);
       } else {
         unawaited(_reload());
       }
     });
+  }
+
+  /// The signed-in user's id, or throws a clear error if signed out. Mutations
+  /// are UI-gated to signed-in users; this fails loudly (catchable) rather than
+  /// with a null-check crash if that ever races a sign-out.
+  String _requireMe() {
+    final id = _client.auth.currentUser?.id;
+    if (id == null) throw StateError('crew action while signed out');
+    return id;
+  }
+
+  /// Updates [_current] and emits, unless the controller has been disposed
+  /// (an in-flight reload can complete after dispose()).
+  void _emit(CrewState state) {
+    _current = state;
+    if (!_controller.isClosed) _controller.add(state);
   }
 
   static const _defaultAvatarColor = '#7C9CF4';
@@ -45,12 +60,13 @@ class SupabaseCrewService implements CrewService {
   }
 
   Future<void> _reload() async {
+    CrewState next;
     try {
-      _current = await _fetch();
+      next = await _fetch();
     } catch (_) {
-      _current = CrewState.empty; // best-effort; never throw into the stream
+      next = CrewState.empty; // best-effort; never throw into the stream
     }
-    _controller.add(_current);
+    _emit(next);
   }
 
   CrewMember _memberFromProfile(Map<String, dynamic> p) => CrewMember(
@@ -123,7 +139,29 @@ class SupabaseCrewService implements CrewService {
 
   @override
   Future<void> sendRequest(String userId) async {
-    final me = _client.auth.currentUser!.id;
+    final me = _requireMe();
+    if (userId == me) {
+      throw const FriendshipException("You can't add yourself.");
+    }
+    // Guard both directions: the DB unique(requester, addressee) is an ORDERED
+    // pair, so it wouldn't catch a reverse-direction row (them → me). Check for
+    // any existing relationship first and surface the right message.
+    final existing = await _client
+        .from('friendships')
+        .select('requester, addressee, status')
+        .or('and(requester.eq.$me,addressee.eq.$userId),'
+            'and(requester.eq.$userId,addressee.eq.$me)');
+    if (existing.isNotEmpty) {
+      final row = existing.first;
+      if (row['status'] == 'accepted') {
+        throw const FriendshipException('Already in your crew.');
+      }
+      if (row['addressee'] == me) {
+        throw const FriendshipException(
+            'They already sent you a request — accept it.');
+      }
+      throw const FriendshipException('Request already sent.');
+    }
     try {
       await _client.from('friendships').insert({
         'requester': me,
@@ -132,8 +170,11 @@ class SupabaseCrewService implements CrewService {
       });
     } on PostgrestException catch (e) {
       if (e.code == '23505') {
+        // Race backstop: the same-direction unique constraint or the reverse
+        // guard trigger (see 0002_friendships.sql) fired between our check and
+        // the insert.
         throw const FriendshipException(
-            'You already have a pending or accepted request with them.');
+            'You already have a request with them.');
       }
       rethrow;
     }
@@ -142,7 +183,7 @@ class SupabaseCrewService implements CrewService {
 
   @override
   Future<void> acceptRequest(String userId) async {
-    final me = _client.auth.currentUser!.id;
+    final me = _requireMe();
     await _client
         .from('friendships')
         .update({'status': 'accepted'})
@@ -153,7 +194,7 @@ class SupabaseCrewService implements CrewService {
 
   @override
   Future<void> declineRequest(String userId) async {
-    final me = _client.auth.currentUser!.id;
+    final me = _requireMe();
     await _client
         .from('friendships')
         .delete()
@@ -164,7 +205,7 @@ class SupabaseCrewService implements CrewService {
 
   @override
   Future<void> cancelRequest(String userId) async {
-    final me = _client.auth.currentUser!.id;
+    final me = _requireMe();
     await _client
         .from('friendships')
         .delete()
@@ -175,7 +216,7 @@ class SupabaseCrewService implements CrewService {
 
   @override
   Future<void> removeFriend(String userId) async {
-    final me = _client.auth.currentUser!.id;
+    final me = _requireMe();
     // The accepted row may be in either direction.
     await _client.from('friendships').delete().or(
         'and(requester.eq.$me,addressee.eq.$userId),'
