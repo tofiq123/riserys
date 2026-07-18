@@ -362,9 +362,12 @@ class _LeaderboardSection extends ConsumerWidget {
                           : '@${s.username}',
                       style:
                           RiseText.body.copyWith(fontWeight: FontWeight.w600),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis),
                   Text('@${s.username} · $onTimePct% on time',
-                      style: RiseText.caption, overflow: TextOverflow.ellipsis),
+                      style: RiseText.caption,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),
