@@ -43,7 +43,7 @@ So "asleep" means "has a morning alarm coming and hasn't been up recently," not 
 - **No status dots ever appear** — the publisher only runs while signed in; make sure both apps are signed in, and background+foreground once to force a publish. Confirm `statuses` rows exist in the Table Editor.
 - **Status never updates live on the other device** — `statuses` isn't in the `supabase_realtime` publication (re-run the migration; check Database → Replication).
 - **A friend's dot never shows** — statuses are only visible for **accepted** friendships; confirm the friendship is accepted (not pending) in `friendships`.
-- **A removed friend's status lingers** — the app prunes on a Realtime delete, which needs `REPLICA IDENTITY FULL` (set by the migration); re-run it if you applied an older version.
+- **A removed friend still shows a dot** — this shouldn't happen: the crew list is built from your friendships, so an unfriended member disappears from the list entirely (dot and all). If you ever see a stale row, re-open the Crew tab to refetch. (Separately, when an account is *deleted*, its `statuses` row is removed by cascade and the client prunes it via the Realtime delete — that path relies on `REPLICA IDENTITY FULL`, which the migration sets.)
 
 ## What's NOT in 5c (later)
 
