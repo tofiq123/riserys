@@ -10,6 +10,7 @@ import '../state/auth_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'create_edit_screen.dart';
+import 'crew_screen.dart';
 import 'home_screen.dart';
 import 'profile_screen.dart';
 import 'ring_screen.dart';
@@ -50,10 +51,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   Widget _activeTab(BuildContext context) {
     switch (_tab) {
       case 1:
-        return const _ComingSoon(
-            icon: Icons.groups_outlined,
-            title: 'Crew',
-            body: 'Wake up with friends and keep each other honest. Coming soon.');
+        return const CrewScreen();
       case 2:
         return const StatsScreen();
       case 3:
@@ -163,36 +161,6 @@ class _AppShellState extends ConsumerState<AppShell> {
                 ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ComingSoon extends StatelessWidget {
-  const _ComingSoon(
-      {required this.icon, required this.title, required this.body});
-
-  final IconData icon;
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 44, color: RiseColors.textFaint),
-            const SizedBox(height: 16),
-            Text(title, style: RiseText.title),
-            const SizedBox(height: 8),
-            Text(body,
-                textAlign: TextAlign.center,
-                style: RiseText.body.copyWith(color: RiseColors.textDim)),
-          ],
         ),
       ),
     );

@@ -9,6 +9,7 @@ import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
 import '../state/auth_providers.dart';
+import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 
@@ -275,7 +276,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
                 height: 52,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                    color: _avatarColor(account.avatarColor),
+                    color: avatarColorFromHex(account.avatarColor),
                     shape: BoxShape.circle),
                 child: Text(_initial(account),
                     style: RiseText.title.copyWith(
@@ -339,13 +340,5 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
         ? a.username!
         : (a.displayName.isNotEmpty ? a.displayName : '?');
     return source.characters.first.toUpperCase();
-  }
-
-  static Color _avatarColor(String hex) {
-    final cleaned = hex.replaceFirst('#', '');
-    final value = int.tryParse(
-        cleaned.length == 6 ? 'FF$cleaned' : cleaned,
-        radix: 16);
-    return value == null ? const Color(0xFF7C9CF4) : Color(value);
   }
 }
