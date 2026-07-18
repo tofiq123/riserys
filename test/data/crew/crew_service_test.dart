@@ -42,12 +42,32 @@ void main() {
       await expectLater(svc.sendRequest('ghost'), throwsA(isA<UserNotFoundException>()));
     });
 
+    test('sendRequest to someone who already asked you throws (accept instead)',
+        () async {
+      final svc = FakeCrewService(initial: CrewState(incoming: [_m('u1', 'ada')]));
+      addTearDown(svc.dispose);
+      await expectLater(
+          svc.sendRequest('u1'), throwsA(isA<FriendshipException>()));
+      // unchanged: still a pending incoming, nothing added to outgoing
+      expect(svc.current.incoming.map((m) => m.id), ['u1']);
+      expect(svc.current.outgoing, isEmpty);
+    });
+
     test('acceptRequest moves incoming -> friends', () async {
       final svc = FakeCrewService(initial: CrewState(incoming: [_m('u1', 'ada')]));
       addTearDown(svc.dispose);
       await svc.acceptRequest('u1');
       expect(svc.current.friends.map((m) => m.id), ['u1']);
       expect(svc.current.incoming, isEmpty);
+    });
+
+    test('acceptRequest on a non-incoming id throws and changes nothing',
+        () async {
+      final svc = FakeCrewService();
+      addTearDown(svc.dispose);
+      await expectLater(
+          svc.acceptRequest('ghost'), throwsA(isA<FriendshipException>()));
+      expect(svc.current.friends, isEmpty);
     });
 
     test('declineRequest removes from incoming', () async {

@@ -80,16 +80,11 @@ class FakeCrewService implements CrewService {
 
   void _emit() => _controller.add(_snapshot());
 
-  CrewMember? _known(String id) =>
-      _directory[id] ??
-      _friends.firstWhereOrNull((m) => m.id == id) ??
-      _incoming.firstWhereOrNull((m) => m.id == id) ??
-      _outgoing.firstWhereOrNull((m) => m.id == id);
-
   @override
   Future<CrewMember?> findByUsername(String username) async {
     final u = username.toLowerCase();
-    return _directory.values.firstWhereOrNull((m) => m.username == u);
+    return _directory.values
+        .firstWhereOrNull((m) => m.username.toLowerCase() == u);
   }
 
   @override
@@ -107,7 +102,9 @@ class FakeCrewService implements CrewService {
       throw const FriendshipException(
           'They already sent you a request — accept it.');
     }
-    final member = _known(userId);
+    // By here the guards above have ruled out anyone already in a bucket, so
+    // the member can only be resolved from the directory.
+    final member = _directory[userId];
     if (member == null) throw const UserNotFoundException();
     _outgoing.add(member);
     _emit();
