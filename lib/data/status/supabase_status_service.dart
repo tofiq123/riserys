@@ -16,12 +16,15 @@ class SupabaseStatusService implements StatusService {
   SupabaseStatusService({SupabaseClient? client})
       : _client = client ?? Supabase.instance.client {
     _authSub = _client.auth.onAuthStateChange.listen((state) {
+      // Bump the generation so any in-flight _start() from a prior auth event
+      // is superseded and can't resurrect stale state / leak a channel.
+      final gen = ++_generation;
       if (state.session?.user == null) {
         _teardownChannel();
         _statuses = {};
         _emit();
       } else {
-        unawaited(_start());
+        unawaited(_start(gen));
       }
     });
   }
@@ -32,6 +35,12 @@ class SupabaseStatusService implements StatusService {
   StreamSubscription<AuthState>? _authSub;
   RealtimeChannel? _channel;
   Map<String, CrewStatus> _statuses = {};
+  int _generation = 0;
+  bool _disposed = false;
+
+  /// True once this [_start] has been superseded by a newer auth event or the
+  /// service has been disposed — its results must be discarded.
+  bool _isStale(int gen) => gen != _generation || _disposed;
 
   @override
   Map<String, CrewStatus> get current => Map.unmodifiable(_statuses);
@@ -51,10 +60,14 @@ class SupabaseStatusService implements StatusService {
         orElse: () => CrewStatus.unknown,
       );
 
-  /// Initial fetch (RLS-scoped) then subscribe to live changes.
-  Future<void> _start() async {
+  /// Initial fetch (RLS-scoped) then subscribe to live changes. [gen] is the
+  /// auth generation this run belongs to; if a newer sign-in/out or dispose has
+  /// happened by the time an await resolves, the run bails without touching
+  /// state or opening a channel.
+  Future<void> _start(int gen) async {
     try {
       final rows = await _client.from('statuses').select('user_id, status');
+      if (_isStale(gen)) return;
       _statuses = {
         for (final r in rows) r['user_id'] as String: _parse(r['status']),
       };
@@ -62,6 +75,7 @@ class SupabaseStatusService implements StatusService {
     } catch (_) {
       // best-effort; leave whatever we had
     }
+    if (_isStale(gen)) return;
     _subscribe();
   }
 
@@ -73,16 +87,22 @@ class SupabaseStatusService implements StatusService {
       schema: 'public',
       table: 'statuses',
       callback: (payload) {
-        final record =
-            payload.newRecord.isNotEmpty ? payload.newRecord : payload.oldRecord;
-        final userId = record['user_id'] as String?;
-        if (userId == null) return;
-        if (payload.eventType == PostgresChangeEvent.delete) {
-          _statuses.remove(userId);
-        } else {
-          _statuses[userId] = _parse(record['status']);
+        // Never let a malformed payload throw back into the Realtime SDK.
+        try {
+          final record = payload.newRecord.isNotEmpty
+              ? payload.newRecord
+              : payload.oldRecord;
+          final userId = record['user_id'] as String?;
+          if (userId == null) return;
+          if (payload.eventType == PostgresChangeEvent.delete) {
+            _statuses.remove(userId);
+          } else {
+            _statuses[userId] = _parse(record['status']);
+          }
+          _emit();
+        } catch (_) {
+          // ignore a bad payload; the next good one recovers
         }
-        _emit();
       },
     ).subscribe();
     _channel = channel;
@@ -113,6 +133,7 @@ class SupabaseStatusService implements StatusService {
 
   /// Cancels the auth subscription, removes the channel, closes the stream.
   Future<void> dispose() async {
+    _disposed = true;
     await _authSub?.cancel();
     _teardownChannel();
     await _controller.close();
