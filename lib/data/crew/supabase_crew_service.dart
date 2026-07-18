@@ -170,8 +170,8 @@ class SupabaseCrewService implements CrewService {
       });
     } on PostgrestException catch (e) {
       if (e.code == '23505') {
-        // Race backstop: the same-direction unique constraint or the reverse
-        // guard trigger (see 0002_friendships.sql) fired between our check and
+        // Race backstop: the same-direction unique constraint or the sorted-pair
+        // unique index (see 0002_friendships.sql) fired between our check and
         // the insert.
         throw const FriendshipException(
             'You already have a request with them.');

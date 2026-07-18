@@ -6,11 +6,13 @@
 --   * One row per relationship: `requester` asked `addressee`. `status` is
 --     'pending' until the addressee accepts. Deleting the row is
 --     decline / cancel / remove.
---   * `unique(requester, addressee)` blocks a same-direction resend; the
---     `friendships_block_reverse` trigger blocks the reverse direction so there
---     is at most ONE relationship per pair.
+--   * `unique(requester, addressee)` blocks a same-direction resend; a
+--     functional unique index on the SORTED pair blocks the reverse direction,
+--     so there is at most ONE relationship per unordered pair (race-free).
 --   * RLS: see rows you're in; insert only as the requester (pending); only the
---     addressee can accept; either party can delete.
+--     addressee can accept; either party can delete. A BEFORE UPDATE trigger
+--     makes the endpoints immutable and permits only pending -> accepted, so the
+--     addressee can't forge a friendship with a third party.
 --   * The `profiles` read policy is broadened so crew members can see each
 --     other's public profile; `find_user_by_username` lets you resolve a handle
 --     to send a request BEFORE any friendship exists.
@@ -51,34 +53,42 @@ drop policy if exists friendships_delete_involved on public.friendships;
 create policy friendships_delete_involved on public.friendships for delete
   using (auth.uid() = requester or auth.uid() = addressee);
 
--- Reject a reverse-direction duplicate. `unique(requester, addressee)` is an
--- ORDERED pair, so it would not stop (B, A) when (A, B) already exists. This
--- trigger enforces one relationship per pair regardless of direction, and
--- raises SQLSTATE 23505 so the app maps it to the same "already have a request"
--- message as the unique violation. SECURITY DEFINER so the existence check sees
--- the reverse row even if RLS would hide it from the inserting user.
-create or replace function public.friendships_block_reverse()
+-- Reject a reverse-direction duplicate ATOMICALLY. `unique(requester, addressee)`
+-- is an ORDERED pair, so it would not stop (B, A) when (A, B) already exists.
+-- A functional unique index on the SORTED pair enforces at most one relationship
+-- per unordered pair with no check-then-insert race (two simultaneous inserts of
+-- (A,B) and (B,A) can't both win — one gets a unique_violation, SQLSTATE 23505,
+-- which the app maps to the same "already have a request" message).
+create unique index if not exists friendships_pair_unique
+  on public.friendships (least(requester, addressee), greatest(requester, addressee));
+
+-- Lock down UPDATE. RLS `friendships_update_addressee` restricts WHO can update
+-- (the addressee) but a WITH CHECK can't see the OLD row, so on its own it would
+-- let the addressee rewrite `requester`/`status` to forge an accepted friendship
+-- with an arbitrary victim. This BEFORE UPDATE trigger makes the endpoints
+-- immutable and permits only the pending -> accepted transition — the sole
+-- legitimate update in 5b.
+create or replace function public.friendships_guard_update()
 returns trigger
 language plpgsql
 security definer
 set search_path = ''
 as $$
 begin
-  if exists (
-    select 1 from public.friendships f
-    where f.requester = new.addressee and f.addressee = new.requester
-  ) then
-    raise exception 'a friendship already exists between these users'
-      using errcode = '23505';
+  if new.requester <> old.requester or new.addressee <> old.addressee then
+    raise exception 'friendship endpoints are immutable';
+  end if;
+  if not (old.status = 'pending' and new.status = 'accepted') then
+    raise exception 'a friendship may only change from pending to accepted';
   end if;
   return new;
 end;
 $$;
 
-drop trigger if exists friendships_block_reverse_trg on public.friendships;
-create trigger friendships_block_reverse_trg
-  before insert on public.friendships
-  for each row execute function public.friendships_block_reverse();
+drop trigger if exists friendships_guard_update_trg on public.friendships;
+create trigger friendships_guard_update_trg
+  before update on public.friendships
+  for each row execute function public.friendships_guard_update();
 
 -- Broaden profile reads: a profile is visible to its owner OR to anyone with a
 -- friendship (pending or accepted) with them, so crew lists can show handles /

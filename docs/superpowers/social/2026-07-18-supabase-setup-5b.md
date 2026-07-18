@@ -23,7 +23,7 @@ You need two accounts (two Google accounts, or a second device / emulator). Call
 2. **B sees the request:** on B's device, open **Crew** → B sees A under **Requests** with **Accept** / **Decline**.
 3. **B accepts:** tap **Accept**. B now sees A under **Your crew**.
 4. **A refreshes:** re-open A's Crew tab (5b reloads on open/action; live updates arrive in 5c) → A sees B under **Your crew**, no longer Pending.
-5. **Duplicate guard:** on B's device, try to **Find** + **Add** `alpha` — you should get "Already in your crew." (the reverse-direction trigger + the app's pre-check).
+5. **Duplicate guard:** on B's device, try to **Find** + **Add** `alpha` — you should get "Already in your crew." (surfaced by the app's own pre-check; the sorted-pair unique index is the race backstop behind it).
 6. **Remove:** on either device, **Remove** the friend → they disappear from both crews (re-open to refresh the other side).
 7. **Decline path:** repeat step 1, then on B tap **Decline** → the request disappears and no friendship is created.
 
@@ -38,7 +38,7 @@ You need two accounts (two Google accounts, or a second device / emulator). Call
 
 - **"No one with the handle …" for a real user** — usernames are stored lowercased; the search lowercases too, so this means no `profiles` row with that username (the other user hasn't claimed one) or `find_user_by_username` didn't deploy (re-run the migration).
 - **Add appears to do nothing / silent** — check that RLS `friendships_insert_own` exists and that the app is signed in (the insert uses `auth.uid()` as requester).
-- **Friend shows a blank name/handle** — the `profiles_select_own_or_crew` policy didn't apply, so the crew list can't read their profile; re-run the migration and confirm the policy replaced the 5a own-row one.
+- **A friend is missing from the list entirely** — if the `profiles_select_own_or_crew` policy didn't apply, the crew list can't read that member's profile and the app drops them from the list (rather than showing blank fields); re-run the migration and confirm the policy replaced the 5a own-row one.
 - **Accept does nothing** — only the addressee can accept (`friendships_update_addressee`); make sure you're accepting on the receiving account, not the sender's.
 
 ## What's NOT in 5b (later)
