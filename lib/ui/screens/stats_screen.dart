@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/crew_standing.dart';
 import '../../domain/streak.dart';
 import '../../domain/wake_event.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
+import '../state/auth_providers.dart';
+import '../state/leaderboard_providers.dart';
 import '../state/wake_providers.dart';
+import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 
@@ -93,6 +97,8 @@ class StatsScreen extends ConsumerWidget {
             const SizedBox(height: 14),
             _weekChart(weekWakes(events, now)),
           ],
+          const SizedBox(height: 24),
+          const _LeaderboardSection(),
         ],
       ),
     );
@@ -228,5 +234,153 @@ class StatsScreen extends ConsumerWidget {
   static String _weekdayLetter(DateTime day) {
     const letters = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Mon..Sun
     return letters[(day.weekday - 1) % 7];
+  }
+}
+
+/// The crew leaderboard on the Stats tab: own + crew ranked by wake
+/// consistency. Signed out / unconfigured → a sign-in prompt.
+class _LeaderboardSection extends ConsumerWidget {
+  const _LeaderboardSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final account = ref.watch(accountProvider).value;
+    if (account == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionLabel('Crew leaderboard'),
+          const SizedBox(height: 8),
+          Text('Sign in from the Profile tab to rank up with your crew.',
+              style: RiseText.caption),
+        ],
+      );
+    }
+
+    final board = ref.watch(leaderboardProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const SectionLabel('Crew leaderboard'),
+            const Spacer(),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => ref.invalidate(leaderboardProvider),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child:
+                    Icon(Icons.refresh, size: 18, color: RiseColors.textDim),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        board.when(
+          data: (standings) => standings.isEmpty
+              ? Text('No leaderboard yet — add crew and start a streak.',
+                  style: RiseText.caption)
+              : Column(children: [
+                  for (var i = 0; i < standings.length; i++)
+                    _standingRow(i + 1, standings[i]),
+                ]),
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+          ),
+          error: (_, __) => Row(
+            children: [
+              Expanded(
+                child: Text('Could not load the leaderboard.',
+                    style: RiseText.caption),
+              ),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => ref.invalidate(leaderboardProvider),
+                child: Text('Retry',
+                    style: RiseText.caption.copyWith(
+                        color: RiseColors.accent, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _standingRow(int rank, CrewStanding s) {
+    final onTimePct = (s.stats.onTimeRate * 100).round();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.all(RiseSpacing.cardPad),
+        decoration: BoxDecoration(
+          color: s.isMe ? RiseColors.accentSoft : RiseColors.card,
+          borderRadius: BorderRadius.circular(RiseRadii.base),
+          border: Border.all(
+              color: s.isMe ? RiseColors.accent : RiseColors.border),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 22,
+              child: Text('$rank',
+                  style: RiseText.mono(size: 15, weight: FontWeight.w600)),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                  color: avatarColorFromHex(s.avatarColor),
+                  shape: BoxShape.circle),
+              child: Text(
+                (s.username.isNotEmpty ? s.username : '?')
+                    .characters
+                    .first
+                    .toUpperCase(),
+                style: RiseText.body.copyWith(
+                    color: RiseColors.primaryText,
+                    fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                      s.displayName.isNotEmpty
+                          ? s.displayName
+                          : '@${s.username}',
+                      style:
+                          RiseText.body.copyWith(fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis),
+                  Text('@${s.username} · $onTimePct% on time',
+                      style: RiseText.caption, overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('${s.stats.currentStreak}',
+                    style: RiseText.mono(size: 18, weight: FontWeight.w600)),
+                Text('day streak',
+                    style: RiseText.caption.copyWith(fontSize: 10)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
