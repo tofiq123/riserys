@@ -31,13 +31,20 @@ class _PushRegistrarHostState extends ConsumerState<PushRegistrarHost> {
         final id = account.id;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          unawaited(ref.read(pushRegistrarProvider).register(id));
+          try {
+            unawaited(ref.read(pushRegistrarProvider).register(id));
+          } catch (_) {
+            // constructing the registrar can throw if Supabase/Firebase init
+            // failed despite being configured — best-effort, never crash.
+          }
         });
       } else if (account == null && _registered) {
         _registered = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          unawaited(ref.read(pushRegistrarProvider).unregister());
+          try {
+            unawaited(ref.read(pushRegistrarProvider).unregister());
+          } catch (_) {}
         });
       }
     }

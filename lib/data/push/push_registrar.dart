@@ -10,10 +10,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class PushRegistrar {
   PushRegistrar({SupabaseClient? client, FirebaseMessaging? messaging})
       : _client = client ?? Supabase.instance.client,
-        _messaging = messaging ?? FirebaseMessaging.instance;
+        _messaging = messaging;
 
   final SupabaseClient _client;
-  final FirebaseMessaging _messaging;
+  // Resolved lazily inside [register] (which is try/caught): touching
+  // `FirebaseMessaging.instance` throws `[core/no-app]` if Firebase init failed,
+  // so it must not run in the constructor (or the provider read would throw).
+  final FirebaseMessaging? _messaging;
   StreamSubscription<String>? _refreshSub;
   String? _lastToken;
 
@@ -21,13 +24,14 @@ class PushRegistrar {
   /// and keeps it fresh on refresh. Safe to call repeatedly.
   Future<void> register(String userId) async {
     try {
-      await _messaging.requestPermission();
-      final token = await _messaging.getToken();
+      final messaging = _messaging ?? FirebaseMessaging.instance;
+      await messaging.requestPermission();
+      final token = await messaging.getToken();
       if (token != null) {
         _lastToken = token;
         await _upsert(userId, token);
       }
-      _refreshSub ??= _messaging.onTokenRefresh.listen((t) {
+      _refreshSub ??= messaging.onTokenRefresh.listen((t) {
         _lastToken = t;
         unawaited(_upsert(userId, t));
       });
@@ -61,5 +65,6 @@ class PushRegistrar {
 }
 
 /// Only read when configured + signed in (constructing it touches
-/// `Supabase.instance`/`FirebaseMessaging.instance`, which need init).
+/// `Supabase.instance`, which needs init). `FirebaseMessaging.instance` is
+/// resolved lazily inside `register`, so a failed Firebase init can't throw here.
 final pushRegistrarProvider = Provider<PushRegistrar>((ref) => PushRegistrar());
