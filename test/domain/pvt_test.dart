@@ -42,4 +42,58 @@ void main() {
     final r = computePvtResult([250, 260], falseStarts: 4);
     expect(r.falseStarts, 4);
   });
+
+  test('alertnessScore: sharp session with no penalty', () {
+    const r = PvtResult(
+      validTaps: 4,
+      lapses: 0,
+      falseStarts: 0,
+      meanRtMs: 250,
+      medianRtMs: 250,
+      minRtMs: 250,
+      maxRtMs: 250,
+    );
+    // rtComponent = 100*(600-250)/380 = 92.1 -> 92, no penalty.
+    expect(alertnessScore(r), 92);
+  });
+
+  test('alertnessScore: groggy session with lapse penalty', () {
+    const r = PvtResult(
+      validTaps: 5,
+      lapses: 3,
+      falseStarts: 0,
+      meanRtMs: 480,
+      medianRtMs: 480,
+      minRtMs: 480,
+      maxRtMs: 480,
+    );
+    // rtComponent = 100*(600-480)/380 = 31.6; penalty = 24; 31.6-24=7.6 -> 8.
+    expect(alertnessScore(r), 8);
+  });
+
+  test('alertnessScore: meanRtMs below 220 clamps rtComponent to 100', () {
+    const r = PvtResult(
+      validTaps: 3,
+      lapses: 0,
+      falseStarts: 0,
+      meanRtMs: 180,
+      medianRtMs: 180,
+      minRtMs: 180,
+      maxRtMs: 180,
+    );
+    expect(alertnessScore(r), 100);
+  });
+
+  test('alertnessScore: zero valid taps returns 0', () {
+    const r = PvtResult(
+      validTaps: 0,
+      lapses: 0,
+      falseStarts: 0,
+      meanRtMs: 0,
+      medianRtMs: 0,
+      minRtMs: 0,
+      maxRtMs: 0,
+    );
+    expect(alertnessScore(r), 0);
+  });
 }

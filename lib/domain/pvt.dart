@@ -86,3 +86,20 @@ PvtResult computePvtResult(
     maxRtMs: sorted.last,
   );
 }
+
+/// Maps a completed [PvtResult] to a 0-100 "reaction-speed alertness" score.
+///
+/// This is honest, non-diagnostic framing of raw PVT performance — not a
+/// medical or sleep-stage measure. Faster mean reaction time raises the
+/// score; lapses (RTs over the lapse threshold) and false starts (tapping
+/// during the wait phase) subtract a penalty. Dismissal is never gated on
+/// this score — see the anti-trap invariant in the phase-6 plan.
+int alertnessScore(PvtResult r) {
+  if (r.validTaps == 0) return 0;
+
+  final rtComponent =
+      (100 * (600 - r.meanRtMs) / (600 - 220)).clamp(0.0, 100.0);
+  final penalty = r.lapses * 8 + r.falseStarts * 5;
+  final score = (rtComponent - penalty).round();
+  return score.clamp(0, 100);
+}
