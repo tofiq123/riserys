@@ -139,7 +139,7 @@ class StatsScreen extends ConsumerWidget {
               Text('No wake data yet',
                   style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
-              Text('Set an alarm and wake up on time to start your streak.',
+              Text('Set an alarm and wake up on time — your streak grows from here.',
                   textAlign: TextAlign.center, style: RiseText.caption),
             ],
           ),

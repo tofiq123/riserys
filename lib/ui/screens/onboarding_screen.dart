@@ -70,9 +70,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                   _intro(
                     icon: Icons.psychology_alt,
-                    title: 'Prove you\'re awake',
+                    title: 'Wake up all the way',
                     body:
-                        'Turn an alarm off only by finishing a quick mission — solve some math, repeat a pattern, or hold a button. No half-asleep swipe.',
+                        'Turn your alarm off with a quick mission — a little math, a pattern, or a button hold. A gentle nudge past the half-asleep swipe.',
                   ),
                   _permissionsPage(),
                 ],
