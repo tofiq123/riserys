@@ -9,6 +9,7 @@ import 'package:rise/ui/missions/hold_mission.dart';
 import 'package:rise/ui/missions/math_mission.dart';
 import 'package:rise/ui/missions/memory_mission.dart';
 import 'package:rise/ui/missions/mission_host.dart';
+import 'package:rise/ui/missions/pvt_mission.dart';
 import 'package:rise/ui/missions/tap_mission.dart';
 import 'package:rise/ui/screens/ring_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
@@ -200,6 +201,7 @@ void main() {
         'hold': HoldMission,
         'tap': TapMission,
         'memory': MemoryMission,
+        'pvt': PvtMission,
       };
       for (final entry in cases.entries) {
         await t.pumpWidget(_wrap(Builder(
@@ -213,6 +215,37 @@ void main() {
         expect(find.byType(entry.value), findsOneWidget,
             reason: 'mission ${entry.key}');
       }
+    });
+
+    testWidgets('pvt forwards the alertness callback into PvtMission.onResult',
+        (t) async {
+      void onAlertness(int _) {}
+      await t.pumpWidget(_wrap(Builder(
+        builder: (context) => buildMission(
+          context,
+          const Alarm(id: 1, hour: 6, minute: 0, mission: 'pvt'),
+          () {},
+          onAlertness,
+        ),
+      )));
+      await t.pump();
+      final mission = t.widget<PvtMission>(find.byType(PvtMission));
+      expect(mission.onResult, same(onAlertness));
+    });
+
+    testWidgets('a non-pvt mission ignores the alertness callback', (t) async {
+      // Passing onAlertness to a non-PVT mission is a harmless no-op: the mission
+      // still renders and never touches the callback.
+      await t.pumpWidget(_wrap(Builder(
+        builder: (context) => buildMission(
+          context,
+          const Alarm(id: 1, hour: 6, minute: 0, mission: 'tap'),
+          () {},
+          (int _) => fail('non-pvt mission must not report an alertness score'),
+        ),
+      )));
+      await t.pump();
+      expect(find.byType(TapMission), findsOneWidget);
     });
 
     testWidgets('buildMission falls back to slide-to-wake for an unknown key', (t) async {

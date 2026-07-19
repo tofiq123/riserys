@@ -137,6 +137,18 @@ void main() {
     expect(m.saved.length, 1);
   });
 
+  testWidgets('lists the "Alertness (PVT)" mission option and selects it', (t) async {
+    final c = _container(_RecordingMutations());
+    c.read(draftProvider.notifier)
+        .startEdit(const Alarm(id: 5, hour: 6, minute: 30, mission: 'none'));
+    await _pump(t, _host(c));
+    await t.pump();
+    expect(find.text('Alertness (PVT)'), findsOneWidget);
+    await t.tap(find.text('Alertness (PVT)'));
+    await t.pump();
+    expect(c.read(draftProvider)!.mission, 'pvt');
+  });
+
   testWidgets('renders without crashing for an unknown mission key', (t) async {
     final c = _container(_RecordingMutations());
     c.read(draftProvider.notifier).startEdit(

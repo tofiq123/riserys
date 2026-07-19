@@ -68,18 +68,23 @@ Widget _host({
 class _RecordingRecorder implements WakeRecorder {
   final opened = <int>[];
   final finalized = <(int, String?)>[];
+  int? lastAlertness;
   @override
   Future<void> openRing(int alarmId) async => opened.add(alarmId);
   @override
-  Future<void> finalizeDismiss(int alarmId, {String? method}) async =>
-      finalized.add((alarmId, method));
+  Future<void> finalizeDismiss(int alarmId,
+      {String? method, int? alertnessScore}) async {
+    finalized.add((alarmId, method));
+    lastAlertness = alertnessScore;
+  }
 }
 
 class _ThrowingRecorder implements WakeRecorder {
   @override
   Future<void> openRing(int alarmId) async => throw StateError('wake db down');
   @override
-  Future<void> finalizeDismiss(int alarmId, {String? method}) async =>
+  Future<void> finalizeDismiss(int alarmId,
+          {String? method, int? alertnessScore}) async =>
       throw StateError('wake db down');
 }
 
@@ -117,7 +122,7 @@ void main() {
       alarms: const [Alarm(id: 7, hour: 6, minute: 30, mission: 'math')],
       alarmId: 7,
       dismissAlarm: (id) async => dismissed = id,
-      missionBuilder: (context, alarm, onSolved) =>
+      missionBuilder: (context, alarm, onSolved, onAlertness) =>
           TextButton(onPressed: onSolved, child: const Text('SOLVE')),
     ));
     await t.pump();
@@ -167,7 +172,8 @@ void main() {
             calls++;
             if (calls == 1) throw StateError('stop failed');
           },
-          missionBuilder: (context, alarm, onSolved) => _OnceMission(onSolved),
+          missionBuilder: (context, alarm, onSolved, onAlertness) =>
+              _OnceMission(onSolved),
           onDismissed: () {},
         ),
       ),
@@ -227,7 +233,7 @@ void main() {
           alarmId: 7,
           record: true,
           dismissAlarm: (_) async {},
-          missionBuilder: (context, alarm, onSolved) =>
+          missionBuilder: (context, alarm, onSolved, onAlertness) =>
               TextButton(onPressed: onSolved, child: const Text('SOLVE')),
           armWakeCheck: (_, __) async {},
         ),
@@ -239,6 +245,71 @@ void main() {
     await t.pump();
     await t.pump(const Duration(milliseconds: 20));
     expect(rec.finalized, [(7, 'mission')]);
+  });
+
+  testWidgets('with record: a PVT mission threads its alertness score into finalize',
+      (t) async {
+    final rec = _RecordingRecorder();
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        alarmsProvider.overrideWith((ref) => Stream.value(
+            const [Alarm(id: 7, hour: 6, minute: 30, mission: 'pvt')])),
+        wakeRecorderProvider.overrideWithValue(rec),
+        currentSettingsProvider.overrideWithValue(const RiseSettings()),
+        wakeEventsProvider.overrideWith((ref) => Stream.value(const <WakeEvent>[])),
+      ],
+      child: MaterialApp(
+        home: RingScreen(
+          alarmId: 7,
+          record: true,
+          dismissAlarm: (_) async {},
+          // A stand-in mission that reports a score, then solves — exercises the
+          // gate's onAlertness -> _pendingAlertness -> finalizeDismiss path.
+          missionBuilder: (context, alarm, onSolved, onAlertness) => TextButton(
+            onPressed: () {
+              onAlertness?.call(84);
+              onSolved();
+            },
+            child: const Text('SOLVE'),
+          ),
+          armWakeCheck: (_, __) async {},
+        ),
+      ),
+    ));
+    await t.pump();
+    await t.tap(find.text('SOLVE'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(rec.finalized, [(7, 'mission')]);
+    expect(rec.lastAlertness, 84);
+  });
+
+  testWidgets('with record: a non-PVT mission finalizes with a null alertness score',
+      (t) async {
+    final rec = _RecordingRecorder();
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        alarmsProvider.overrideWith((ref) => Stream.value(
+            const [Alarm(id: 5, hour: 6, minute: 30)])),
+        wakeRecorderProvider.overrideWithValue(rec),
+        currentSettingsProvider.overrideWithValue(const RiseSettings()),
+        wakeEventsProvider.overrideWith((ref) => Stream.value(const <WakeEvent>[])),
+      ],
+      child: MaterialApp(
+        home: RingScreen(
+          alarmId: 5,
+          record: true,
+          dismissAlarm: (_) async {},
+          armWakeCheck: (_, __) async {},
+        ),
+      ),
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(rec.finalized, [(5, 'slide')]);
+    expect(rec.lastAlertness, isNull);
   });
 
   testWidgets('without record (default): never touches the wake recorder', (t) async {

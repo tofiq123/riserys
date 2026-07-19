@@ -14,6 +14,7 @@ class WakeEvent {
     this.missionFailures = 0,
     this.onTime = false,
     this.label = 'Alarm',
+    this.alertnessScore,
   });
 
   final int id;
@@ -29,6 +30,10 @@ class WakeEvent {
   final int missionFailures;
   final bool onTime;
   final String label;
+
+  /// Reaction-speed alertness (0–100) from a PVT dismiss mission, or null when
+  /// the dismissal wasn't a PVT mission / produced no score.
+  final int? alertnessScore;
 
   bool get isOpen => dismissedAt == null;
 
@@ -50,6 +55,7 @@ class WakeEvent {
     int? missionFailures,
     bool? onTime,
     String? label,
+    int? alertnessScore,
   }) {
     return WakeEvent(
       id: id ?? this.id,
@@ -62,6 +68,7 @@ class WakeEvent {
       missionFailures: missionFailures ?? this.missionFailures,
       onTime: onTime ?? this.onTime,
       label: label ?? this.label,
+      alertnessScore: alertnessScore ?? this.alertnessScore,
     );
   }
 
@@ -77,17 +84,19 @@ class WakeEvent {
       other.snoozeCount == snoozeCount &&
       other.missionFailures == missionFailures &&
       other.onTime == onTime &&
-      other.label == label;
+      other.label == label &&
+      other.alertnessScore == alertnessScore;
 
   @override
   int get hashCode => Object.hash(id, alarmId, scheduledAt.toUtc(),
       firstRingAt.toUtc(), dismissedAt?.toUtc(), method, snoozeCount,
-      missionFailures, onTime, label);
+      missionFailures, onTime, label, alertnessScore);
 
   @override
   String toString() =>
       'WakeEvent(id: $id, alarm: $alarmId, ring: ${firstRingAt.toIso8601String()}, '
-      'dismissed: $dismissedAt, onTime: $onTime, snoozes: $snoozeCount)';
+      'dismissed: $dismissedAt, onTime: $onTime, snoozes: $snoozeCount, '
+      'alertness: $alertnessScore)';
 }
 
 bool _sameInstant(DateTime? a, DateTime? b) {

@@ -28,6 +28,7 @@ class WakeEventRepository {
         missionFailures: r.missionFailures,
         onTime: r.onTime,
         label: r.label,
+        alertnessScore: r.alertnessScore,
       );
 
   Future<WakeEventRow?> _openRowFor(int alarmId) =>
@@ -59,10 +60,13 @@ class WakeEventRepository {
   }
 
   /// Finalises the open event for [alarmId]; no-op if none is open.
+  /// [alertnessScore] is the PVT alertness score (0–100) for a PVT dismissal,
+  /// or null for any other dismissal.
   Future<void> finalizeDismiss({
     required int alarmId,
     required DateTime dismissedAt,
     String? method,
+    int? alertnessScore,
   }) async {
     final open = await _openRowFor(alarmId);
     if (open == null) return;
@@ -73,6 +77,7 @@ class WakeEventRepository {
         dismissedAt: Value(dismissedAt.toUtc()),
         method: Value(method),
         onTime: Value(onTime),
+        alertnessScore: Value(alertnessScore),
       ),
     );
   }

@@ -66,6 +66,26 @@ String consistencyLine(List<WakeEvent> events, DateTime now) {
   return 'On time $onTime of $rang this week.';
 }
 
+/// The mean of the non-null alertness scores across [events], rounded to the
+/// nearest integer; null when no event carries a score.
+int? averageAlertness(List<WakeEvent> events) {
+  final scores = [
+    for (final e in events)
+      if (e.alertnessScore != null) e.alertnessScore!
+  ];
+  if (scores.isEmpty) return null;
+  final sum = scores.fold<int>(0, (a, b) => a + b);
+  return (sum / scores.length).round();
+}
+
+/// A neutral, non-judgemental descriptor for an alertness [score]. Purely
+/// informational — never a medical, diagnostic, or "abnormal" label.
+String alertnessBand(int score) {
+  if (score >= 80) return 'sharp';
+  if (score >= 50) return 'steady';
+  return 'groggy';
+}
+
 class StatsScreen extends ConsumerWidget {
   const StatsScreen({super.key});
 
@@ -96,6 +116,10 @@ class StatsScreen extends ConsumerWidget {
             Text(consistencyLine(events, now), style: RiseText.caption),
             const SizedBox(height: 14),
             _weekChart(weekWakes(events, now)),
+            const SizedBox(height: 24),
+            const SectionLabel('Alertness'),
+            const SizedBox(height: 12),
+            _alertnessCard(events),
           ],
           const SizedBox(height: 24),
           const _LeaderboardSection(),
@@ -234,6 +258,134 @@ class StatsScreen extends ConsumerWidget {
   static String _weekdayLetter(DateTime day) {
     const letters = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Mon..Sun
     return letters[(day.weekday - 1) % 7];
+  }
+
+  /// Reaction-speed alertness: latest score, average, and a small recent trend.
+  /// The score is honest, non-diagnostic framing of raw PVT performance — never
+  /// a medical or sleep-stage claim. Shows a helper state until a PVT mission
+  /// has produced at least one score.
+  Widget _alertnessCard(List<WakeEvent> events) {
+    final scored = [
+      for (final e in events)
+        if (e.alertnessScore != null) e
+    ]..sort((a, b) => a.firstRingAt.compareTo(b.firstRingAt));
+
+    if (scored.isEmpty) {
+      return RiseCard(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 8),
+          child: Column(
+            children: [
+              const Icon(Icons.bolt_outlined,
+                  size: 34, color: RiseColors.textFaint),
+              const SizedBox(height: 10),
+              Text('No alertness scores yet',
+                  style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(
+                  'Add an "Alertness (PVT)" mission to an alarm to measure your '
+                  'reaction speed at wake-up.',
+                  textAlign: TextAlign.center,
+                  style: RiseText.caption),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final latest = scored.last.alertnessScore!;
+    final avg = averageAlertness(scored)!;
+    final trend =
+        scored.length > 7 ? scored.sublist(scored.length - 7) : scored;
+
+    return RiseCard(
+      padding: const EdgeInsets.all(RiseSpacing.screen),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('$latest',
+                  style: RiseText.mono(size: 44, weight: FontWeight.w600)),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _bandChip(latest),
+              ),
+              const Spacer(),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('$avg',
+                      style: RiseText.mono(size: 22, weight: FontWeight.w600)),
+                  Text('avg', style: RiseText.caption.copyWith(fontSize: 10)),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text('latest score', style: RiseText.caption),
+          const SizedBox(height: 12),
+          Text(
+              'Your reaction speed at wake-up — sharper is more awake. '
+              'Not a medical measure.',
+              style: RiseText.caption),
+          const SizedBox(height: 16),
+          _alertnessTrend(trend),
+        ],
+      ),
+    );
+  }
+
+  Widget _bandChip(int score) {
+    final color = _bandColor(score);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: RiseColors.surface2,
+        borderRadius: BorderRadius.circular(RiseRadii.pill),
+        border: Border.all(color: color),
+      ),
+      child: Text(alertnessBand(score),
+          style: RiseText.caption
+              .copyWith(color: color, fontWeight: FontWeight.w700)),
+    );
+  }
+
+  Widget _alertnessTrend(List<WakeEvent> scored) {
+    const maxH = 48.0;
+    return SizedBox(
+      height: 56,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (final e in scored)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: Container(
+                  height: 6 + (e.alertnessScore!.clamp(0, 100) / 100) * maxH,
+                  decoration: BoxDecoration(
+                    color: _bandColor(e.alertnessScore!),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // Neutral, informational colours: green (sharp), amber (steady), indigo
+  // (groggy). Deliberately NOT red/danger — a low score is information, never a
+  // failure to be shamed.
+  Color _bandColor(int score) {
+    if (score >= 80) return RiseColors.positive;
+    if (score >= 50) return RiseColors.waking;
+    return RiseColors.asleep;
   }
 }
 

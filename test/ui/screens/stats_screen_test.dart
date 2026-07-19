@@ -25,6 +25,22 @@ WakeEvent evOn(DateTime day, {bool onTime = true}) {
   );
 }
 
+/// A dismissed event carrying an alertness [score] (or none). [order] varies
+/// firstRingAt so "latest" is deterministic.
+WakeEvent evScore(int? score, {int order = 0}) {
+  final ring = DateTime(2026, 7, 20, 6);
+  return WakeEvent(
+    id: order,
+    alarmId: 1,
+    scheduledAt: ring,
+    firstRingAt: ring.add(Duration(minutes: order)),
+    dismissedAt: ring.add(const Duration(minutes: 3)),
+    onTime: true,
+    label: 'Run',
+    alertnessScore: score,
+  );
+}
+
 Future<void> _pump(WidgetTester t, Widget w) async {
   t.view.physicalSize = const Size(1200, 4000);
   t.view.devicePixelRatio = 1.0;
@@ -107,6 +123,51 @@ void main() {
     expect(find.text('9'), findsOneWidget); // best
     expect(find.text('LAST 30 DAYS'), findsOneWidget); // SectionLabel uppercases
     expect(find.text('THIS WEEK'), findsOneWidget);
+  });
+
+  test('averageAlertness averages non-null scores (rounded), else null', () {
+    expect(averageAlertness([evScore(80, order: 1), evScore(null, order: 2), evScore(90, order: 3)]), 85);
+    expect(averageAlertness([evScore(70, order: 1), evScore(75, order: 2)]), 73); // 72.5 -> 73
+    expect(averageAlertness(const []), isNull);
+    expect(averageAlertness([evScore(null, order: 1), evScore(null, order: 2)]), isNull);
+  });
+
+  test('alertnessBand labels scores with neutral, non-diagnostic descriptors', () {
+    expect(alertnessBand(80), 'sharp');
+    expect(alertnessBand(95), 'sharp');
+    expect(alertnessBand(50), 'steady');
+    expect(alertnessBand(79), 'steady');
+    expect(alertnessBand(49), 'groggy');
+    expect(alertnessBand(0), 'groggy');
+  });
+
+  testWidgets('Alertness card shows the latest score, average, and honest subtext',
+      (t) async {
+    await _pump(t, _host(events: [
+      evScore(60, order: 1),
+      evScore(84, order: 2), // latest (greatest firstRingAt)
+    ]));
+    await t.pump();
+    expect(find.text('ALERTNESS'), findsOneWidget); // SectionLabel uppercases
+    expect(find.text('84'), findsOneWidget); // latest score
+    expect(find.text('72'), findsOneWidget); // average of 60 and 84
+    expect(find.text('sharp'), findsOneWidget); // 84 -> neutral band
+    expect(
+        find.text(
+            'Your reaction speed at wake-up — sharper is more awake. '
+            'Not a medical measure.'),
+        findsOneWidget);
+  });
+
+  testWidgets('Alertness card shows a placeholder when no event carries a score',
+      (t) async {
+    await _pump(t, _host(events: [evOn(DateTime.now())])); // wake event, no PVT score
+    await t.pump();
+    expect(find.text('ALERTNESS'), findsOneWidget);
+    expect(find.textContaining('No alertness scores yet'), findsOneWidget);
+    expect(find.textContaining('Alertness (PVT)'), findsOneWidget);
+    // The honest subtext only accompanies real scores, so it is absent here.
+    expect(find.textContaining('Not a medical measure'), findsNothing);
   });
 
   test('consistencyLine reports the on-time count for the week', () {

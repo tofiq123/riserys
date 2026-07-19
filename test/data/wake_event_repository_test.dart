@@ -66,6 +66,25 @@ void main() {
     expect(e.method, 'mission');
   });
 
+  test('finalizeDismiss persists an alertness score and reads it back', () async {
+    await repo.openRing(alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    await repo.finalizeDismiss(
+        alarmId: 1,
+        dismissedAt: ring.add(const Duration(minutes: 3)),
+        method: 'mission',
+        alertnessScore: 84);
+    expect((await repo.all()).single.alertnessScore, 84);
+  });
+
+  test('a dismissal without an alertness score reads back null', () async {
+    await repo.openRing(alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
+    await repo.finalizeDismiss(
+        alarmId: 1,
+        dismissedAt: ring.add(const Duration(minutes: 3)),
+        method: 'slide');
+    expect((await repo.all()).single.alertnessScore, isNull);
+  });
+
   test('finalizeDismiss past grace marks onTime false', () async {
     await repo.openRing(alarmId: 1, scheduledAt: ring, firstRingAt: ring, label: 'Run');
     await repo.finalizeDismiss(

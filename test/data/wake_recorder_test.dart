@@ -46,6 +46,22 @@ void main() {
     expect(e.method, 'mission');
   });
 
+  test('finalizeDismiss forwards an alertness score to the stored event', () async {
+    final saved =
+        await alarms.upsert(const Alarm(id: 0, hour: 6, minute: 30, label: 'Run'));
+    await rec.openRing(saved.id);
+    await rec.finalizeDismiss(saved.id, method: 'mission', alertnessScore: 77);
+    expect((await events.all()).single.alertnessScore, 77);
+  });
+
+  test('finalizeDismiss without a score stores null', () async {
+    final saved =
+        await alarms.upsert(const Alarm(id: 0, hour: 6, minute: 30, label: 'Run'));
+    await rec.openRing(saved.id);
+    await rec.finalizeDismiss(saved.id, method: 'slide');
+    expect((await events.all()).single.alertnessScore, isNull);
+  });
+
   test('openRing for an unknown alarm falls back to a default label', () async {
     await rec.openRing(999);
     final e = (await events.all()).single;

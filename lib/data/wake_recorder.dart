@@ -23,9 +23,13 @@ class WakeRecorder {
     );
   }
 
-  Future<void> finalizeDismiss(int alarmId, {String? method}) =>
+  Future<void> finalizeDismiss(int alarmId,
+          {String? method, int? alertnessScore}) =>
       _events.finalizeDismiss(
-          alarmId: alarmId, dismissedAt: DateTime.now(), method: method);
+          alarmId: alarmId,
+          dismissedAt: DateTime.now(),
+          method: method,
+          alertnessScore: alertnessScore);
 
   /// The alarm's scheduled instant for the firing that just happened: today's
   /// local h:m, falling back to [now] when the alarm can't be found.
