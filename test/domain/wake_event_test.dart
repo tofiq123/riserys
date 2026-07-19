@@ -31,4 +31,22 @@ void main() {
     expect(a, b);
     expect(a.hashCode, b.hashCode);
   });
+
+  test('alertnessScore defaults to null and round-trips through copyWith', () {
+    final e = WakeEvent(id: 1, alarmId: 2, scheduledAt: ring, firstRingAt: ring);
+    expect(e.alertnessScore, isNull);
+    final scored = e.copyWith(alertnessScore: 84);
+    expect(scored.alertnessScore, 84);
+  });
+
+  test('alertnessScore participates in equality and hashCode', () {
+    final base = WakeEvent(id: 1, alarmId: 2, scheduledAt: ring, firstRingAt: ring);
+    final a = base.copyWith(alertnessScore: 84);
+    final b = base.copyWith(alertnessScore: 84);
+    final c = base.copyWith(alertnessScore: 50);
+    expect(a, b);
+    expect(a.hashCode, b.hashCode);
+    expect(a, isNot(c));
+    expect(a, isNot(base)); // null vs 84 differ
+  });
 }

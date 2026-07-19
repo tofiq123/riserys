@@ -119,9 +119,6 @@ class _RingScreenState extends ConsumerState<RingScreen>
 
   /// The alertness score reported by the mission (PVT only), captured here so
   /// [_dismiss] can persist it. null = the mission produced no score.
-  // Written by the mission's onAlertness callback; read by _dismiss once the
-  // persistence path lands in Task 6.5.
-  // ignore: unused_field
   int? _pendingAlertness;
 
   @override
@@ -173,7 +170,8 @@ class _RingScreenState extends ConsumerState<RingScreen>
       try {
         await ref
             .read(wakeRecorderProvider)
-            .finalizeDismiss(widget.alarmId, method: method);
+            .finalizeDismiss(widget.alarmId,
+                method: method, alertnessScore: _pendingAlertness);
       } catch (e) {
         debugPrint('Rise: wake-finalize failed for ${widget.alarmId}: $e');
       }

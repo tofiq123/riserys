@@ -65,6 +65,11 @@ class WakeEvents extends Table {
   IntColumn get missionFailures => integer().withDefault(const Constant(0))();
   BoolColumn get onTime => boolean().withDefault(const Constant(false))();
   TextColumn get label => text().withDefault(const Constant('Alarm'))();
+
+  /// Reaction-speed alertness score (0–100) from a PVT dismiss mission, or
+  /// null when the dismissal wasn't a PVT mission / produced no score (added
+  /// in schema v5).
+  IntColumn get alertnessScore => integer().nullable()();
 }
 
 @DriftDatabase(tables: [Alarms, WakeEvents])
@@ -72,7 +77,7 @@ class RiseDatabase extends _$RiseDatabase {
   RiseDatabase(super.e);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -110,6 +115,17 @@ class RiseDatabase extends _$RiseDatabase {
             final existing = await _columnNames('alarms');
             if (!existing.contains('snoozed_until')) {
               await m.addColumn(alarms, alarms.snoozedUntil);
+            }
+          }
+
+          // v4 -> v5: the alertness_score column on wake_events. Idempotent
+          // like the other add-column migrations — a losing isolate (or a
+          // partial prior run) that finds it present skips the ALTER rather
+          // than crashing on "duplicate column name". Existing rows keep null.
+          if (from < 5) {
+            final existing = await _columnNames('wake_events');
+            if (!existing.contains('alertness_score')) {
+              await m.addColumn(wakeEvents, wakeEvents.alertnessScore);
             }
           }
         },
