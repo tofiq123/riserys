@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -34,6 +35,14 @@ Future<void> reconcileEntrypoint() async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   tzdata.initializeTimeZones();
+
+  // Optional push backend. Additive and best-effort: a missing/failed
+  // Firebase config must never stop the app from launching.
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Rise: Firebase init skipped (push disabled): $e');
+  }
 
   // Optional social backend. Additive and best-effort: a failure here must
   // never stop the local alarm app from launching.

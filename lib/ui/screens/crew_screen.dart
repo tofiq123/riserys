@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/crew/crew_service.dart';
+import '../../data/nudge/nudge_service.dart';
 import '../../domain/crew_member.dart';
 import '../../domain/crew_state.dart';
 import '../../domain/crew_status.dart';
@@ -9,6 +10,7 @@ import '../components/rise_card.dart';
 import '../components/section_label.dart';
 import '../state/auth_providers.dart';
 import '../state/crew_providers.dart';
+import '../state/nudge_providers.dart';
 import '../state/status_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
@@ -27,6 +29,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
   final _query = TextEditingController();
   bool _searching = false;
   bool _busy = false;
+  final Set<String> _nudging = {};
   CrewMember? _found;
   String? _searchMessage;
 
@@ -101,6 +104,21 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
   Future<void> _remove(String id) =>
       _run(() => ref.read(crewServiceProvider).removeFriend(id));
 
+  Future<void> _nudge(CrewMember m) async {
+    if (_nudging.contains(m.id)) return;
+    setState(() => _nudging.add(m.id));
+    try {
+      await ref.read(nudgeServiceProvider).nudge(m.id);
+      if (mounted) _snack('Nudged @${m.username} 👋');
+    } on NudgeException catch (e) {
+      if (mounted) _snack(e.message);
+    } catch (_) {
+      if (mounted) _snack('Could not send the nudge.');
+    } finally {
+      if (mounted) setState(() => _nudging.remove(m.id));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final account = ref.watch(accountProvider).value;
@@ -145,8 +163,15 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
           else
             for (final m in crew.friends)
               _memberRow(m, statuses[m.id] ?? CrewStatus.unknown,
-                  trailing: _pill('Remove', _busy ? null : () => _remove(m.id),
-                      danger: true)),
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    _pill('Nudge',
+                        (_busy || _nudging.contains(m.id))
+                            ? null
+                            : () => _nudge(m)),
+                    const SizedBox(width: 6),
+                    _pill('Remove', _busy ? null : () => _remove(m.id),
+                        danger: true),
+                  ])),
           if (crew.outgoing.isNotEmpty) ...[
             const SizedBox(height: 24),
             const SectionLabel('Pending'),

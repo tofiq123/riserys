@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/auth/auth_service.dart';
 import 'package:rise/data/crew/crew_service.dart';
+import 'package:rise/data/nudge/nudge_service.dart';
 import 'package:rise/data/status/status_service.dart';
 import 'package:rise/domain/crew_member.dart';
 import 'package:rise/domain/crew_state.dart';
@@ -11,6 +12,7 @@ import 'package:rise/ui/components/rise_card.dart';
 import 'package:rise/ui/screens/crew_screen.dart';
 import 'package:rise/ui/state/auth_providers.dart';
 import 'package:rise/ui/state/crew_providers.dart';
+import 'package:rise/ui/state/nudge_providers.dart';
 import 'package:rise/ui/state/status_providers.dart';
 
 CrewMember _m(String id, String username) => CrewMember(
@@ -21,6 +23,7 @@ Future<FakeCrewService> _pumpSignedIn(
   CrewState initial = CrewState.empty,
   List<CrewMember> directory = const [],
   Map<String, CrewStatus> statuses = const {},
+  NudgeService? nudge,
 }) async {
   final auth = FakeAuthService();
   await auth.signInWithGoogle();
@@ -41,6 +44,7 @@ Future<FakeCrewService> _pumpSignedIn(
       authServiceProvider.overrideWithValue(auth),
       crewServiceProvider.overrideWithValue(crew),
       statusServiceProvider.overrideWithValue(status),
+      if (nudge != null) nudgeServiceProvider.overrideWithValue(nudge),
     ],
     child: const MaterialApp(home: Scaffold(body: CrewScreen())),
   ));
@@ -127,5 +131,22 @@ void main() {
     expect(find.descendant(of: row, matching: find.text('Awake')), findsNothing);
     expect(find.descendant(of: row, matching: find.text('Asleep')), findsNothing);
     expect(find.descendant(of: row, matching: find.text('Waking')), findsNothing);
+  });
+
+  testWidgets('nudging a crew member calls the nudge service', (t) async {
+    final nudge = FakeNudgeService();
+    await _pumpSignedIn(t,
+        initial: CrewState(friends: [_m('u1', 'ada')]), nudge: nudge);
+    await t.tap(find.text('Nudge'));
+    await t.pumpAndSettle();
+    expect(nudge.lastNudged, 'u1');
+  });
+
+  testWidgets('Nudge appears only on crew rows, not requests/pending',
+      (t) async {
+    await _pumpSignedIn(t,
+        initial: CrewState(
+            incoming: [_m('u1', 'ada')], outgoing: [_m('u2', 'bo')]));
+    expect(find.text('Nudge'), findsNothing);
   });
 }

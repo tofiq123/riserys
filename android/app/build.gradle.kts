@@ -39,3 +39,10 @@ android {
 flutter {
     source = "../.."
 }
+
+// Apply the Firebase google-services plugin only when the config file exists,
+// so a build/clone without google-services.json still compiles (Firebase then
+// stays off at runtime — see the guarded init in main.dart).
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}

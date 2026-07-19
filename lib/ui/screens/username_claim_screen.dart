@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../config/supabase_config.dart';
 import '../../data/auth/auth_service.dart';
+import '../../data/push/push_registrar.dart';
 import '../components/rise_buttons.dart';
 import '../components/section_label.dart';
 import '../state/auth_providers.dart';
@@ -115,7 +117,16 @@ class _UsernameClaimScreenState extends ConsumerState<UsernameClaimScreen> {
     }
   }
 
-  Future<void> _signOut() => ref.read(authServiceProvider).signOut();
+  Future<void> _signOut() async {
+    // Remove this device's FCM token while still authenticated (before the
+    // session clears, when an RLS-guarded delete would no-op as anon).
+    if (SupabaseConfig.isConfigured) {
+      try {
+        await ref.read(pushRegistrarProvider).unregister();
+      } catch (_) {}
+    }
+    await ref.read(authServiceProvider).signOut();
+  }
 
   @override
   Widget build(BuildContext context) {

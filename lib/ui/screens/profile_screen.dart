@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../config/supabase_config.dart';
 import '../../data/auth/auth_service.dart';
 import '../../data/permission_gateway.dart';
+import '../../data/push/push_registrar.dart';
 import '../../domain/rise_account.dart';
 import '../components/permissions_section.dart';
 import '../components/rise_buttons.dart';
@@ -120,9 +122,20 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
       () => ref.read(authServiceProvider).signInWithGoogle(),
       onError: 'Sign-in was cancelled.');
 
-  Future<void> _signOut() => _run(
-      () => ref.read(authServiceProvider).signOut(),
-      onError: 'Could not sign out. Try again.');
+  Future<void> _signOut() => _run(() async {
+        await _unregisterPush();
+        await ref.read(authServiceProvider).signOut();
+      }, onError: 'Could not sign out. Try again.');
+
+  /// Removes this device's FCM token while still authenticated — must run BEFORE
+  /// signOut(), since the reactive host unregister fires after the session is
+  /// cleared, when the RLS-guarded delete would silently no-op as anon.
+  Future<void> _unregisterPush() async {
+    if (!SupabaseConfig.isConfigured) return;
+    try {
+      await ref.read(pushRegistrarProvider).unregister();
+    } catch (_) {}
+  }
 
   Future<void> _delete() async {
     if (_busy) return;
