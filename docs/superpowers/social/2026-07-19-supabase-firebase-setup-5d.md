@@ -13,7 +13,7 @@ You'll produce three things: a **`google-services.json`** (client, for the build
    - **Package name:** `com.riseapp.rise`
    - **Debug SHA-1:** `1E:09:84:00:C3:9C:A1:E0:ED:EA:F6:76:B3:B0:F4:8C:CE:69:A5:06` (same as the Google sign-in setup)
    - Register.
-3. **Download `google-services.json`** → place it at **`android/app/google-services.json`** (gitignored). Skip the Gradle snippet steps — the app's build files already apply the plugin.
+3. **Download `google-services.json`** → place it at **`android/app/google-services.json`** (gitignored). You can skip Firebase's "add the Firebase SDK" Gradle snippet steps — Rise's Android build already wires the `google-services` plugin + `firebase_messaging`, so the file is all it needs.
 4. Firebase → **Build → Cloud Messaging** → make sure the **Firebase Cloud Messaging API (V1)** is enabled (usually on by default).
 
 ## 2. Service-account key → Supabase secret (for the send-nudge function)

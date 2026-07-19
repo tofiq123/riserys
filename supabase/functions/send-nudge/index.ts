@@ -91,7 +91,13 @@ Deno.serve(async (req) => {
     if (!authHeader) return json({ error: 'Not authenticated' }, 401);
 
     const { to } = await req.json().catch(() => ({ to: null }));
-    if (!to || typeof to !== 'string') {
+    // Validate `to` is a UUID BEFORE it is used anywhere — it is spliced into a
+    // PostgREST `.or()` filter string below, so an unvalidated value would be a
+    // filter-injection / authorization-bypass vector. A real uuid can never
+    // contain the filter grammar's meta-characters.
+    const uuidRe =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!to || typeof to !== 'string' || !uuidRe.test(to)) {
       return json({ error: 'Missing target' }, 400);
     }
 
@@ -123,14 +129,20 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!friendship) return json({ error: 'You can only nudge your crew.' }, 403);
 
-    // Rate limit: one nudge per caller→target per cooldown.
+    // Rate limit: one nudge per caller→target per cooldown. Fail CLOSED — if the
+    // count query errors we must not silently skip the limit (a `count` of
+    // undefined would otherwise pass the `> 0` check and send anyway).
     const since = new Date(Date.now() - NUDGE_COOLDOWN_MS).toISOString();
-    const { count } = await admin
+    const { count, error: countErr } = await admin
       .from('nudges')
       .select('id', { count: 'exact', head: true })
       .eq('from_user', me)
       .eq('to_user', to)
       .gte('created_at', since);
+    if (countErr) {
+      console.error('send-nudge rate-limit query failed:', countErr);
+      return json({ error: 'Internal error' }, 500);
+    }
     if ((count ?? 0) > 0) {
       return json({ error: 'You just nudged them — give it a minute.' }, 429);
     }
@@ -152,39 +164,62 @@ Deno.serve(async (req) => {
       .maybeSingle();
     const handle = profile?.username ?? 'A friend';
 
-    // Send via FCM HTTP v1.
+    // Send via FCM HTTP v1. Count only real 2xx deliveries (a `fetch` resolves
+    // for a 4xx too), and prune tokens FCM reports as gone (404 UNREGISTERED).
     const sa = JSON.parse(Deno.env.get('FCM_SERVICE_ACCOUNT')!);
     const accessToken = await getAccessToken(sa);
-    const results = await Promise.allSettled(
-      tokens.map((t: { token: string }) =>
-        fetch(
-          `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              message: {
-                token: t.token,
-                notification: {
-                  title: 'Rise',
-                  body: `@${handle} is nudging you to wake up 👋`,
-                },
-                data: { type: 'nudge' },
-                android: { priority: 'high' },
+    let sent = 0;
+    const stale: string[] = [];
+    await Promise.all(
+      tokens.map(async (t: { token: string }) => {
+        try {
+          const resp = await fetch(
+            `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
               },
-            }),
-          },
-        )
-      ),
+              body: JSON.stringify({
+                message: {
+                  token: t.token,
+                  notification: {
+                    title: 'Rise',
+                    body: `@${handle} is nudging you to wake up 👋`,
+                  },
+                  data: { type: 'nudge' },
+                  android: { priority: 'high' },
+                },
+              }),
+            },
+          );
+          if (resp.ok) {
+            sent++;
+          } else if (resp.status === 404) {
+            stale.push(t.token); // token no longer registered
+          }
+        } catch (_) {
+          // network error — leave the token, it may work next time
+        }
+      }),
     );
 
-    // Log the nudge (basis for the rate limit).
-    await admin.from('nudges').insert({ from_user: me, to_user: to });
+    if (stale.length > 0) {
+      await admin
+        .from('device_tokens')
+        .delete()
+        .eq('user_id', to)
+        .in('token', stale);
+    }
 
-    const sent = results.filter((r) => r.status === 'fulfilled').length;
+    // Nothing was delivered — don't consume the rate limit; let them retry.
+    if (sent === 0) {
+      return json({ error: "Couldn't reach their devices right now." }, 502);
+    }
+
+    // Log the nudge (basis for the rate limit) only after a real delivery.
+    await admin.from('nudges').insert({ from_user: me, to_user: to });
     return json({ success: true, sent }, 200);
   } catch (e) {
     console.error('send-nudge failed:', e);
