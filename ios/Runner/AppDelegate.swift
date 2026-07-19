@@ -4,8 +4,9 @@ import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
-  // Strong reference: the message-channel handler and the notification-center
-  // delegate are both held weakly, so the AppDelegate must own the impl.
+  // Strong reference: UNUserNotificationCenter holds its delegate weakly, so the
+  // AppDelegate must own the impl. (Pigeon's setUp retains the handler strongly
+  // via its channel closures, but keeping this ref backstops the weak delegate.)
   private var alarmApi: AlarmHostApiImpl?
 
   override func application(
@@ -17,8 +18,14 @@ import UserNotifications
     let impl = AlarmHostApiImpl()
     self.alarmApi = impl
 
+    // Fail loudly rather than shipping a dead alarm channel: if the root
+    // controller isn't a FlutterViewController, every Pigeon call from Dart
+    // would silently no-op. (For this UIMainStoryboardFile=Main template the
+    // window/controller are set before didFinishLaunching, so this holds.)
     if let controller = window?.rootViewController as? FlutterViewController {
       AlarmHostApiSetup.setUp(binaryMessenger: controller.binaryMessenger, api: impl)
+    } else {
+      assertionFailure("Rise: root controller is not a FlutterViewController — the alarm channel was not set up")
     }
 
     UNUserNotificationCenter.current().delegate = impl

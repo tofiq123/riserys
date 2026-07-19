@@ -15,8 +15,14 @@ The iOS alarm engine (`ios/Runner/AlarmHostApiImpl.swift` + `AppDelegate.swift`)
 - Select `ios/Runner/Sounds/default_alarm.wav` in Xcode → File Inspector → confirm **Target Membership: Runner** is checked (so it's in "Copy Bundle Resources").
 - If it's inside a **folder reference** (blue folder) the runtime name would be `Sounds/default_alarm.wav`; simplest is to have it copy to the bundle root so `"default_alarm.wav"` resolves. If the sound doesn't play, this is the first thing to check (iOS silently falls back to the default sound when the name doesn't resolve).
 
-## 3. (Optional) Time-Sensitive Notifications capability
-`content.interruptionLevel = .timeSensitive` helps the alarm break through Focus/Do-Not-Disturb. It needs the **Time Sensitive Notifications** capability (Signing & Capabilities → + Capability). Without it, the level silently downgrades to `.active` — still works, just less prominent. Not required to build.
+## 3. ⭐ Wire the Time-Sensitive Notifications entitlement (matters for waking during sleep)
+`content.interruptionLevel = .timeSensitive` + requesting the `.timeSensitive` auth option let alarms **pierce a Sleep/Do-Not-Disturb Focus** — the exact scenario an alarm app needs. Without the entitlement iOS silently downgrades the level, so an alarm can be suppressed while the user sleeps.
+- The entitlements file already exists: **`ios/Runner/Runner.entitlements`** (key `com.apple.developer.usernotifications.time-sensitive`).
+- In Xcode: Runner target → **Signing & Capabilities → + Capability → Time Sensitive Notifications** (this references the file), OR set **Build Settings → Code Signing Entitlements = `Runner/Runner.entitlements`**. Your Apple Developer account must have the capability enabled for the App ID.
+- Without this the app still builds and rings; it's just suppressible by Focus.
+
+## 3b. 64-notification cap vs. wake-checks (verify no silent drops)
+iOS keeps only the 64 soonest **pending** notifications. The Dart allocator budgets the alarm burst, but `scheduleWakeCheck` adds 2 more (preserved across reconcile). If the allocator ever uses the full 64 while a wake-check is pending, iOS silently drops the furthest-out ones. On device, exercise many alarms **plus** an active wake-check and confirm nothing vanishes. If it does, lower the allocator's effective cap (in `lib/domain/notification_budget.dart`) to reserve ~2–4 slots for wake-checks.
 
 ## 4. Build
 - `flutter build ios --debug` (or `flutter build ipa` on Codemagic). Expect the **first build to surface Swift errors** — this code has never seen a compiler. Likely spots to fix:

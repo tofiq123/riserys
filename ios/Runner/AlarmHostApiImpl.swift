@@ -53,7 +53,9 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
       let ok = settings.authorizationStatus == .authorized
         || settings.authorizationStatus == .provisional
         || settings.authorizationStatus == .ephemeral
-      self?.notificationsAuthorized = ok
+      // Confine the cache write to main — the callback runs on a background
+      // queue and getPermissions() reads it on the platform thread.
+      DispatchQueue.main.async { self?.notificationsAuthorized = ok }
     }
   }
 
@@ -124,8 +126,11 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
   /// sync service uses reconcileNotifications instead. Kept as a safe no-op.
   func reconcile(alarms: [NativeAlarm]) throws {}
 
-  /// Missed-alarm recovery: fire one alarm notification immediately.
+  /// Missed-alarm recovery: fire one alarm notification immediately. Also mark
+  /// it ringing so a foreground / cold-start resume-poll of getRingingAlarmId()
+  /// shows the ring screen, matching Android's ringNow -> RingActivity.
   func ringNow(alarm: NativeAlarm) throws {
+    ringingAlarmId = alarm.id
     let content = alarmContent(label: alarm.label, soundAsset: alarm.soundAsset)
     content.userInfo = ["alarmId": alarm.id]
     let id = "\(AlarmHostApiImpl.alarmPrefix)\(alarm.id).0"
@@ -150,8 +155,14 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
   }
 
   func requestNotificationPermission() throws {
-    center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
-      self?.notificationsAuthorized = granted
+    var options: UNAuthorizationOptions = [.alert, .sound, .badge]
+    if #available(iOS 15.0, *) {
+      // Ignored unless the Time-Sensitive Notifications entitlement is present
+      // (see the compile checklist) — lets alarms pierce Focus/DND when it is.
+      options.insert(.timeSensitive)
+    }
+    center.requestAuthorization(options: options) { [weak self] granted, _ in
+      DispatchQueue.main.async { self?.notificationsAuthorized = granted }
     }
   }
 
