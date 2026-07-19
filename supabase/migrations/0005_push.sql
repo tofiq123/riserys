@@ -40,10 +40,10 @@ create index if not exists nudges_from_created_idx
 
 alter table public.nudges enable row level security;
 
--- Own rows (as the sender). The edge function inserts via the service role
--- after its own crew + rate-limit checks; this policy just scopes any direct
--- client access (e.g. a future "sent nudges" view) to your own.
+-- SELECT-only for the client (as the sender). The edge function does all
+-- writes via the service role AFTER its crew + rate-limit checks — the client
+-- must NOT be able to insert or DELETE its own log rows, or it could wipe the
+-- log to reset the anti-spam cooldown. (A prior `for all` policy is dropped.)
 drop policy if exists nudges_own on public.nudges;
-create policy nudges_own on public.nudges for all
-  using (auth.uid() = from_user)
-  with check (auth.uid() = from_user);
+create policy nudges_own on public.nudges for select
+  using (auth.uid() = from_user);
