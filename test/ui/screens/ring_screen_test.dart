@@ -117,7 +117,7 @@ void main() {
       alarms: const [Alarm(id: 7, hour: 6, minute: 30, mission: 'math')],
       alarmId: 7,
       dismissAlarm: (id) async => dismissed = id,
-      missionBuilder: (context, alarm, onSolved) =>
+      missionBuilder: (context, alarm, onSolved, onAlertness) =>
           TextButton(onPressed: onSolved, child: const Text('SOLVE')),
     ));
     await t.pump();
@@ -167,7 +167,8 @@ void main() {
             calls++;
             if (calls == 1) throw StateError('stop failed');
           },
-          missionBuilder: (context, alarm, onSolved) => _OnceMission(onSolved),
+          missionBuilder: (context, alarm, onSolved, onAlertness) =>
+              _OnceMission(onSolved),
           onDismissed: () {},
         ),
       ),
@@ -227,7 +228,7 @@ void main() {
           alarmId: 7,
           record: true,
           dismissAlarm: (_) async {},
-          missionBuilder: (context, alarm, onSolved) =>
+          missionBuilder: (context, alarm, onSolved, onAlertness) =>
               TextButton(onPressed: onSolved, child: const Text('SOLVE')),
           armWakeCheck: (_, __) async {},
         ),

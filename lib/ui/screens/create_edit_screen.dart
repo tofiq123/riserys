@@ -23,6 +23,7 @@ const Map<String, String> _missionLabels = {
   'hold': 'Hold',
   'tap': 'Tap',
   'memory': 'Memory',
+  'pvt': 'Alertness (PVT)',
 };
 
 class CreateEditScreen extends ConsumerStatefulWidget {

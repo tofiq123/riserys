@@ -17,9 +17,11 @@ import '../theme/typography.dart';
 
 /// Builds the dismissal gate for a missioned alarm. Task 10 supplies the real
 /// mission widgets; [onSolved] must be called exactly once when the user
-/// completes the mission — that dismisses the alarm.
-typedef MissionBuilder = Widget Function(
-    BuildContext context, Alarm alarm, VoidCallback onSolved);
+/// completes the mission — that dismisses the alarm. [onAlertness], when the
+/// mission produces one, reports a 0–100 alertness score (only the PVT mission
+/// does); every other mission ignores it, so behavior is unchanged.
+typedef MissionBuilder = Widget Function(BuildContext context, Alarm alarm,
+    VoidCallback onSolved, void Function(int alertnessScore)? onAlertness);
 
 /// Fully dismisses a ringing alarm. The order is deliberate and load-bearing
 /// (validated on a physical device in Plan 1):
@@ -114,6 +116,13 @@ class _RingScreenState extends ConsumerState<RingScreen>
   Timer? _clock;
   bool _dismissing = false;
   int _attempt = 0; // bumped on a failed dismissal to reset the slider
+
+  /// The alertness score reported by the mission (PVT only), captured here so
+  /// [_dismiss] can persist it. null = the mission produced no score.
+  // Written by the mission's onAlertness callback; read by _dismiss once the
+  // persistence path lands in Task 6.5.
+  // ignore: unused_field
+  int? _pendingAlertness;
 
   @override
   void initState() {
@@ -256,7 +265,8 @@ class _RingScreenState extends ConsumerState<RingScreen>
       child: (alarm != null &&
               alarm.mission != 'none' &&
               widget.missionBuilder != null)
-          ? widget.missionBuilder!(context, alarm, () => _dismiss('mission'))
+          ? widget.missionBuilder!(context, alarm, () => _dismiss('mission'),
+              (score) => _pendingAlertness = score)
           : SlideToWake(onWake: () => _dismiss('slide')),
     );
 
