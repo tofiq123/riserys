@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/alarm.dart';
 import '../../domain/alarm_sounds.dart';
+import '../../domain/premium_feature.dart';
 import '../components/day_chips.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
@@ -12,8 +13,10 @@ import '../components/segmented.dart';
 import '../components/sound_chips.dart';
 import '../components/time_dial.dart';
 import '../state/alarm_providers.dart';
+import '../state/entitlement_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import 'paywall_screen.dart';
 import 'qr_register_screen.dart';
 
 /// Mission keys ↔ display labels. The `SoundChips` pill row is a generic
@@ -146,6 +149,16 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
     if (draft == null) return const SizedBox.shrink();
     final isEdit = draft.id != 0;
 
+    // Gating: advanced missions (typing/QR/walk) and mission chains (2–3) are
+    // premium. Locked → the picker routes to the paywall instead of selecting.
+    // Unconfigured/unlocked → both false, so behaviour is exactly as before.
+    final gate = ref.watch(premiumGateProvider);
+    final missionsLocked = !gate.canUse(PremiumFeature.advancedMissions);
+    final chainsLocked = !gate.canUse(PremiumFeature.missionChains);
+    final lockedMissionLabels = missionsLocked
+        ? {for (final k in kPremiumMissionKeys) _missionLabels[k]!}
+        : const <String>{};
+
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(
@@ -206,10 +219,15 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
           _section('Wake mission', SoundChips(
             sounds: _missionLabels.values.toList(),
             selected: _missionLabels[draft.mission] ?? _missionLabels['none']!,
+            locked: lockedMissionLabels,
             onChanged: (label) {
               final key = _missionLabels.entries
                   .firstWhere((e) => e.value == label)
                   .key;
+              if (isPremiumMissionKey(key) && missionsLocked) {
+                openPaywall(context);
+                return;
+              }
               _update(draft.copyWith(mission: key));
             },
           )),
@@ -231,8 +249,18 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
                 (value: 3, label: '3×'),
               ],
               selected: draft.missionCount,
-              onChanged: (n) => _update(draft.copyWith(missionCount: n)),
-            )),
+              onChanged: (n) {
+                if (n > kFreeMissionCount && chainsLocked) {
+                  openPaywall(context);
+                  return;
+                }
+                _update(draft.copyWith(missionCount: n));
+              },
+            ),
+            trailing: chainsLocked
+                ? const Icon(Icons.lock_outline,
+                    size: 14, color: RiseColors.textDim)
+                : null),
           if (draft.mission == 'qr')
             _section('QR code', _qrRegisterRow(draft)),
           const SizedBox(height: 20),

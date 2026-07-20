@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 
+import 'config/revenuecat_config.dart';
 import 'config/supabase_config.dart';
 import 'data/alarm_sync_service.dart';
 import 'data/app_settings.dart';
+import 'data/iap/revenuecat_entitlement_service.dart';
 import 'data/local/alarm_repository.dart';
 import 'data/native/alarm_api.g.dart';
 import 'ui/missions/mission_host.dart';
@@ -56,6 +58,17 @@ Future<void> main() async {
       );
     } catch (e) {
       debugPrint('Rise: Supabase init failed (social disabled): $e');
+    }
+  }
+
+  // Optional monetization. Additive and best-effort: with no RevenueCat key the
+  // SDK is never initialised and the app runs fully unlocked (see
+  // UnlockedEntitlementService). A configure failure must never stop launch.
+  if (RevenueCatConfig.isConfigured) {
+    try {
+      await RevenueCatEntitlementService.configureSdk(RevenueCatConfig.apiKey);
+    } catch (e) {
+      debugPrint('Rise: RevenueCat init failed (premium gating disabled): $e');
     }
   }
 
