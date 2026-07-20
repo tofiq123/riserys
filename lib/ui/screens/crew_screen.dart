@@ -9,6 +9,7 @@ import '../../domain/crew_status.dart';
 import '../../domain/premium_feature.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
+import '../components/segmented.dart';
 import '../state/auth_providers.dart';
 import '../state/crew_providers.dart';
 import '../state/entitlement_providers.dart';
@@ -18,7 +19,11 @@ import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'friend_detail_screen.dart';
+import 'groups_tab.dart';
 import 'paywall_screen.dart';
+
+/// The two sub-views of the Crew tab.
+enum _CrewView { friends, groups }
 
 /// The Crew tab: add friends by username, manage requests, and see your crew.
 /// Signed out (or unconfigured) shows a prompt directing to the Profile tab.
@@ -36,6 +41,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
   final Set<String> _nudging = {};
   CrewMember? _found;
   String? _searchMessage;
+  _CrewView _view = _CrewView.friends;
 
   @override
   void dispose() {
@@ -157,52 +163,65 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
         children: [
           Text('Crew', style: RiseText.display),
           const SizedBox(height: 6),
-          Text('Wake up together. Add friends by username and keep each other honest.',
+          Text('Wake up together. Add friends, form groups, and keep each other honest.',
               style: RiseText.caption),
+          const SizedBox(height: 16),
+          SegmentedControl<_CrewView>(
+            segments: const [
+              (value: _CrewView.friends, label: 'Friends'),
+              (value: _CrewView.groups, label: 'Groups'),
+            ],
+            selected: _view,
+            onChanged: (v) => setState(() => _view = v),
+          ),
           const SizedBox(height: 20),
-          _addSection(),
-          if (crew.incoming.isNotEmpty) ...[
+          if (_view == _CrewView.groups)
+            const GroupsTab()
+          else ...[
+            _addSection(),
+            if (crew.incoming.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              const SectionLabel('Requests'),
+              const SizedBox(height: 10),
+              for (final m in crew.incoming)
+                _memberRow(m, statuses[m.id] ?? CrewStatus.unknown,
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      _pill('Accept', _busy ? null : () => _accept(m.id),
+                          filled: true),
+                      const SizedBox(width: 6),
+                      _pill('Decline', _busy ? null : () => _decline(m.id)),
+                    ])),
+            ],
             const SizedBox(height: 24),
-            const SectionLabel('Requests'),
+            const SectionLabel('Your crew'),
+            const SizedBox(height: 6),
+            _legend(),
             const SizedBox(height: 10),
-            for (final m in crew.incoming)
-              _memberRow(m, statuses[m.id] ?? CrewStatus.unknown,
-                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                    _pill('Accept', _busy ? null : () => _accept(m.id),
-                        filled: true),
-                    const SizedBox(width: 6),
-                    _pill('Decline', _busy ? null : () => _decline(m.id)),
-                  ])),
-          ],
-          const SizedBox(height: 24),
-          const SectionLabel('Your crew'),
-          const SizedBox(height: 6),
-          _legend(),
-          const SizedBox(height: 10),
-          if (crew.friends.isEmpty)
-            Text('No crew yet. Add friends by username above.',
-                style: RiseText.caption)
-          else
-            for (final m in crew.friends)
-              _memberRow(m, statuses[m.id] ?? CrewStatus.unknown,
-                  onTap: () => _openDetail(m),
-                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                    _pill('Nudge',
-                        (_busy || _nudging.contains(m.id))
-                            ? null
-                            : () => _nudge(m)),
-                    const SizedBox(width: 6),
-                    _pill('Remove', _busy ? null : () => _remove(m.id),
-                        danger: true),
-                  ])),
-          if (crew.outgoing.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            const SectionLabel('Pending'),
-            const SizedBox(height: 10),
-            for (final m in crew.outgoing)
-              _memberRow(m, statuses[m.id] ?? CrewStatus.unknown,
-                  trailing:
-                      _pill('Cancel', _busy ? null : () => _cancel(m.id))),
+            if (crew.friends.isEmpty)
+              Text('No crew yet. Add friends by username above.',
+                  style: RiseText.caption)
+            else
+              for (final m in crew.friends)
+                _memberRow(m, statuses[m.id] ?? CrewStatus.unknown,
+                    onTap: () => _openDetail(m),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      _pill('Nudge',
+                          (_busy || _nudging.contains(m.id))
+                              ? null
+                              : () => _nudge(m)),
+                      const SizedBox(width: 6),
+                      _pill('Remove', _busy ? null : () => _remove(m.id),
+                          danger: true),
+                    ])),
+            if (crew.outgoing.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              const SectionLabel('Pending'),
+              const SizedBox(height: 10),
+              for (final m in crew.outgoing)
+                _memberRow(m, statuses[m.id] ?? CrewStatus.unknown,
+                    trailing:
+                        _pill('Cancel', _busy ? null : () => _cancel(m.id))),
+            ],
           ],
         ],
       ),
