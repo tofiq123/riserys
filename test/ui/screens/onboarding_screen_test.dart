@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/app_settings.dart';
 import 'package:rise/data/native/alarm_api.g.dart';
 import 'package:rise/data/permission_gateway.dart';
 import 'package:rise/ui/screens/onboarding_screen.dart';
+import 'package:rise/ui/state/settings_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 AlarmPermissions _perms({
   bool notif = false,
@@ -37,21 +41,33 @@ class _FakeGateway implements PermissionGateway {
   Future<void> openBattery() async => opened.add('battery');
 }
 
-Widget _host(_FakeGateway gw, {VoidCallback? onDone}) => MaterialApp(
-      home: OnboardingScreen(onDone: onDone ?? () {}, permissions: gw),
+Future<AppSettings> _newStore() async {
+  SharedPreferences.setMockInitialValues({});
+  return AppSettings.load();
+}
+
+Widget _host(_FakeGateway gw, AppSettings store, {VoidCallback? onDone}) =>
+    ProviderScope(
+      overrides: [appSettingsProvider.overrideWithValue(store)],
+      child: MaterialApp(
+        home: OnboardingScreen(onDone: onDone ?? () {}, permissions: gw),
+      ),
     );
 
+/// Advances from the first page to the permissions page (the last of four).
 Future<void> _toPermissions(WidgetTester t) async {
-  await t.tap(find.text('Next'));
-  await t.pumpAndSettle();
-  await t.tap(find.text('Next'));
-  await t.pumpAndSettle();
+  for (var i = 0; i < 3; i++) {
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
+  }
 }
 
 void main() {
   testWidgets('advances through pages and Start calls onDone', (t) async {
     var done = false;
-    await t.pumpWidget(_host(_FakeGateway(_perms()), onDone: () => done = true));
+    final store = await _newStore();
+    await t.pumpWidget(
+        _host(_FakeGateway(_perms()), store, onDone: () => done = true));
     await t.pumpAndSettle();
     expect(find.text('Wake up, for real'), findsOneWidget);
     await _toPermissions(t);
@@ -63,17 +79,71 @@ void main() {
 
   testWidgets('Skip on the first page calls onDone', (t) async {
     var done = false;
-    await t.pumpWidget(_host(_FakeGateway(_perms()), onDone: () => done = true));
+    final store = await _newStore();
+    await t.pumpWidget(
+        _host(_FakeGateway(_perms()), store, onDone: () => done = true));
     await t.pumpAndSettle();
     await t.tap(find.text('Skip'));
     await t.pumpAndSettle();
     expect(done, isTrue);
   });
 
+  testWidgets('the intention step persists a typed plan on finish', (t) async {
+    var done = false;
+    final store = await _newStore();
+    await t.pumpWidget(
+        _host(_FakeGateway(_perms()), store, onDone: () => done = true));
+    await t.pumpAndSettle();
+    // Wake -> Mission -> Intention (page index 2).
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
+    expect(find.text('Make a tiny plan'), findsOneWidget);
+    await t.enterText(
+        find.byKey(const Key('intention-field')), 'Walk to the kitchen');
+    await t.pump();
+    // Intention -> Permissions -> finish.
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Start using Rise'));
+    await t.pumpAndSettle();
+    expect(done, isTrue);
+    expect(store.wakeIntention, 'Walk to the kitchen');
+  });
+
+  testWidgets('a suggestion chip fills the intention field', (t) async {
+    final store = await _newStore();
+    await t.pumpWidget(_host(_FakeGateway(_perms()), store));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Stand up and stretch'));
+    await t.pump();
+    // Finishing now persists the chip's text.
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Start using Rise'));
+    await t.pumpAndSettle();
+    expect(store.wakeIntention, 'Stand up and stretch');
+  });
+
+  testWidgets('skipping leaves the intention unset', (t) async {
+    final store = await _newStore();
+    await t.pumpWidget(_host(_FakeGateway(_perms()), store));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Skip'));
+    await t.pumpAndSettle();
+    expect(store.wakeIntention, '');
+  });
+
   testWidgets('ungranted notifications shows Grant; tapping requests and updates',
       (t) async {
     final gw = _FakeGateway(_perms());
-    await t.pumpWidget(_host(gw));
+    final store = await _newStore();
+    await t.pumpWidget(_host(gw, store));
     await t.pumpAndSettle();
     await _toPermissions(t);
     expect(find.text('Grant'), findsNWidgets(4)); // all four ungranted
@@ -85,7 +155,8 @@ void main() {
 
   testWidgets('a granted permission shows no Grant button', (t) async {
     final gw = _FakeGateway(_perms(notif: true));
-    await t.pumpWidget(_host(gw));
+    final store = await _newStore();
+    await t.pumpWidget(_host(gw, store));
     await t.pumpAndSettle();
     await _toPermissions(t);
     expect(find.text('Notifications'), findsOneWidget);
@@ -94,7 +165,8 @@ void main() {
 
   testWidgets('tapping the exact-alarm Grant opens its settings', (t) async {
     final gw = _FakeGateway(_perms());
-    await t.pumpWidget(_host(gw));
+    final store = await _newStore();
+    await t.pumpWidget(_host(gw, store));
     await t.pumpAndSettle();
     await _toPermissions(t);
     await t.tap(find.text('Grant').at(1)); // order: notif, exact, fsi, battery

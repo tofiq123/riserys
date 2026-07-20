@@ -214,6 +214,32 @@ class _RingScreenState extends ConsumerState<RingScreen>
     widget.onDismissed?.call(); // close the ring screen
   }
 
+  /// A gentle nudge showing the user's own wake plan (their implementation
+  /// intention). Never a demand — just the concrete first move they chose.
+  Widget _planReminder(String intention) => Container(
+        constraints: const BoxConstraints(maxWidth: 340),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        decoration: BoxDecoration(
+          color: RiseColors.accentSoft,
+          borderRadius: BorderRadius.circular(RiseRadii.base),
+          border: Border.all(color: RiseColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.flag_outlined,
+                size: 16, color: RiseColors.accent),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text('Your plan: $intention',
+                  textAlign: TextAlign.center,
+                  style: RiseText.body
+                      .copyWith(fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      );
+
   Widget _snoozeButton(int minutes) => GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _snooze(Duration(minutes: minutes)),
@@ -292,6 +318,10 @@ class _RingScreenState extends ConsumerState<RingScreen>
               ),
               const SizedBox(height: 10),
               Text(label, style: RiseText.title.copyWith(color: RiseColors.textDim)),
+              if (settings.wakeIntention.isNotEmpty) ...[
+                const SizedBox(height: 18),
+                _planReminder(settings.wakeIntention),
+              ],
               const Spacer(),
               gate,
               if (canSnooze) _snoozeButton(snoozeMinutes),

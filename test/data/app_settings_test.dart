@@ -38,4 +38,18 @@ void main() {
     expect(s2.wakeCheckDelayMinutes, 15);
     expect(s2.settings.snoozeMaxCount, 2); // snapshot
   });
+
+  test('wakeIntention defaults empty, round-trips, and reaches the snapshot',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.wakeIntention, '');
+    expect(s.settings.wakeIntention, '');
+
+    await s.setWakeIntention('Put my feet on the floor');
+
+    final s2 = await AppSettings.load();
+    expect(s2.wakeIntention, 'Put my feet on the floor');
+    expect(s2.settings.wakeIntention, 'Put my feet on the floor');
+  });
 }

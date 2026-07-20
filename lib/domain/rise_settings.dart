@@ -6,6 +6,7 @@ class RiseSettings {
     this.snoozeFlatMinutes = 0,
     this.wakeCheckEnabled = true,
     this.wakeCheckDelayMinutes = 5,
+    this.wakeIntention = '',
   });
 
   /// Max snoozes before the button hides (0 disables snooze).
@@ -18,6 +19,12 @@ class RiseSettings {
 
   /// Minutes after dismissal before the "still up?" check.
   final int wakeCheckDelayMinutes;
+
+  /// The user's implementation intention — what they'll do the moment the
+  /// alarm rings (e.g. "Put my feet on the floor"). Optional; empty when unset.
+  /// Shown on the ring screen as a gentle reminder. Evidence-backed: pairing a
+  /// cue with a concrete action markedly improves follow-through.
+  final String wakeIntention;
 
   static const _shrinking = [9, 5, 3, 2, 1];
 
@@ -33,6 +40,7 @@ class RiseSettings {
     int? snoozeFlatMinutes,
     bool? wakeCheckEnabled,
     int? wakeCheckDelayMinutes,
+    String? wakeIntention,
   }) =>
       RiseSettings(
         snoozeMaxCount: snoozeMaxCount ?? this.snoozeMaxCount,
@@ -40,6 +48,7 @@ class RiseSettings {
         wakeCheckEnabled: wakeCheckEnabled ?? this.wakeCheckEnabled,
         wakeCheckDelayMinutes:
             wakeCheckDelayMinutes ?? this.wakeCheckDelayMinutes,
+        wakeIntention: wakeIntention ?? this.wakeIntention,
       );
 
   @override
@@ -48,9 +57,10 @@ class RiseSettings {
       other.snoozeMaxCount == snoozeMaxCount &&
       other.snoozeFlatMinutes == snoozeFlatMinutes &&
       other.wakeCheckEnabled == wakeCheckEnabled &&
-      other.wakeCheckDelayMinutes == wakeCheckDelayMinutes;
+      other.wakeCheckDelayMinutes == wakeCheckDelayMinutes &&
+      other.wakeIntention == wakeIntention;
 
   @override
   int get hashCode => Object.hash(snoozeMaxCount, snoozeFlatMinutes,
-      wakeCheckEnabled, wakeCheckDelayMinutes);
+      wakeCheckEnabled, wakeCheckDelayMinutes, wakeIntention);
 }

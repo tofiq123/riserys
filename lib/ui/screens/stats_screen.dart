@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/local/excused_days_repository.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/streak.dart';
 import '../../domain/wake_event.dart';
@@ -106,6 +107,8 @@ class StatsScreen extends ConsumerWidget {
             _empty()
           else ...[
             _streakCard(streak),
+            const SizedBox(height: 12),
+            const _RoughNightCard(),
             const SizedBox(height: 24),
             const SectionLabel('Last 30 days'),
             const SizedBox(height: 12),
@@ -139,7 +142,7 @@ class StatsScreen extends ConsumerWidget {
               Text('No wake data yet',
                   style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
-              Text('Set an alarm and wake up on time to start your streak.',
+              Text('Set an alarm and wake up on time — your streak grows from here.',
                   textAlign: TextAlign.center, style: RiseText.caption),
             ],
           ),
@@ -386,6 +389,133 @@ class StatsScreen extends ConsumerWidget {
     if (score >= 80) return RiseColors.positive;
     if (score >= 50) return RiseColors.waking;
     return RiseColors.asleep;
+  }
+}
+
+/// A gentle, no-penalty affordance: mark a recent day as a "rough night" so it
+/// does not break the streak. Deliberately warm and matter-of-fact — rest is
+/// framed as legitimate, never as a failure. An excused day only protects the
+/// streak; it never advances it, so there is nothing to game.
+class _RoughNightCard extends ConsumerWidget {
+  const _RoughNightCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Best-effort like streakProvider: an unavailable excused-days store must
+    // never crash the Stats tab — fall back to an empty set.
+    Set<DateTime> excused;
+    try {
+      excused = ref.watch(excusedDaysProvider).value ?? const <DateTime>{};
+    } catch (_) {
+      excused = const <DateTime>{};
+    }
+    final today = ExcusedDaysRepository.dayOf(DateTime.now());
+    final yesterday = today.subtract(const Duration(days: 1));
+
+    return GestureDetector(
+      key: const Key('rough-night-card'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _showSheet(context, ref, today, yesterday, excused),
+      child: RiseCard(
+        child: Row(
+          children: [
+            const Icon(Icons.bedtime_outlined,
+                color: RiseColors.asleep, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Rough night?',
+                      style:
+                          RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text('Mark it — your streak stays safe. Rest counts too.',
+                      style: RiseText.caption),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right,
+                color: RiseColors.textFaint, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSheet(BuildContext context, WidgetRef ref, DateTime today,
+      DateTime yesterday, Set<DateTime> excused) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: RiseColors.card,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(RiseSpacing.screen),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Rough night?', style: RiseText.title),
+              const SizedBox(height: 6),
+              Text(
+                  'Marking a day keeps it from breaking your streak. It won\'t '
+                  'add a day — it just protects what you\'ve built. Which day?',
+                  style: RiseText.caption),
+              const SizedBox(height: 16),
+              _option(context, ref, sheetContext, 'Today', today,
+                  excused.contains(today), const Key('rough-today')),
+              const SizedBox(height: 10),
+              _option(context, ref, sheetContext, 'Yesterday', yesterday,
+                  excused.contains(yesterday), const Key('rough-yesterday')),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _option(BuildContext context, WidgetRef ref, BuildContext sheetContext,
+      String label, DateTime day, bool alreadyMarked, Key key) {
+    return GestureDetector(
+      key: key,
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        Navigator.of(sheetContext).pop();
+        _mark(context, ref, day);
+      },
+      child: RiseCard(
+        radius: RiseRadii.base,
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(label,
+                  style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+            ),
+            if (alreadyMarked)
+              Row(
+                children: [
+                  const Icon(Icons.check_circle,
+                      color: RiseColors.positive, size: 18),
+                  const SizedBox(width: 6),
+                  Text('marked', style: RiseText.caption),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _mark(BuildContext context, WidgetRef ref, DateTime day) async {
+    try {
+      await ref.read(excusedDaysRepositoryProvider).excuse(day);
+    } catch (_) {
+      // Best-effort: a storage hiccup must never crash the Stats tab.
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Marked. Your streak\'s safe — rest up.')),
+    );
   }
 }
 

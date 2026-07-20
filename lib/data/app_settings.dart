@@ -26,6 +26,7 @@ class AppSettings {
   static const _kSnoozeFlatMinutes = 'snoozeFlatMinutes';
   static const _kWakeCheckEnabled = 'wakeCheckEnabled';
   static const _kWakeCheckDelayMinutes = 'wakeCheckDelayMinutes';
+  static const _kWakeIntention = 'wakeIntention';
 
   int get snoozeMaxCount => _prefs.getInt(_kSnoozeMaxCount) ?? 3;
   Future<void> setSnoozeMaxCount(int v) => _prefs.setInt(_kSnoozeMaxCount, v);
@@ -42,11 +43,16 @@ class AppSettings {
   Future<void> setWakeCheckDelayMinutes(int v) =>
       _prefs.setInt(_kWakeCheckDelayMinutes, v);
 
-  /// A snapshot of the mutable settings (snooze + wake-check).
+  String get wakeIntention => _prefs.getString(_kWakeIntention) ?? '';
+  Future<void> setWakeIntention(String v) =>
+      _prefs.setString(_kWakeIntention, v);
+
+  /// A snapshot of the mutable settings (snooze + wake-check + wake plan).
   RiseSettings get settings => RiseSettings(
         snoozeMaxCount: snoozeMaxCount,
         snoozeFlatMinutes: snoozeFlatMinutes,
         wakeCheckEnabled: wakeCheckEnabled,
         wakeCheckDelayMinutes: wakeCheckDelayMinutes,
+        wakeIntention: wakeIntention,
       );
 }

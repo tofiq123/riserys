@@ -8,6 +8,7 @@ void main() {
     expect(s.snoozeFlatMinutes, 0);
     expect(s.wakeCheckEnabled, isTrue);
     expect(s.wakeCheckDelayMinutes, 5);
+    expect(s.wakeIntention, '');
   });
 
   test('snoozeDurationMinutes uses the shrinking schedule by default', () {
@@ -29,8 +30,14 @@ void main() {
   test('copyWith and equality', () {
     const s = RiseSettings();
     expect(s.copyWith(snoozeMaxCount: 5).snoozeMaxCount, 5);
+    expect(s.copyWith(wakeIntention: 'Stand up').wakeIntention, 'Stand up');
     expect(s.copyWith(), s);
     expect(const RiseSettings(wakeCheckEnabled: false) == const RiseSettings(),
         isFalse);
+    expect(
+        const RiseSettings(wakeIntention: 'Walk') == const RiseSettings(),
+        isFalse);
+    expect(const RiseSettings(wakeIntention: 'Walk').hashCode ==
+        const RiseSettings().hashCode, isFalse);
   });
 }

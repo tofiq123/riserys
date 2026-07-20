@@ -116,6 +116,25 @@ void main() {
     expect(find.text('Gym time'), findsOneWidget);
   });
 
+  testWidgets('shows the wake plan when one is set, hides it otherwise', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(wakeIntention: 'Put my feet on the floor'),
+    ));
+    await t.pump();
+    expect(find.text('Your plan: Put my feet on the floor'), findsOneWidget);
+  });
+
+  testWidgets('no wake plan means no plan reminder', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+    ));
+    await t.pump();
+    expect(find.textContaining('Your plan:'), findsNothing);
+  });
+
   testWidgets('a missioned alarm with a missionBuilder shows the mission, not the slider', (t) async {
     int? dismissed;
     await t.pumpWidget(_host(
