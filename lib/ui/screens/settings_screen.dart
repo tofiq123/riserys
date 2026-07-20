@@ -192,6 +192,53 @@ class SettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+            const SectionLabel('Sensory wake'),
+            const SizedBox(height: 6),
+            Text(
+                'A gentle on-screen sunrise while your alarm rings. A phone '
+                'screen is far too dim to actually wake you — treat it as '
+                'ambience, not the wake-up.',
+                style: RiseText.caption),
+            const SizedBox(height: 12),
+            RiseCard(
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Sunrise wake', style: RiseText.body),
+                      RiseSwitch(
+                          key: const Key('sunrise-wake-switch'),
+                          value: s.sunriseWake,
+                          onChanged: ctrl.setSunriseWake),
+                    ],
+                  ),
+                  const Divider(height: 20, color: RiseColors.divider),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Flexible(
+                          child:
+                              Text('Get real light', style: RiseText.body)),
+                      RiseSwitch(
+                          key: const Key('real-light-prompt-switch'),
+                          value: s.realLightPrompt,
+                          onChanged: ctrl.setRealLightPrompt),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                        'When you wake, a brief note suggests getting real, '
+                        'bright light — the thing that actually helps you feel '
+                        'awake.',
+                        style: RiseText.caption),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),

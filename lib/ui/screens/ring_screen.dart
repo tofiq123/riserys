@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/alarm_sync_service.dart';
 import '../../data/motion_sensor.dart';
 import '../../data/native/alarm_api.g.dart';
+import '../../data/screen_brightness_controller.dart';
 import '../../data/snooze.dart';
 import '../../domain/adaptive_difficulty.dart';
 import '../../domain/alarm.dart';
@@ -104,6 +105,34 @@ Future<WakeChallengeDecision> defaultStayUpDecision(
   );
 }
 
+/// The floor of the sunrise brightness ramp — brightness starts here and rises
+/// to full as dawn progresses. Not 0, so a night-dimmed phone still lifts
+/// immediately when the alarm fires.
+const double _minSunriseBrightness = 0.6;
+
+/// The opt-in sunrise wake background. Maps dawn progress [t] (0 → 1) to a
+/// vertical gradient that arcs from a deep pre-dawn sky at the top, through warm
+/// amber, to soft daylight. Deliberately keeps the lower two-thirds — where the
+/// clock, mission and dismiss controls live — warm and light at *every* t, so
+/// the near-black ring UI stays fully legible: only the top sky (behind the
+/// upper spacer/bell, where there is no text) carries the night → day swing.
+/// Purely visual.
+LinearGradient sunriseGradient(double t) {
+  final p = t.clamp(0.0, 1.0);
+  Color mix(Color night, Color day) => Color.lerp(night, day, p)!;
+  return LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    stops: const [0.0, 0.22, 0.45, 1.0],
+    colors: [
+      mix(const Color(0xFF10152E), const Color(0xFFCFE0F5)), // top sky: night→day
+      mix(const Color(0xFF3E325F), const Color(0xFFF8DCAB)), // upper: dusk→amber
+      mix(const Color(0xFFF4DBB8), const Color(0xFFFBF2E4)), // clock band: light
+      mix(const Color(0xFFF1CBA0), const Color(0xFFF8F2EA)), // ground: light
+    ],
+  );
+}
+
 class RingScreen extends ConsumerStatefulWidget {
   const RingScreen({
     super.key,
@@ -115,6 +144,7 @@ class RingScreen extends ConsumerStatefulWidget {
     this.snooze = snoozeAlarm,
     this.armWakeCheck = defaultArmWakeCheck,
     this.stayUpDecision = defaultStayUpDecision,
+    this.brightness = const ScreenBrightnessController(),
   });
 
   final int alarmId;
@@ -147,17 +177,33 @@ class RingScreen extends ConsumerStatefulWidget {
   /// default path is byte-for-byte unchanged.
   final StayUpDecider stayUpDecision;
 
+  /// The device-brightness seam for the opt-in sunrise wake. Injectable for
+  /// tests (which pass a fake); defaults to the real `screen_brightness`-backed
+  /// controller. Only ever touched when the sunrise setting is on, and every
+  /// call is best-effort, so a plugin failure can never crash or block the ring.
+  final BrightnessController brightness;
+
   @override
   ConsumerState<RingScreen> createState() => _RingScreenState();
 }
 
 class _RingScreenState extends ConsumerState<RingScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _pulse;
+
+  /// Drives the opt-in sunrise wake: a slow 0 → 1 dawn progress over ~45s that
+  /// both paints the gradient background and ramps device brightness. Created
+  /// unconditionally (cheap), started only when the sunrise setting is on.
+  late final AnimationController _sunrise;
+  bool _sunriseActive = false; // sunrise setting was on at mount → show + ramp
+  bool _sunriseStarted = false; // one-shot guard for didChangeDependencies
+  double _lastBrightness = -1; // last value pushed to the platform (throttle)
+
   Timer? _clock;
   bool _dismissing = false;
   int _attempt = 0; // bumped on a failed dismissal to reset the slider
   int _completions = 0; // missions solved so far in a chain (missionCount > 1)
+  bool _lightPromptDismissed = false; // user hid the "get real light" note
 
   /// The alertness score reported by the mission (PVT only), captured here so
   /// [_dismiss] can persist it. null = the mission produced no score.
@@ -172,6 +218,10 @@ class _RingScreenState extends ConsumerState<RingScreen>
       lowerBound: 0.92,
       upperBound: 1.08,
     )..repeat(reverse: true);
+    _sunrise = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 45),
+    );
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {}); // advances the live clock
     });
@@ -179,9 +229,48 @@ class _RingScreenState extends ConsumerState<RingScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Start the sunrise once, here, where MediaQuery is available. Guarded so a
+    // later dependency change never restarts or re-boosts it.
+    if (_sunriseStarted) return;
+    _sunriseStarted = true;
+    if (!ref.read(currentSettingsProvider).sunriseWake) return;
+    _sunriseActive = true;
+    if (MediaQuery.of(context).disableAnimations) {
+      // Respect reduce-motion: no animation. Jump to soft daylight and brighten
+      // once (a static boost, not a ramp).
+      _sunrise.value = 1.0;
+      widget.brightness.setBrightness(1.0);
+    } else {
+      _sunrise.addListener(_pushBrightness);
+      _sunrise.forward(); // dawn → daylight over ~45s, ramping brightness with it
+    }
+  }
+
+  /// Maps the sunrise progress to a gentle brightness ramp (from
+  /// [_minSunriseBrightness] up to full), pushing to the platform only on ~5%
+  /// changes so we never spam the channel every animation frame. Best-effort via
+  /// the injected controller.
+  void _pushBrightness() {
+    final target =
+        _minSunriseBrightness + (1.0 - _minSunriseBrightness) * _sunrise.value;
+    final stepped = (target * 20).roundToDouble() / 20; // 5% granularity
+    if (stepped == _lastBrightness) return;
+    _lastBrightness = stepped;
+    widget.brightness.setBrightness(stepped);
+  }
+
+  @override
   void dispose() {
     _clock?.cancel();
     _pulse.dispose();
+    if (_sunriseActive) {
+      // Undo the ramp: restore the system brightness on dismiss/snooze/dispose.
+      _sunrise.removeListener(_pushBrightness);
+      widget.brightness.restore();
+    }
+    _sunrise.dispose();
     super.dispose();
   }
 
@@ -330,6 +419,44 @@ class _RingScreenState extends ConsumerState<RingScreen>
         ),
       );
 
+  /// A brief, honest note that a phone screen is too dim to truly wake you —
+  /// nudging real, bright light. Warm and dismissible (a small ✕), never a gate.
+  Widget _lightPrompt() => Container(
+        constraints: const BoxConstraints(maxWidth: 340),
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+        decoration: BoxDecoration(
+          color: RiseColors.accentSoft,
+          borderRadius: BorderRadius.circular(RiseRadii.base),
+          border: Border.all(color: RiseColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.wb_sunny_outlined,
+                size: 16, color: RiseColors.waking),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                'Screens are too dim to fully wake you. Open a window or turn on '
+                'a bright light.',
+                style: RiseText.caption.copyWith(color: RiseColors.text),
+              ),
+            ),
+            const SizedBox(width: 4),
+            GestureDetector(
+              key: const Key('light-prompt-dismiss'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _lightPromptDismissed = true),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.close, size: 15, color: RiseColors.textDim),
+              ),
+            ),
+          ],
+        ),
+      );
+
   Widget _snoozeButton(int minutes) => GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _snooze(Duration(minutes: minutes)),
@@ -397,47 +524,72 @@ class _RingScreenState extends ConsumerState<RingScreen>
           : SlideToWake(onWake: () => _dismiss('slide')),
     );
 
-    return Scaffold(
-      backgroundColor: RiseColors.appBg,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(RiseSpacing.screen),
-          child: Column(
-            children: [
-              const Spacer(),
-              bell,
-              const SizedBox(height: 30),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text('$hour12:${now.minute.toString().padLeft(2, '0')}',
-                      style: RiseText.mono(size: 72, weight: FontWeight.w500)),
-                  const SizedBox(width: 10),
-                  Text(ampm,
-                      style: RiseText.mono(size: 20, color: RiseColors.textDim)),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(label, style: RiseText.title.copyWith(color: RiseColors.textDim)),
-              if (settings.wakeIntention.isNotEmpty) ...[
-                const SizedBox(height: 18),
-                _planReminder(settings.wakeIntention),
+    final content = SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(RiseSpacing.screen),
+        child: Column(
+          children: [
+            const Spacer(),
+            bell,
+            const SizedBox(height: 30),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text('$hour12:${now.minute.toString().padLeft(2, '0')}',
+                    style: RiseText.mono(size: 72, weight: FontWeight.w500)),
+                const SizedBox(width: 10),
+                Text(ampm,
+                    style: RiseText.mono(size: 20, color: RiseColors.textDim)),
               ],
-              const Spacer(),
-              if (isMissioned && missionCount > 1) ...[
-                Text('${_completions + 1} of $missionCount',
-                    style: RiseText.mono(
-                        size: 14, color: RiseColors.textDim)),
-                const SizedBox(height: 12),
-              ],
-              gate,
-              if (canSnooze) _snoozeButton(snoozeMinutes),
+            ),
+            const SizedBox(height: 10),
+            Text(label,
+                style: RiseText.title.copyWith(color: RiseColors.textDim)),
+            if (settings.wakeIntention.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              _planReminder(settings.wakeIntention),
             ],
-          ),
+            if (settings.realLightPrompt && !_lightPromptDismissed) ...[
+              const SizedBox(height: 12),
+              _lightPrompt(),
+            ],
+            const Spacer(),
+            if (isMissioned && missionCount > 1) ...[
+              Text('${_completions + 1} of $missionCount',
+                  style: RiseText.mono(size: 14, color: RiseColors.textDim)),
+              const SizedBox(height: 12),
+            ],
+            gate,
+            if (canSnooze) _snoozeButton(snoozeMinutes),
+          ],
         ),
       ),
+    );
+
+    // When the opt-in sunrise is on, paint the animated dawn gradient behind the
+    // (unchanged) content. Off → the plain background, byte-for-byte as before.
+    return Scaffold(
+      backgroundColor: RiseColors.appBg,
+      body: _sunriseActive
+          ? Stack(
+              children: [
+                Positioned.fill(
+                  key: const Key('sunrise-bg'),
+                  child: AnimatedBuilder(
+                    animation: _sunrise,
+                    builder: (_, __) => DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: sunriseGradient(_sunrise.value),
+                      ),
+                    ),
+                  ),
+                ),
+                content,
+              ],
+            )
+          : content,
     );
   }
 }

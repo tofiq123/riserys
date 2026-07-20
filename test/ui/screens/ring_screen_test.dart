@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/screen_brightness_controller.dart';
 import 'package:rise/data/wake_recorder.dart';
 import 'package:rise/domain/alarm.dart';
 import 'package:rise/domain/rise_settings.dart';
@@ -45,6 +46,7 @@ Widget _host({
   WakeRecorder? recorder,
   Future<void> Function(Alarm, Duration)? armWakeCheck,
   StayUpDecider? stayUpDecision,
+  BrightnessController? brightness,
 }) {
   return ProviderScope(
     overrides: [
@@ -63,9 +65,21 @@ Widget _host({
         record: record,
         armWakeCheck: armWakeCheck ?? (_, __) async {},
         stayUpDecision: stayUpDecision ?? defaultStayUpDecision,
+        brightness: brightness ?? const NoopBrightnessController(),
       ),
     ),
   );
+}
+
+/// Records brightness calls so tests can assert the sunrise ramp/restore
+/// without touching the real plugin.
+class _FakeBrightness implements BrightnessController {
+  final List<double> sets = [];
+  bool restored = false;
+  @override
+  Future<void> setBrightness(double value) async => sets.add(value);
+  @override
+  Future<void> restore() async => restored = true;
 }
 
 class _RecordingRecorder implements WakeRecorder {
@@ -120,6 +134,12 @@ void main() {
   });
 
   testWidgets('shows the wake plan when one is set, hides it otherwise', (t) async {
+    // A realistic phone height: the default 600px test surface is shorter than
+    // any modern phone, and a wake plan + the default-on light prompt together
+    // need normal room.
+    t.view.physicalSize = const Size(800, 1200);
+    t.view.devicePixelRatio = 1.0;
+    addTearDown(t.view.reset);
     await t.pumpWidget(_host(
       alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
       alarmId: 5,
@@ -716,5 +736,138 @@ void main() {
     await t.pump();
     await t.pump(const Duration(milliseconds: 20));
     expect(seenAlertness, 90);
+  });
+
+  // ---- Phase 10a: opt-in on-screen sunrise wake ----
+
+  testWidgets('sunrise wake on: paints the animated dawn background', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(sunriseWake: true),
+    ));
+    await t.pump();
+    expect(find.byKey(const Key('sunrise-bg')), findsOneWidget);
+  });
+
+  testWidgets('sunrise wake off (default): no dawn background', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+    ));
+    await t.pump();
+    expect(find.byKey(const Key('sunrise-bg')), findsNothing);
+  });
+
+  testWidgets('sunrise wake on: ramps brightness on mount, restores on dispose',
+      (t) async {
+    final fake = _FakeBrightness();
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(sunriseWake: true),
+      brightness: fake,
+    ));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 120)); // let the ramp tick
+    expect(fake.sets, isNotEmpty, reason: 'sunrise ramps brightness up');
+    expect(fake.restored, isFalse);
+    // Tearing the screen down restores the system brightness.
+    await t.pumpWidget(const SizedBox());
+    await t.pump();
+    expect(fake.restored, isTrue);
+  });
+
+  testWidgets('sunrise wake off: never touches the brightness controller',
+      (t) async {
+    final fake = _FakeBrightness();
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(), // sunrise off
+      brightness: fake,
+    ));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 120));
+    await t.pumpWidget(const SizedBox());
+    await t.pump();
+    expect(fake.sets, isEmpty);
+    expect(fake.restored, isFalse);
+  });
+
+  testWidgets(
+      'sunrise wake with reduce-motion: static background, single brightness boost',
+      (t) async {
+    final fake = _FakeBrightness();
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        alarmsProvider.overrideWith(
+            (ref) => Stream.value(const [Alarm(id: 5, hour: 6, minute: 30)])),
+        currentSettingsProvider
+            .overrideWithValue(const RiseSettings(sunriseWake: true)),
+        wakeEventsProvider
+            .overrideWith((ref) => Stream.value(const <WakeEvent>[])),
+      ],
+      child: MaterialApp(
+        home: Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: true),
+            child: RingScreen(alarmId: 5, brightness: fake),
+          ),
+        ),
+      ),
+    ));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 120));
+    expect(find.byKey(const Key('sunrise-bg')), findsOneWidget);
+    expect(fake.sets, [1.0],
+        reason: 'reduce-motion boosts once to full, no ramp');
+  });
+
+  test('sunriseGradient darkens the sky at dawn and brightens toward day', () {
+    final dawn = sunriseGradient(0.0);
+    final day = sunriseGradient(1.0);
+    expect(dawn.colors.length, 4);
+    // The top sky stop is much darker at t=0 than at t=1.
+    expect(dawn.colors.first.computeLuminance(),
+        lessThan(day.colors.first.computeLuminance()));
+    // The clock band (3rd stop) stays light at both ends, for legibility.
+    expect(dawn.colors[2].computeLuminance(), greaterThan(0.5));
+    expect(day.colors[2].computeLuminance(), greaterThan(0.5));
+  });
+
+  // ---- Phase 10b: honest "get real light" prompt ----
+
+  testWidgets('real-light prompt shows on the ring when enabled', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(realLightPrompt: true),
+    ));
+    await t.pump();
+    expect(find.textContaining('too dim to fully wake you'), findsOneWidget);
+  });
+
+  testWidgets('real-light prompt hidden when disabled', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(realLightPrompt: false),
+    ));
+    await t.pump();
+    expect(find.textContaining('too dim to fully wake you'), findsNothing);
+  });
+
+  testWidgets('real-light prompt is dismissible', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(realLightPrompt: true),
+    ));
+    await t.pump();
+    expect(find.textContaining('too dim to fully wake you'), findsOneWidget);
+    await t.tap(find.byKey(const Key('light-prompt-dismiss')));
+    await t.pump();
+    expect(find.textContaining('too dim to fully wake you'), findsNothing);
   });
 }

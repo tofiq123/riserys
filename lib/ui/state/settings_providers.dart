@@ -60,6 +60,16 @@ class SettingsController extends StateNotifier<RiseSettings> {
     await _store.setSmartWakeCheck(v);
     state = state.copyWith(smartWakeCheck: v);
   }
+
+  Future<void> setSunriseWake(bool v) async {
+    await _store.setSunriseWake(v);
+    state = state.copyWith(sunriseWake: v);
+  }
+
+  Future<void> setRealLightPrompt(bool v) async {
+    await _store.setRealLightPrompt(v);
+    state = state.copyWith(realLightPrompt: v);
+  }
 }
 
 final settingsProvider =

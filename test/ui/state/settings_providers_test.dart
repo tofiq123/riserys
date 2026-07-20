@@ -43,6 +43,31 @@ void main() {
     expect((await AppSettings.load()).smartWakeCheck, isTrue); // persisted
   });
 
+  test('SettingsController toggles the sunrise wake (default off)', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    final c = ProviderContainer(
+        overrides: [appSettingsProvider.overrideWithValue(store)]);
+    addTearDown(c.dispose);
+    expect(c.read(settingsProvider).sunriseWake, isFalse);
+    await c.read(settingsProvider.notifier).setSunriseWake(true);
+    expect(c.read(settingsProvider).sunriseWake, isTrue); // state updated
+    expect((await AppSettings.load()).sunriseWake, isTrue); // persisted
+  });
+
+  test('SettingsController toggles the real-light prompt (default off)',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    final c = ProviderContainer(
+        overrides: [appSettingsProvider.overrideWithValue(store)]);
+    addTearDown(c.dispose);
+    expect(c.read(settingsProvider).realLightPrompt, isFalse);
+    await c.read(settingsProvider.notifier).setRealLightPrompt(false);
+    expect(c.read(settingsProvider).realLightPrompt, isFalse); // state updated
+    expect((await AppSettings.load()).realLightPrompt, isFalse); // persisted
+  });
+
   test('SettingsController sets and clears the steady wake time', () async {
     SharedPreferences.setMockInitialValues({});
     final store = await AppSettings.load();

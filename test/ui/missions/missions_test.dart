@@ -329,6 +329,11 @@ void main() {
 
     testWidgets('RingScreen with the host shows the mission for a missioned alarm',
         (t) async {
+      // A realistic phone height: the default 600px test surface is shorter than
+      // any modern phone, and a mission + the default-on light prompt need room.
+      t.view.physicalSize = const Size(800, 1200);
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.reset);
       await t.pumpWidget(ProviderScope(
         overrides: [
           alarmsProvider.overrideWith((ref) => Stream.value(
