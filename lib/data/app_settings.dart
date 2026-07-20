@@ -32,6 +32,7 @@ class AppSettings {
   static const _kAdaptiveMissions = 'adaptiveMissions';
   static const _kSmartWakeCheck = 'smartWakeCheck';
   static const _kSunriseWake = 'sunriseWake';
+  static const _kRealLightPrompt = 'realLightPrompt';
 
   int get snoozeMaxCount => _prefs.getInt(_kSnoozeMaxCount) ?? 3;
   Future<void> setSnoozeMaxCount(int v) => _prefs.setInt(_kSnoozeMaxCount, v);
@@ -82,6 +83,11 @@ class AppSettings {
   bool get sunriseWake => _prefs.getBool(_kSunriseWake) ?? false;
   Future<void> setSunriseWake(bool v) => _prefs.setBool(_kSunriseWake, v);
 
+  /// The honest "get real light" ring prompt (Phase 10, Sensory). Default on.
+  bool get realLightPrompt => _prefs.getBool(_kRealLightPrompt) ?? true;
+  Future<void> setRealLightPrompt(bool v) =>
+      _prefs.setBool(_kRealLightPrompt, v);
+
   /// A snapshot of the mutable settings (snooze + wake-check + wake plan +
   /// steady wake time).
   RiseSettings get settings => RiseSettings(
@@ -95,5 +101,6 @@ class AppSettings {
         adaptiveMissions: adaptiveMissions,
         smartWakeCheck: smartWakeCheck,
         sunriseWake: sunriseWake,
+        realLightPrompt: realLightPrompt,
       );
 }

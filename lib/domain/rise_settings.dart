@@ -12,6 +12,7 @@ class RiseSettings {
     this.adaptiveMissions = false,
     this.smartWakeCheck = false,
     this.sunriseWake = false,
+    this.realLightPrompt = true,
   });
 
   /// Max snoozes before the button hides (0 disables snooze).
@@ -64,6 +65,13 @@ class RiseSettings {
   /// the point of the paired "get real light" prompt). Default off.
   final bool sunriseWake;
 
+  /// Whether the ring screen shows a brief, honest "get real light" prompt
+  /// (Phase 10, Sensory). Evidence-backed: a phone screen is biologically too
+  /// dim to wake anyone, so — warmly and dismissibly — we nudge the user toward
+  /// real, bright light (open a window / turn on a lamp), which genuinely helps
+  /// alertness. Default on: it's a gentle, non-nagging one-liner, not a gate.
+  final bool realLightPrompt;
+
   static const _shrinking = [9, 5, 3, 2, 1];
 
   /// The duration (minutes) of the [index]-th snooze (0-based): a flat value
@@ -84,6 +92,7 @@ class RiseSettings {
     bool? adaptiveMissions,
     bool? smartWakeCheck,
     bool? sunriseWake,
+    bool? realLightPrompt,
     // The `field ?? this.field` idiom cannot express "clear this nullable field
     // back to null" — passing null is indistinguishable from not passing it. A
     // sentinel flag keeps the intent explicit at the call site:
@@ -105,6 +114,7 @@ class RiseSettings {
         adaptiveMissions: adaptiveMissions ?? this.adaptiveMissions,
         smartWakeCheck: smartWakeCheck ?? this.smartWakeCheck,
         sunriseWake: sunriseWake ?? this.sunriseWake,
+        realLightPrompt: realLightPrompt ?? this.realLightPrompt,
       );
 
   @override
@@ -119,7 +129,8 @@ class RiseSettings {
       other.targetWakeMinute == targetWakeMinute &&
       other.adaptiveMissions == adaptiveMissions &&
       other.smartWakeCheck == smartWakeCheck &&
-      other.sunriseWake == sunriseWake;
+      other.sunriseWake == sunriseWake &&
+      other.realLightPrompt == realLightPrompt;
 
   @override
   int get hashCode => Object.hash(
@@ -132,5 +143,6 @@ class RiseSettings {
       targetWakeMinute,
       adaptiveMissions,
       smartWakeCheck,
-      sunriseWake);
+      sunriseWake,
+      realLightPrompt);
 }

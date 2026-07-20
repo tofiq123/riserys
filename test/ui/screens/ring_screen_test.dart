@@ -134,6 +134,12 @@ void main() {
   });
 
   testWidgets('shows the wake plan when one is set, hides it otherwise', (t) async {
+    // A realistic phone height: the default 600px test surface is shorter than
+    // any modern phone, and a wake plan + the default-on light prompt together
+    // need normal room.
+    t.view.physicalSize = const Size(800, 1200);
+    t.view.devicePixelRatio = 1.0;
+    addTearDown(t.view.reset);
     await t.pumpWidget(_host(
       alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
       alarmId: 5,
@@ -828,5 +834,40 @@ void main() {
     // The clock band (3rd stop) stays light at both ends, for legibility.
     expect(dawn.colors[2].computeLuminance(), greaterThan(0.5));
     expect(day.colors[2].computeLuminance(), greaterThan(0.5));
+  });
+
+  // ---- Phase 10b: honest "get real light" prompt ----
+
+  testWidgets('real-light prompt shows on the ring when enabled', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(realLightPrompt: true),
+    ));
+    await t.pump();
+    expect(find.textContaining('too dim to fully wake you'), findsOneWidget);
+  });
+
+  testWidgets('real-light prompt hidden when disabled', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(realLightPrompt: false),
+    ));
+    await t.pump();
+    expect(find.textContaining('too dim to fully wake you'), findsNothing);
+  });
+
+  testWidgets('real-light prompt is dismissible', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      settings: const RiseSettings(realLightPrompt: true),
+    ));
+    await t.pump();
+    expect(find.textContaining('too dim to fully wake you'), findsOneWidget);
+    await t.tap(find.byKey(const Key('light-prompt-dismiss')));
+    await t.pump();
+    expect(find.textContaining('too dim to fully wake you'), findsNothing);
   });
 }

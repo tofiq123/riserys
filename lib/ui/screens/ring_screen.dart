@@ -203,6 +203,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
   bool _dismissing = false;
   int _attempt = 0; // bumped on a failed dismissal to reset the slider
   int _completions = 0; // missions solved so far in a chain (missionCount > 1)
+  bool _lightPromptDismissed = false; // user hid the "get real light" note
 
   /// The alertness score reported by the mission (PVT only), captured here so
   /// [_dismiss] can persist it. null = the mission produced no score.
@@ -418,6 +419,44 @@ class _RingScreenState extends ConsumerState<RingScreen>
         ),
       );
 
+  /// A brief, honest note that a phone screen is too dim to truly wake you —
+  /// nudging real, bright light. Warm and dismissible (a small ✕), never a gate.
+  Widget _lightPrompt() => Container(
+        constraints: const BoxConstraints(maxWidth: 340),
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+        decoration: BoxDecoration(
+          color: RiseColors.accentSoft,
+          borderRadius: BorderRadius.circular(RiseRadii.base),
+          border: Border.all(color: RiseColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.wb_sunny_outlined,
+                size: 16, color: RiseColors.waking),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                'Screens are too dim to fully wake you. Open a window or turn on '
+                'a bright light.',
+                style: RiseText.caption.copyWith(color: RiseColors.text),
+              ),
+            ),
+            const SizedBox(width: 4),
+            GestureDetector(
+              key: const Key('light-prompt-dismiss'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _lightPromptDismissed = true),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.close, size: 15, color: RiseColors.textDim),
+              ),
+            ),
+          ],
+        ),
+      );
+
   Widget _snoozeButton(int minutes) => GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _snooze(Duration(minutes: minutes)),
@@ -511,6 +550,10 @@ class _RingScreenState extends ConsumerState<RingScreen>
             if (settings.wakeIntention.isNotEmpty) ...[
               const SizedBox(height: 18),
               _planReminder(settings.wakeIntention),
+            ],
+            if (settings.realLightPrompt && !_lightPromptDismissed) ...[
+              const SizedBox(height: 12),
+              _lightPrompt(),
             ],
             const Spacer(),
             if (isMissioned && missionCount > 1) ...[

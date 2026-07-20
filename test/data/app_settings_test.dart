@@ -115,4 +115,18 @@ void main() {
     expect(s2.sunriseWake, isTrue);
     expect(s2.settings.sunriseWake, isTrue);
   });
+
+  test('realLightPrompt defaults true, round-trips, and reaches the snapshot',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.realLightPrompt, isTrue);
+    expect(s.settings.realLightPrompt, isTrue);
+
+    await s.setRealLightPrompt(false);
+
+    final s2 = await AppSettings.load();
+    expect(s2.realLightPrompt, isFalse);
+    expect(s2.settings.realLightPrompt, isFalse);
+  });
 }
