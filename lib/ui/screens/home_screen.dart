@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/alarm.dart';
+import '../../domain/clock_format.dart';
 import '../../domain/scheduled_occurrence.dart';
+import '../../domain/wake_shift.dart';
 import '../components/day_chips.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/rise_switch.dart';
 import '../components/section_label.dart';
 import '../state/alarm_providers.dart';
+import '../state/settings_providers.dart';
 import '../state/wake_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
@@ -88,6 +91,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           _header(),
           const SizedBox(height: 18),
           _hero(next),
+          const _ShiftSuggestion(),
           const SizedBox(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -318,5 +322,102 @@ class _AlarmRow extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// A gentle, opt-in nudge toward the user's steady wake time (their "Sleep
+/// goal"). Only appears when a goal is set and the next alarm differs from it.
+/// Proposes moving that alarm ONE small step toward the goal — the user must
+/// tap to apply. Alarms are never rescheduled automatically: a silent shift to
+/// an earlier time could cause a missed wake, which is a clinical red line.
+class _ShiftSuggestion extends ConsumerWidget {
+  const _ShiftSuggestion();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // currentSettingsProvider is the resilient reader — defaults (no goal) when
+    // the settings store is unavailable, so this never throws on Home.
+    final settings = ref.watch(currentSettingsProvider);
+    if (!settings.hasTargetWake) return const SizedBox.shrink();
+
+    final next = ref.watch(nextOccurrenceProvider).value;
+    if (next == null) return const SizedBox.shrink();
+
+    final alarms = ref.watch(alarmsProvider).value ?? const <Alarm>[];
+    Alarm? alarm;
+    for (final a in alarms) {
+      if (a.id == next.alarmId) {
+        alarm = a;
+        break;
+      }
+    }
+    if (alarm == null) return const SizedBox.shrink();
+
+    final goalH = settings.targetWakeHour!;
+    final goalM = settings.targetWakeMinute!;
+    // Already at the goal — nothing to suggest.
+    if (alarm.hour == goalH && alarm.minute == goalM) {
+      return const SizedBox.shrink();
+    }
+
+    final shifted = nextShiftedWakeTime(
+      fromHour: alarm.hour,
+      fromMinute: alarm.minute,
+      goalHour: goalH,
+      goalMinute: goalM,
+    );
+    if (shifted.hour == alarm.hour && shifted.minute == alarm.minute) {
+      return const SizedBox.shrink();
+    }
+
+    final label = alarm.label.isNotEmpty ? alarm.label : 'your alarm';
+    final targetAlarm = alarm;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: RiseCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.wb_twilight_outlined,
+                    color: RiseColors.waking, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('Shift toward your goal',
+                      style:
+                          RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+                'Your steady wake time is ${formatClock(goalH, goalM)}. Move '
+                '"$label" from ${formatClock(targetAlarm.hour, targetAlarm.minute)} '
+                'to ${formatShift(shifted)}?',
+                style: RiseText.caption),
+            const SizedBox(height: 12),
+            PrimaryButton(
+              label: 'Shift to ${formatShift(shifted)}',
+              icon: Icons.arrow_forward,
+              onPressed: () => _apply(ref, targetAlarm, shifted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _apply(
+      WidgetRef ref, Alarm alarm, ({int hour, int minute}) shifted) {
+    // Editing the time clears any stale dismissal so the new occurrence rings.
+    ref.read(alarmMutationsProvider).save(alarm.copyWith(
+          hour: shifted.hour,
+          minute: shifted.minute,
+          clearLastDismissedAt: true,
+        ));
+    ref.read(toastProvider.notifier).state =
+        'Moved to ${formatShift(shifted)}';
   }
 }
