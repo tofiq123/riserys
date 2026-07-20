@@ -192,6 +192,27 @@ class SettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+            const SectionLabel('Sensory wake'),
+            const SizedBox(height: 6),
+            Text(
+                'A gentle on-screen sunrise while your alarm rings. A phone '
+                'screen is far too dim to actually wake you — treat it as '
+                'ambience, not the wake-up.',
+                style: RiseText.caption),
+            const SizedBox(height: 12),
+            RiseCard(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Sunrise wake', style: RiseText.body),
+                  RiseSwitch(
+                      key: const Key('sunrise-wake-switch'),
+                      value: s.sunriseWake,
+                      onChanged: ctrl.setSunriseWake),
+                ],
+              ),
+            ),
           ],
         ),
       ),

@@ -31,6 +31,7 @@ class AppSettings {
   static const _kTargetWakeMinute = 'targetWakeMinute';
   static const _kAdaptiveMissions = 'adaptiveMissions';
   static const _kSmartWakeCheck = 'smartWakeCheck';
+  static const _kSunriseWake = 'sunriseWake';
 
   int get snoozeMaxCount => _prefs.getInt(_kSnoozeMaxCount) ?? 3;
   Future<void> setSnoozeMaxCount(int v) => _prefs.setInt(_kSnoozeMaxCount, v);
@@ -76,6 +77,11 @@ class AppSettings {
   Future<void> setSmartWakeCheck(bool v) =>
       _prefs.setBool(_kSmartWakeCheck, v);
 
+  /// Opt-in on-screen sunrise wake (Phase 10, Sensory). Default off — the ring
+  /// screen looks exactly as before unless the user enables it.
+  bool get sunriseWake => _prefs.getBool(_kSunriseWake) ?? false;
+  Future<void> setSunriseWake(bool v) => _prefs.setBool(_kSunriseWake, v);
+
   /// A snapshot of the mutable settings (snooze + wake-check + wake plan +
   /// steady wake time).
   RiseSettings get settings => RiseSettings(
@@ -88,5 +94,6 @@ class AppSettings {
         targetWakeMinute: targetWakeMinute,
         adaptiveMissions: adaptiveMissions,
         smartWakeCheck: smartWakeCheck,
+        sunriseWake: sunriseWake,
       );
 }

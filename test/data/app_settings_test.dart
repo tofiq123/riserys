@@ -101,4 +101,18 @@ void main() {
     expect(s2.smartWakeCheck, isTrue);
     expect(s2.settings.smartWakeCheck, isTrue);
   });
+
+  test('sunriseWake defaults false, round-trips, and reaches the snapshot',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.sunriseWake, isFalse);
+    expect(s.settings.sunriseWake, isFalse);
+
+    await s.setSunriseWake(true);
+
+    final s2 = await AppSettings.load();
+    expect(s2.sunriseWake, isTrue);
+    expect(s2.settings.sunriseWake, isTrue);
+  });
 }

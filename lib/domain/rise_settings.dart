@@ -11,6 +11,7 @@ class RiseSettings {
     this.targetWakeMinute,
     this.adaptiveMissions = false,
     this.smartWakeCheck = false,
+    this.sunriseWake = false,
   });
 
   /// Max snoozes before the button hides (0 disables snooze).
@@ -55,6 +56,14 @@ class RiseSettings {
   /// has effect while [wakeCheckEnabled] is on (it refines that check).
   final bool smartWakeCheck;
 
+  /// Opt-in on-screen "sunrise" wake (Phase 10, Sensory). When on, the ring
+  /// screen shows an animated dawn-gradient background and gently ramps device
+  /// brightness up while the alarm rings. Purely ambient: a phone screen is far
+  /// too dim (~30–110 lux) to biologically wake anyone, so this is a pleasant
+  /// brightness boost, never sold as the thing that wakes you (that honesty is
+  /// the point of the paired "get real light" prompt). Default off.
+  final bool sunriseWake;
+
   static const _shrinking = [9, 5, 3, 2, 1];
 
   /// The duration (minutes) of the [index]-th snooze (0-based): a flat value
@@ -74,6 +83,7 @@ class RiseSettings {
     int? targetWakeMinute,
     bool? adaptiveMissions,
     bool? smartWakeCheck,
+    bool? sunriseWake,
     // The `field ?? this.field` idiom cannot express "clear this nullable field
     // back to null" — passing null is indistinguishable from not passing it. A
     // sentinel flag keeps the intent explicit at the call site:
@@ -94,6 +104,7 @@ class RiseSettings {
             : (targetWakeMinute ?? this.targetWakeMinute),
         adaptiveMissions: adaptiveMissions ?? this.adaptiveMissions,
         smartWakeCheck: smartWakeCheck ?? this.smartWakeCheck,
+        sunriseWake: sunriseWake ?? this.sunriseWake,
       );
 
   @override
@@ -107,7 +118,8 @@ class RiseSettings {
       other.targetWakeHour == targetWakeHour &&
       other.targetWakeMinute == targetWakeMinute &&
       other.adaptiveMissions == adaptiveMissions &&
-      other.smartWakeCheck == smartWakeCheck;
+      other.smartWakeCheck == smartWakeCheck &&
+      other.sunriseWake == sunriseWake;
 
   @override
   int get hashCode => Object.hash(
@@ -119,5 +131,6 @@ class RiseSettings {
       targetWakeHour,
       targetWakeMinute,
       adaptiveMissions,
-      smartWakeCheck);
+      smartWakeCheck,
+      sunriseWake);
 }
