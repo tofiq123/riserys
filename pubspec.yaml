@@ -58,6 +58,10 @@ dependencies:
   pedometer: ^4.0.2
   share_plus: ^12.0.2
 
+  # Reads Build.MANUFACTURER for the Setup Guardian's OEM-aware battery
+  # guidance (Phase 12). No runtime permission required.
+  device_info_plus: ^11.5.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/app_settings.dart';
 import 'package:rise/data/native/alarm_api.g.dart';
 import 'package:rise/data/permission_gateway.dart';
+import 'package:rise/domain/alarm.dart';
 import 'package:rise/ui/screens/onboarding_screen.dart';
+import 'package:rise/ui/state/alarm_providers.dart';
 import 'package:rise/ui/state/settings_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -41,22 +43,37 @@ class _FakeGateway implements PermissionGateway {
   Future<void> openBattery() async => opened.add('battery');
 }
 
+class _RecordingMutations implements AlarmMutations {
+  final List<Alarm> saved = [];
+  @override
+  Future<void> save(Alarm alarm) async => saved.add(alarm);
+  @override
+  Future<void> delete(int id) async {}
+  @override
+  Future<void> setEnabled(int id, bool enabled) async {}
+}
+
 Future<AppSettings> _newStore() async {
   SharedPreferences.setMockInitialValues({});
   return AppSettings.load();
 }
 
-Widget _host(_FakeGateway gw, AppSettings store, {VoidCallback? onDone}) =>
+Widget _host(_FakeGateway gw, AppSettings store,
+        {VoidCallback? onDone, AlarmMutations? mutations}) =>
     ProviderScope(
-      overrides: [appSettingsProvider.overrideWithValue(store)],
+      overrides: [
+        appSettingsProvider.overrideWithValue(store),
+        if (mutations != null)
+          alarmMutationsProvider.overrideWithValue(mutations),
+      ],
       child: MaterialApp(
         home: OnboardingScreen(onDone: onDone ?? () {}, permissions: gw),
       ),
     );
 
-/// Advances from the first page to the permissions page (the last of five).
+/// Advances from the first page to the permissions page (the last of six).
 Future<void> _toPermissions(WidgetTester t) async {
-  for (var i = 0; i < 4; i++) {
+  for (var i = 0; i < 5; i++) {
     await t.tap(find.text('Next'));
     await t.pumpAndSettle();
   }
@@ -103,11 +120,11 @@ void main() {
     await t.enterText(
         find.byKey(const Key('intention-field')), 'Walk to the kitchen');
     await t.pump();
-    // Intention -> Sleep goal -> Permissions -> finish.
-    await t.tap(find.text('Next'));
-    await t.pumpAndSettle();
-    await t.tap(find.text('Next'));
-    await t.pumpAndSettle();
+    // Intention -> Sleep goal -> First alarm -> Permissions -> finish.
+    for (var i = 0; i < 3; i++) {
+      await t.tap(find.text('Next'));
+      await t.pumpAndSettle();
+    }
     await t.tap(find.text('Start using Rise'));
     await t.pumpAndSettle();
     expect(done, isTrue);
@@ -124,11 +141,12 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('Stand up and stretch'));
     await t.pump();
-    // Intention -> Sleep goal -> Permissions -> finish persists the chip's text.
-    await t.tap(find.text('Next'));
-    await t.pumpAndSettle();
-    await t.tap(find.text('Next'));
-    await t.pumpAndSettle();
+    // Intention -> Sleep goal -> First alarm -> Permissions -> finish persists
+    // the chip's text.
+    for (var i = 0; i < 3; i++) {
+      await t.tap(find.text('Next'));
+      await t.pumpAndSettle();
+    }
     await t.tap(find.text('Start using Rise'));
     await t.pumpAndSettle();
     expect(store.wakeIntention, 'Stand up and stretch');
@@ -147,7 +165,9 @@ void main() {
     // Opt in — reveals the dial seeded at 7:00 AM.
     await t.tap(find.byKey(const Key('sleep-goal-add')));
     await t.pumpAndSettle();
-    // Sleep goal -> Permissions -> finish.
+    // Sleep goal -> First alarm -> Permissions -> finish.
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
     await t.tap(find.text('Next'));
     await t.pumpAndSettle();
     await t.tap(find.text('Start using Rise'));
@@ -208,5 +228,63 @@ void main() {
     await t.tap(find.text('Grant').at(1)); // order: notif, exact, fsi, battery
     await t.pumpAndSettle();
     expect(gw.opened, contains('exact'));
+  });
+
+  testWidgets('opting into the first alarm creates it (with mission) on finish',
+      (t) async {
+    // Enlarge the view so the mission chips aren't clipped offstage.
+    t.view.physicalSize = const Size(2400, 9000);
+    t.view.devicePixelRatio = 3.0;
+    addTearDown(t.view.reset);
+
+    final m = _RecordingMutations();
+    final store = await _newStore();
+    await t.pumpWidget(_host(_FakeGateway(_perms()), store, mutations: m));
+    await t.pumpAndSettle();
+    // Wake -> Mission -> Intention -> Sleep goal -> First alarm (page 4).
+    for (var i = 0; i < 4; i++) {
+      await t.tap(find.text('Next'));
+      await t.pumpAndSettle();
+    }
+    expect(find.text('Set your first alarm'), findsOneWidget);
+    await t.tap(find.byKey(const Key('first-alarm-add')));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Math')); // pick a wake mission
+    await t.pumpAndSettle();
+    // First alarm -> Permissions -> finish.
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Start using Rise'));
+    await t.pumpAndSettle();
+
+    expect(m.saved, hasLength(1));
+    final alarm = m.saved.single;
+    expect(alarm.id, 0); // new alarm
+    expect(alarm.hour, 7);
+    expect(alarm.minute, 0);
+    expect(alarm.mission, 'math');
+    expect(alarm.days, {1, 2, 3, 4, 5});
+  });
+
+  testWidgets('skipping onboarding creates no first alarm', (t) async {
+    final m = _RecordingMutations();
+    final store = await _newStore();
+    await t.pumpWidget(_host(_FakeGateway(_perms()), store, mutations: m));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Skip'));
+    await t.pumpAndSettle();
+    expect(m.saved, isEmpty);
+  });
+
+  testWidgets('reaching finish without opting in creates no first alarm',
+      (t) async {
+    final m = _RecordingMutations();
+    final store = await _newStore();
+    await t.pumpWidget(_host(_FakeGateway(_perms()), store, mutations: m));
+    await t.pumpAndSettle();
+    await _toPermissions(t); // walks past the first-alarm step without opting in
+    await t.tap(find.text('Start using Rise'));
+    await t.pumpAndSettle();
+    expect(m.saved, isEmpty);
   });
 }
