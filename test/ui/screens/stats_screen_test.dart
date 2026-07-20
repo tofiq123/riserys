@@ -170,6 +170,18 @@ void main() {
     expect(find.textContaining('Your part:'), findsOneWidget);
   });
 
+  testWidgets('tapping a crew member on the leaderboard opens their detail',
+      (t) async {
+    await _pumpSignedIn(t, standings: [
+      _standing('fake-uid', 'me', 5, isMe: true),
+      _standing('u2', 'bo', 3),
+    ]);
+    await t.tap(find.text('bo')); // bo's row (display name)
+    await t.pumpAndSettle();
+    // The friend detail screen's own section label — only present there.
+    expect(find.text('THEIR WAKE-UPS'), findsOneWidget);
+  });
+
   testWidgets('shows an empty state when there are no wake events', (t) async {
     await _pump(t, _host());
     await t.pump();

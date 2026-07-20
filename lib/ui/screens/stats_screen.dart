@@ -32,6 +32,7 @@ import '../state/wake_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import 'friend_detail_screen.dart';
 
 DateTime _todayLocal(DateTime now) {
   final l = now.toLocal();
@@ -1127,7 +1128,7 @@ class _LeaderboardSection extends ConsumerWidget {
                   _crewScoreCard(computeCrewScore(standings)),
                   const SizedBox(height: 14),
                   for (var i = 0; i < standings.length; i++)
-                    _standingRow(i + 1, standings[i]),
+                    _standingRow(context, i + 1, standings[i]),
                 ]),
           loading: () => const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
@@ -1205,11 +1206,9 @@ class _LeaderboardSection extends ConsumerWidget {
     );
   }
 
-  Widget _standingRow(int rank, CrewStanding s) {
+  Widget _standingRow(BuildContext context, int rank, CrewStanding s) {
     final onTimePct = (s.stats.onTimeRate * 100).round();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
+    final row = Container(
         padding: const EdgeInsets.all(RiseSpacing.cardPad),
         decoration: BoxDecoration(
           color: s.isMe ? RiseColors.accentSoft : RiseColors.card,
@@ -1274,7 +1273,26 @@ class _LeaderboardSection extends ConsumerWidget {
             ),
           ],
         ),
-      ),
+      );
+    // Tap a crew member's row to open their detail page. Your own row (isMe)
+    // isn't a friend to inspect, so it stays non-navigating.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: s.isMe
+          ? row
+          : GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => FriendDetailScreen(
+                        member: CrewMember(
+                          id: s.id,
+                          username: s.username,
+                          displayName: s.displayName,
+                          avatarColor: s.avatarColor,
+                        ),
+                      ))),
+              child: row,
+            ),
     );
   }
 }
