@@ -173,6 +173,16 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
               selected: draft.missionDiff,
               onChanged: (d) => _update(draft.copyWith(missionDiff: d)),
             )),
+          if (draft.mission != 'none')
+            _section('Repeat mission', SegmentedControl<int>(
+              segments: const [
+                (value: 1, label: '1×'),
+                (value: 2, label: '2×'),
+                (value: 3, label: '3×'),
+              ],
+              selected: draft.missionCount,
+              onChanged: (n) => _update(draft.copyWith(missionCount: n)),
+            )),
           const SizedBox(height: 20),
           RiseCard(
             radius: RiseRadii.base,

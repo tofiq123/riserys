@@ -208,6 +208,34 @@ void main() {
     expect(calls, 2);
   });
 
+  testWidgets('a 2-mission chain requires two completions before dismissal',
+      (t) async {
+    int? dismissed;
+    await t.pumpWidget(_host(
+      alarms: const [
+        Alarm(id: 7, hour: 6, minute: 30, mission: 'math', missionCount: 2)
+      ],
+      alarmId: 7,
+      dismissAlarm: (id) async => dismissed = id,
+      // A fresh solvable button is built on each rebuild (the gate re-keys on
+      // each completion), so the same finder solves each rep of the chain.
+      missionBuilder: (context, alarm, onSolved, onAlertness) =>
+          TextButton(onPressed: onSolved, child: const Text('SOLVE')),
+    ));
+    await t.pump();
+    expect(find.text('1 of 2'), findsOneWidget);
+    await t.tap(find.text('SOLVE')); // first of two completions
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(dismissed, isNull,
+        reason: 'a chain must not dismiss until every rep is done');
+    expect(find.text('2 of 2'), findsOneWidget);
+    await t.tap(find.text('SOLVE')); // second completion → dismiss
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(dismissed, 7);
+  });
+
   testWidgets('with record: opens on mount and finalizes "slide" on a slide dismiss',
       (t) async {
     final rec = _RecordingRecorder();

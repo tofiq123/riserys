@@ -62,6 +62,16 @@ void main() {
       expect(b.minute, 30); // unrelated field preserved
       expect(a == a.copyWith(), isTrue); // equality includes the new fields
     });
+
+    test('missionCount defaults to 1 and round-trips through copyWith/equality', () {
+      const a = Alarm(id: 1, hour: 6, minute: 30);
+      expect(a.missionCount, 1);
+      final b = a.copyWith(missionCount: 3);
+      expect(b.missionCount, 3);
+      expect(b.hour, 6); // unrelated field preserved
+      expect(a == b, isFalse); // equality includes missionCount
+      expect(a.hashCode == b.hashCode, isFalse);
+    });
   });
 
   group('Alarm snoozedUntil', () {

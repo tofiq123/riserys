@@ -32,6 +32,10 @@ class Alarms extends Table {
   TextColumn get mission => text().withDefault(const Constant('none'))();
   TextColumn get missionDiff => text().withDefault(const Constant('easy'))();
 
+  /// How many times the mission must be completed in a row before dismissal —
+  /// a mission "chain" (1–3; added in schema v7). Default 1 = unchanged.
+  IntColumn get missionCount => integer().withDefault(const Constant(1))();
+
   /// When set (UTC), the alarm's next firing is this instant instead of its
   /// schedule — a deferred re-ring from a snooze (added in schema v4).
   DateTimeColumn get snoozedUntil => dateTime().nullable()();
@@ -89,7 +93,7 @@ class RiseDatabase extends _$RiseDatabase {
   RiseDatabase(super.e);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -148,6 +152,18 @@ class RiseDatabase extends _$RiseDatabase {
           if (from < 6) {
             if (!await _tableExists('excused_days')) {
               await m.createTable(excusedDays);
+            }
+          }
+
+          // v6 -> v7: the mission_count column on alarms (mission chains).
+          // Idempotent like the other add-column migrations — a losing isolate
+          // (or a partial prior run) that finds it present skips the ALTER
+          // rather than crashing on "duplicate column name". Existing rows keep
+          // the default of 1 (a single completion — unchanged behavior).
+          if (from < 7) {
+            final existing = await _columnNames('alarms');
+            if (!existing.contains('mission_count')) {
+              await m.addColumn(alarms, alarms.missionCount);
             }
           }
         },

@@ -35,6 +35,7 @@ class AlarmRepository {
         vibrate: row.vibrate,
         mission: row.mission,
         missionDiff: row.missionDiff,
+        missionCount: row.missionCount,
         lastDismissedAt: row.lastDismissedAt,
         snoozedUntil: row.snoozedUntil,
       );
@@ -61,6 +62,7 @@ class AlarmRepository {
       vibrate: Value(alarm.vibrate),
       mission: Value(alarm.mission),
       missionDiff: Value(alarm.missionDiff),
+      missionCount: Value(alarm.missionCount),
       lastDismissedAt: Value(alarm.lastDismissedAt),
       snoozedUntil: Value(alarm.snoozedUntil),
     );

@@ -116,6 +116,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
   Timer? _clock;
   bool _dismissing = false;
   int _attempt = 0; // bumped on a failed dismissal to reset the slider
+  int _completions = 0; // missions solved so far in a chain (missionCount > 1)
 
   /// The alertness score reported by the mission (PVT only), captured here so
   /// [_dismiss] can persist it. null = the mission produced no score.
@@ -193,6 +194,21 @@ class _RingScreenState extends ConsumerState<RingScreen>
     }
     if (!mounted) return;
     widget.onDismissed?.call();
+  }
+
+  /// One mission in a chain was completed. Dismisses once [missionCount]
+  /// completions are reached; otherwise rebuilds a fresh mission instance (the
+  /// bumped `_completions` changes the gate's key, resetting it) for the next
+  /// rep. The anti-trap invariant holds: reaching the count always dismisses,
+  /// and nothing but the count gates dismissal. A PVT chain keeps the last
+  /// reported alertness score, since `_pendingAlertness` survives the rebuild.
+  void _onMissionSolved(int missionCount) {
+    if (_dismissing) return; // a dismiss is already in flight
+    if (_completions + 1 >= missionCount) {
+      _dismiss('mission');
+    } else {
+      setState(() => _completions++);
+    }
   }
 
   Future<void> _snooze(Duration d) async {
@@ -284,12 +300,16 @@ class _RingScreenState extends ConsumerState<RingScreen>
     );
     if (!reduce) bell = ScaleTransition(scale: _pulse, child: bell);
 
+    final isMissioned = alarm != null &&
+        alarm.mission != 'none' &&
+        widget.missionBuilder != null;
+    final missionCount = alarm?.missionCount ?? 1;
     final gate = KeyedSubtree(
-      key: ValueKey(_attempt),
-      child: (alarm != null &&
-              alarm.mission != 'none' &&
-              widget.missionBuilder != null)
-          ? widget.missionBuilder!(context, alarm, () => _dismiss('mission'),
+      // Both counters bump the key so a fresh mission instance is built: a
+      // failed dismissal resets the current rep, a completion advances the chain.
+      key: ValueKey('$_attempt-$_completions'),
+      child: isMissioned
+          ? widget.missionBuilder!(context, alarm, () => _onMissionSolved(missionCount),
               (score) => _pendingAlertness = score)
           : SlideToWake(onWake: () => _dismiss('slide')),
     );
@@ -323,6 +343,12 @@ class _RingScreenState extends ConsumerState<RingScreen>
                 _planReminder(settings.wakeIntention),
               ],
               const Spacer(),
+              if (isMissioned && missionCount > 1) ...[
+                Text('${_completions + 1} of $missionCount',
+                    style: RiseText.mono(
+                        size: 14, color: RiseColors.textDim)),
+                const SizedBox(height: 12),
+              ],
               gate,
               if (canSnooze) _snoozeButton(snoozeMinutes),
             ],
