@@ -31,6 +31,24 @@ void main() {
     expect(c.read(settingsProvider).wakeCheckEnabled, isFalse);
   });
 
+  test('SettingsController sets and clears the steady wake time', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    final c = ProviderContainer(
+        overrides: [appSettingsProvider.overrideWithValue(store)]);
+    addTearDown(c.dispose);
+
+    expect(c.read(settingsProvider).hasTargetWake, isFalse);
+    await c.read(settingsProvider.notifier).setTargetWakeTime(6, 15);
+    expect(c.read(settingsProvider).targetWakeHour, 6);
+    expect(c.read(settingsProvider).targetWakeMinute, 15);
+    expect((await AppSettings.load()).targetWakeHour, 6); // persisted
+
+    await c.read(settingsProvider.notifier).clearTargetWakeTime();
+    expect(c.read(settingsProvider).hasTargetWake, isFalse);
+    expect((await AppSettings.load()).targetWakeHour, isNull);
+  });
+
   test(
       'currentSettingsProvider falls back to defaults when the store is unavailable',
       () {

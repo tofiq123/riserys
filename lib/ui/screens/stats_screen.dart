@@ -3,12 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/excused_days_repository.dart';
 import '../../domain/crew_standing.dart';
+import '../../domain/rise_settings.dart';
 import '../../domain/streak.dart';
 import '../../domain/wake_event.dart';
+import '../../domain/wake_insights.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
 import '../state/auth_providers.dart';
 import '../state/leaderboard_providers.dart';
+import '../state/settings_providers.dart';
 import '../state/wake_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
@@ -94,6 +97,7 @@ class StatsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final streak = ref.watch(streakProvider);
     final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
+    final settings = ref.watch(currentSettingsProvider);
     final now = DateTime.now();
 
     return SafeArea(
@@ -119,6 +123,7 @@ class StatsScreen extends ConsumerWidget {
             Text(consistencyLine(events, now), style: RiseText.caption),
             const SizedBox(height: 14),
             _weekChart(weekWakes(events, now)),
+            ..._insightsWidgets(events, settings),
             const SizedBox(height: 24),
             const SectionLabel('Alertness'),
             const SizedBox(height: 12),
@@ -193,6 +198,48 @@ class StatsScreen extends ConsumerWidget {
           Text(label, style: RiseText.caption),
         ],
       );
+
+  /// Honest, plain-language observations from the wake log — shown only once
+  /// there's enough data to be meaningful. Never diagnostic or judgemental.
+  /// Returns an empty list (and renders nothing) below that threshold.
+  List<Widget> _insightsWidgets(List<WakeEvent> events, RiseSettings settings) {
+    final insights = buildWakeInsights(events,
+        targetWakeHour: settings.targetWakeHour,
+        targetWakeMinute: settings.targetWakeMinute);
+    if (insights.isEmpty) return const [];
+    return [
+      const SizedBox(height: 24),
+      const SectionLabel('Your patterns'),
+      const SizedBox(height: 6),
+      Text('A few honest observations — not judgements.',
+          style: RiseText.caption),
+      const SizedBox(height: 12),
+      for (final insight in insights) ...[
+        _insightCard(insight),
+        const SizedBox(height: 10),
+      ],
+    ];
+  }
+
+  Widget _insightCard(WakeInsight insight) => RiseCard(
+        radius: RiseRadii.base,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(_insightIcon(insight.kind),
+                size: 20, color: RiseColors.textDim),
+            const SizedBox(width: 12),
+            Expanded(child: Text(insight.text, style: RiseText.body)),
+          ],
+        ),
+      );
+
+  IconData _insightIcon(WakeInsightKind kind) => switch (kind) {
+        WakeInsightKind.onTime => Icons.check_circle_outline,
+        WakeInsightKind.goal => Icons.wb_sunny_outlined,
+        WakeInsightKind.weekdayWeekend => Icons.calendar_today_outlined,
+        WakeInsightKind.consistentDay => Icons.event_available_outlined,
+      };
 
   Widget _calendar(Map<DateTime, DayOutcome> byDay, DateTime now) {
     final today = _todayLocal(now);

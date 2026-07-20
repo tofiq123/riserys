@@ -40,6 +40,16 @@ class SettingsController extends StateNotifier<RiseSettings> {
     await _store.setWakeIntention(trimmed);
     state = state.copyWith(wakeIntention: trimmed);
   }
+
+  Future<void> setTargetWakeTime(int hour, int minute) async {
+    await _store.setTargetWakeTime(hour, minute);
+    state = state.copyWith(targetWakeHour: hour, targetWakeMinute: minute);
+  }
+
+  Future<void> clearTargetWakeTime() async {
+    await _store.clearTargetWakeTime();
+    state = state.copyWith(clearTargetWake: true);
+  }
 }
 
 final settingsProvider =

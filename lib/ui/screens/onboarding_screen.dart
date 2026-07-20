@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/permission_gateway.dart';
+import '../../domain/alarm.dart';
 import '../components/permissions_section.dart';
 import '../components/rise_buttons.dart';
+import '../components/rise_card.dart';
+import '../components/time_dial.dart';
 import '../state/settings_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
@@ -27,7 +30,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _intention = TextEditingController();
   int _page = 0;
 
-  static const _lastPage = 3;
+  /// The optional steady wake time (24-hour), or null until the user opts in.
+  int? _goalHour;
+  int? _goalMinute;
+
+  static const _lastPage = 4;
 
   /// Tappable starters for the implementation-intention prompt.
   static const _suggestions = [
@@ -52,14 +59,21 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
   }
 
-  /// Persists the (optional) intention, then hands off to [OnboardingScreen.onDone].
-  /// The persist is best-effort: a settings failure must never trap the user in
-  /// onboarding.
+  /// Persists the (optional) intention and steady wake time, then hands off to
+  /// [OnboardingScreen.onDone]. Each persist is best-effort: a settings failure
+  /// must never trap the user in onboarding.
   void _finish() {
     final text = _intention.text.trim();
     if (text.isNotEmpty) {
       try {
         ref.read(settingsProvider.notifier).setWakeIntention(text);
+      } catch (_) {}
+    }
+    if (_goalHour != null && _goalMinute != null) {
+      try {
+        ref
+            .read(settingsProvider.notifier)
+            .setTargetWakeTime(_goalHour!, _goalMinute!);
       } catch (_) {}
     }
     widget.onDone();
@@ -99,6 +113,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         'Turn your alarm off with a quick mission — a little math, a pattern, or a button hold. A gentle nudge past the half-asleep swipe.',
                   ),
                   _intentionPage(),
+                  _sleepGoalPage(),
                   _permissionsPage(),
                 ],
               ),
@@ -208,6 +223,78 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 color: selected ? RiseColors.text : RiseColors.textDim,
                 fontWeight: FontWeight.w600)),
       ),
+    );
+  }
+
+  /// The steady-wake-time step. A consistent wake time is a gentle rhythm
+  /// anchor — framed as general wellness, never a treatment. Fully optional and
+  /// skippable; the user opts in explicitly before any time is captured.
+  Widget _sleepGoalPage() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+          RiseSpacing.screen, 12, RiseSpacing.screen, 12),
+      children: [
+        Text('Aim for a steady wake time', style: RiseText.title),
+        const SizedBox(height: 8),
+        Text(
+            'Waking around the same time most days helps your body settle into '
+            'a rhythm. Set a gentle anchor if you\'d like — it\'s just for you.',
+            style: RiseText.body.copyWith(color: RiseColors.textDim)),
+        const SizedBox(height: 20),
+        if (_goalHour == null)
+          GestureDetector(
+            key: const Key('sleep-goal-add'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() {
+              _goalHour = 7;
+              _goalMinute = 0;
+            }),
+            child: RiseCard(
+              child: Row(
+                children: [
+                  const Icon(Icons.wb_sunny_outlined,
+                      color: RiseColors.waking, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text('Set a steady wake time',
+                        style: RiseText.body
+                            .copyWith(fontWeight: FontWeight.w600)),
+                  ),
+                  const Icon(Icons.add, color: RiseColors.textFaint, size: 20),
+                ],
+              ),
+            ),
+          )
+        else ...[
+          RiseCard(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            child: TimeDial(
+              value: (
+                hour12: _goalHour! % 12 == 0 ? 12 : _goalHour! % 12,
+                minute: _goalMinute!,
+                isAm: _goalHour! < 12,
+              ),
+              onChanged: (t) => setState(() {
+                _goalHour = Alarm.to24Hour(t.hour12, t.isAm);
+                _goalMinute = t.minute;
+              }),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: GhostButton(
+              label: 'Remove',
+              onPressed: () => setState(() {
+                _goalHour = null;
+                _goalMinute = null;
+              }),
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        Text('Optional — you can set or change this later in Settings.',
+            style: RiseText.caption),
+      ],
     );
   }
 
