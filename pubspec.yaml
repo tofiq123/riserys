@@ -61,6 +61,7 @@ dependencies:
   # Reads Build.MANUFACTURER for the Setup Guardian's OEM-aware battery
   # guidance (Phase 12). No runtime permission required.
   device_info_plus: ^11.5.0
+  purchases_flutter: ^10.4.2
 
 dev_dependencies:
   flutter_test:
