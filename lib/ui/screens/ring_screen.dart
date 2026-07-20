@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/alarm_sync_service.dart';
+import '../../data/motion_sensor.dart';
 import '../../data/native/alarm_api.g.dart';
 import '../../data/snooze.dart';
 import '../../domain/adaptive_difficulty.dart';
 import '../../domain/alarm.dart';
+import '../../domain/wake_confidence.dart';
 import '../../domain/wake_event.dart';
 import '../components/slide_to_wake.dart';
 import '../state/alarm_providers.dart';
@@ -72,6 +74,36 @@ Future<void> defaultArmWakeCheck(Alarm alarm, Duration delay) async {
   );
 }
 
+/// Decides the opt-in smart wake-check outcome: is the post-dismissal stay-up
+/// check satisfied, or do we fall back to the ordinary wake-check re-ring?
+/// Injectable for tests; the default is [defaultStayUpDecision].
+typedef StayUpDecider = Future<WakeChallengeDecision> Function(
+    Alarm alarm, Duration window, int? alertnessScore);
+
+/// DEVICE-ONLY default for the smart wake-check (Phase 11), used only when the
+/// user opts in. Best-effort: senses sustained motion over [window] via the
+/// pedometer, fuses it with the dismissal's [alertnessScore], and returns the
+/// challenge decision. Any failure — or simply no clear "they got up" signal —
+/// resolves to [WakeChallengeDecision.reCheck], the safe fall-back to a re-ring.
+///
+/// App-interaction sensing is not wired here (treated as false, the
+/// conservative default), so today motion + alertness drive the decision; the
+/// fusion already accepts it for a later device wiring.
+Future<WakeChallengeDecision> defaultStayUpDecision(
+    Alarm alarm, Duration window, int? alertnessScore) async {
+  var sustained = false;
+  try {
+    sustained = await const MotionSensor().sensedSustainedMotion(window);
+  } catch (_) {
+    sustained = false; // unknown → conservative
+  }
+  return wakeChallengeDecision(
+    sustainedMotion: sustained,
+    appInteracted: false,
+    alertnessScore: alertnessScore,
+  );
+}
+
 class RingScreen extends ConsumerStatefulWidget {
   const RingScreen({
     super.key,
@@ -82,6 +114,7 @@ class RingScreen extends ConsumerStatefulWidget {
     this.record = false,
     this.snooze = snoozeAlarm,
     this.armWakeCheck = defaultArmWakeCheck,
+    this.stayUpDecision = defaultStayUpDecision,
   });
 
   final int alarmId;
@@ -107,6 +140,12 @@ class RingScreen extends ConsumerStatefulWidget {
   /// Arms the "still up?" check after a real dismissal. Injectable for tests;
   /// defaults to [defaultArmWakeCheck].
   final Future<void> Function(Alarm alarm, Duration delay) armWakeCheck;
+
+  /// Decides the smart stay-up outcome when the smart wake-check setting is on.
+  /// Injectable for tests; defaults to [defaultStayUpDecision] (device-only
+  /// motion sensing). Never consulted when smart wake-check is off, so the
+  /// default path is byte-for-byte unchanged.
+  final StayUpDecider stayUpDecision;
 
   @override
   ConsumerState<RingScreen> createState() => _RingScreenState();
@@ -185,17 +224,50 @@ class _RingScreenState extends ConsumerState<RingScreen>
             .value
             ?.firstWhereOrNull((a) => a.id == widget.alarmId);
         if (alarm != null) {
-          try {
-            await widget.armWakeCheck(
-                alarm, Duration(minutes: settings.wakeCheckDelayMinutes));
-          } catch (e) {
-            debugPrint('Rise: wake-check schedule failed for ${widget.alarmId}: $e');
+          final delay = Duration(minutes: settings.wakeCheckDelayMinutes);
+          if (settings.smartWakeCheck) {
+            // Opt-in smart path: sense over the window, then arm the re-ring
+            // ONLY if confidence is low/unknown. Detached so the ring screen
+            // closes immediately (the sensing outlives it); best-effort.
+            unawaited(_runSmartStayUp(alarm, delay, _pendingAlertness));
+          } else {
+            // Default path — unchanged: arm the native wake-check now.
+            try {
+              await widget.armWakeCheck(alarm, delay);
+            } catch (e) {
+              debugPrint(
+                  'Rise: wake-check schedule failed for ${widget.alarmId}: $e');
+            }
           }
         }
       }
     }
     if (!mounted) return;
     widget.onDismissed?.call();
+  }
+
+  /// The opt-in smart stay-up check. Best-effort and detached from the ring
+  /// screen's lifecycle (it may outlive the popped screen): it senses over the
+  /// window and, ONLY if confidence is low or unknown, arms the ordinary
+  /// wake-check re-ring — the exact same [armWakeCheck] path as today. It never
+  /// suppresses a needed re-ring: any sensing error defaults to re-check. Uses
+  /// only the injected callbacks (no `ref`/`context`), so it is safe post-dispose.
+  Future<void> _runSmartStayUp(
+      Alarm alarm, Duration delay, int? alertness) async {
+    WakeChallengeDecision decision;
+    try {
+      decision = await widget.stayUpDecision(alarm, delay, alertness);
+    } catch (e) {
+      debugPrint('Rise: smart stay-up sense failed for ${alarm.id}: $e');
+      decision = WakeChallengeDecision.reCheck; // conservative
+    }
+    if (decision == WakeChallengeDecision.reCheck) {
+      try {
+        await widget.armWakeCheck(alarm, delay);
+      } catch (e) {
+        debugPrint('Rise: wake-check schedule failed for ${alarm.id}: $e');
+      }
+    }
   }
 
   /// One mission in a chain was completed. Dismisses once [missionCount]

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/wake_recorder.dart';
 import 'package:rise/domain/alarm.dart';
 import 'package:rise/domain/rise_settings.dart';
+import 'package:rise/domain/wake_confidence.dart';
 import 'package:rise/domain/wake_event.dart';
 import 'package:rise/ui/components/slide_to_wake.dart';
 import 'package:rise/ui/screens/ring_screen.dart';
@@ -43,6 +44,7 @@ Widget _host({
   bool record = false,
   WakeRecorder? recorder,
   Future<void> Function(Alarm, Duration)? armWakeCheck,
+  StayUpDecider? stayUpDecision,
 }) {
   return ProviderScope(
     overrides: [
@@ -60,6 +62,7 @@ Widget _host({
         snooze: snooze ?? (_, __) async {},
         record: record,
         armWakeCheck: armWakeCheck ?? (_, __) async {},
+        stayUpDecision: stayUpDecision ?? defaultStayUpDecision,
       ),
     ),
   );
@@ -585,5 +588,133 @@ void main() {
     await t.pump();
     await t.pump(const Duration(milliseconds: 20));
     expect(armedCount, 0);
+  });
+
+  // ---- Phase 11: opt-in smart wake-check (stay-up verification) ----
+
+  testWidgets('smart wake-check on: a confident stay-up decision skips the re-ring',
+      (t) async {
+    var armedCount = 0;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      record: true,
+      recorder: _RecordingRecorder(),
+      settings:
+          const RiseSettings(wakeCheckEnabled: true, smartWakeCheck: true),
+      stayUpDecision: (_, __, ___) async => WakeChallengeDecision.confident,
+      armWakeCheck: (_, __) async => armedCount++,
+      onDismissed: () {},
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(armedCount, 0, reason: 'strong stay-up confidence suppresses the re-ring');
+  });
+
+  testWidgets(
+      'smart wake-check on: a low/unknown decision falls back to the ordinary re-ring',
+      (t) async {
+    Alarm? armed;
+    Duration? delay;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      record: true,
+      recorder: _RecordingRecorder(),
+      settings: const RiseSettings(
+          wakeCheckEnabled: true, smartWakeCheck: true, wakeCheckDelayMinutes: 7),
+      stayUpDecision: (_, __, ___) async => WakeChallengeDecision.reCheck,
+      armWakeCheck: (a, d) async {
+        armed = a;
+        delay = d;
+      },
+      onDismissed: () {},
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(armed?.id, 5); // same alarm, same delay as the ordinary check
+    expect(delay, const Duration(minutes: 7));
+  });
+
+  testWidgets(
+      'smart wake-check on: a failing decider still arms the re-ring (safe default)',
+      (t) async {
+    var armedCount = 0;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      record: true,
+      recorder: _RecordingRecorder(),
+      settings:
+          const RiseSettings(wakeCheckEnabled: true, smartWakeCheck: true),
+      stayUpDecision: (_, __, ___) async => throw StateError('sensor down'),
+      armWakeCheck: (_, __) async => armedCount++,
+      onDismissed: () {},
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(armedCount, 1, reason: 'a sensing failure must never suppress the re-ring');
+  });
+
+  testWidgets(
+      'smart wake-check off (default): arms immediately and never consults the decider',
+      (t) async {
+    var armedCount = 0;
+    var deciderCalls = 0;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+      alarmId: 5,
+      record: true,
+      recorder: _RecordingRecorder(),
+      settings: const RiseSettings(wakeCheckEnabled: true), // smart defaults off
+      stayUpDecision: (_, __, ___) async {
+        deciderCalls++;
+        return WakeChallengeDecision.confident;
+      },
+      armWakeCheck: (_, __) async => armedCount++,
+      onDismissed: () {},
+    ));
+    await t.pump();
+    await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(armedCount, 1, reason: 'off = exactly today\'s behavior');
+    expect(deciderCalls, 0);
+  });
+
+  testWidgets('smart wake-check on: threads the PVT alertness score into the decider',
+      (t) async {
+    int? seenAlertness;
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 7, hour: 6, minute: 30, mission: 'pvt')],
+      alarmId: 7,
+      record: true,
+      recorder: _RecordingRecorder(),
+      settings:
+          const RiseSettings(wakeCheckEnabled: true, smartWakeCheck: true),
+      missionBuilder: (context, alarm, onSolved, onAlertness) => TextButton(
+        onPressed: () {
+          onAlertness?.call(90);
+          onSolved();
+        },
+        child: const Text('SOLVE'),
+      ),
+      stayUpDecision: (_, __, alertness) async {
+        seenAlertness = alertness;
+        return WakeChallengeDecision.confident;
+      },
+      onDismissed: () {},
+    ));
+    await t.pump();
+    await t.tap(find.text('SOLVE'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 20));
+    expect(seenAlertness, 90);
   });
 }

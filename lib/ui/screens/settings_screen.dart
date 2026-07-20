@@ -108,6 +108,26 @@ class SettingsScreen extends ConsumerWidget {
                     onInc: () => ctrl.setWakeCheckDelayMinutes(
                         (s.wakeCheckDelayMinutes + 1).clamp(1, 30)),
                   ),
+                  const Divider(height: 20, color: RiseColors.divider),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Flexible(child: Text('Smart check', style: RiseText.body)),
+                      RiseSwitch(
+                          key: const Key('smart-wake-check-switch'),
+                          value: s.smartWakeCheck,
+                          onChanged: ctrl.setSmartWakeCheck),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                        'If you\'re clearly up and moving, Rise skips the '
+                        're-ring. Not sure? It gently checks in — '
+                        '"Still up? Let\'s make sure."',
+                        style: RiseText.caption),
+                  ),
                 ],
               ),
             ),

@@ -13,6 +13,24 @@ void main() {
     expect(s.targetWakeMinute, isNull);
     expect(s.hasTargetWake, isFalse);
     expect(s.adaptiveMissions, isFalse);
+    expect(s.smartWakeCheck, isFalse);
+  });
+
+  test('smartWakeCheck copyWith and equality', () {
+    const s = RiseSettings();
+    expect(s.copyWith(smartWakeCheck: true).smartWakeCheck, isTrue);
+    expect(const RiseSettings(smartWakeCheck: true) == const RiseSettings(),
+        isFalse);
+    expect(
+        const RiseSettings(smartWakeCheck: true).hashCode ==
+            const RiseSettings().hashCode,
+        isFalse);
+    // Unrelated copyWith preserves it.
+    expect(
+        const RiseSettings(smartWakeCheck: true)
+            .copyWith(snoozeMaxCount: 2)
+            .smartWakeCheck,
+        isTrue);
   });
 
   test('adaptiveMissions copyWith and equality', () {

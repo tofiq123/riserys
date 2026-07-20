@@ -72,6 +72,23 @@ void main() {
     expect(store.adaptiveMissions, isTrue);
   });
 
+  testWidgets('toggling the smart wake-check persists it (default off)',
+      (t) async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    await _pump(
+        t,
+        ProviderScope(
+          overrides: [appSettingsProvider.overrideWithValue(store)],
+          child: const MaterialApp(home: SettingsScreen()),
+        ));
+    await t.pump();
+    expect(store.smartWakeCheck, isFalse); // default off
+    await t.tap(find.byKey(const Key('smart-wake-check-switch')));
+    await t.pump();
+    expect(store.smartWakeCheck, isTrue);
+  });
+
   testWidgets('editing the wake plan persists it', (t) async {
     SharedPreferences.setMockInitialValues({});
     final store = await AppSettings.load();
