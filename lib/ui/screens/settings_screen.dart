@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/alarm.dart';
 import '../../domain/clock_format.dart';
+import '../../domain/premium_feature.dart';
 import '../../domain/rise_settings.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
@@ -10,9 +11,11 @@ import '../components/rise_switch.dart';
 import '../components/section_label.dart';
 import '../components/segmented.dart';
 import '../components/time_dial.dart';
+import '../state/entitlement_providers.dart';
 import '../state/settings_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import 'paywall_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -21,6 +24,13 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(settingsProvider);
     final ctrl = ref.read(settingsProvider.notifier);
+
+    // Smart wake-check and adaptive difficulty are premium. The plain wake-check
+    // (re-ring) and completing any mission stay free — reliability is never
+    // gated. Unconfigured/unlocked → both false, so behaviour is unchanged.
+    final gate = ref.watch(premiumGateProvider);
+    final smartLocked = !gate.canUse(PremiumFeature.smartWakeCheck);
+    final adaptiveLocked = !gate.canUse(PremiumFeature.adaptiveDifficulty);
 
     return Scaffold(
       backgroundColor: RiseColors.appBg,
@@ -112,11 +122,17 @@ class SettingsScreen extends ConsumerWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Flexible(child: Text('Smart check', style: RiseText.body)),
+                      Flexible(child: _gatedLabel('Smart check', smartLocked)),
                       RiseSwitch(
                           key: const Key('smart-wake-check-switch'),
                           value: s.smartWakeCheck,
-                          onChanged: ctrl.setSmartWakeCheck),
+                          onChanged: (v) {
+                            if (v && smartLocked) {
+                              openPaywall(context);
+                              return;
+                            }
+                            ctrl.setSmartWakeCheck(v);
+                          }),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -162,11 +178,17 @@ class SettingsScreen extends ConsumerWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Adaptive difficulty', style: RiseText.body),
+                  _gatedLabel('Adaptive difficulty', adaptiveLocked),
                   RiseSwitch(
                       key: const Key('adaptive-missions-switch'),
                       value: s.adaptiveMissions,
-                      onChanged: ctrl.setAdaptiveMissions),
+                      onChanged: (v) {
+                        if (v && adaptiveLocked) {
+                          openPaywall(context);
+                          return;
+                        }
+                        ctrl.setAdaptiveMissions(v);
+                      }),
                 ],
               ),
             ),
@@ -203,6 +225,19 @@ class SettingsScreen extends ConsumerWidget {
       ],
     );
   }
+
+  /// A row label that grows a small lock glyph when the adjacent control is a
+  /// premium-gated toggle. Purely a signpost — the gate itself is on the toggle.
+  Widget _gatedLabel(String text, bool locked) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(child: Text(text, style: RiseText.body)),
+          if (locked) ...[
+            const SizedBox(width: 6),
+            const Icon(Icons.lock_outline, size: 14, color: RiseColors.textDim),
+          ],
+        ],
+      );
 
   Widget _stepBtn(IconData icon, Key key, VoidCallback onTap) => GestureDetector(
         key: key,

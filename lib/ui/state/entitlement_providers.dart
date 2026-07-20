@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/revenuecat_config.dart';
 import '../../data/iap/entitlement_service.dart';
 import '../../data/iap/revenuecat_entitlement_service.dart';
+import '../../domain/premium_feature.dart';
 
 /// The app's [EntitlementService]. Configured → a real
 /// [RevenueCatEntitlementService]; otherwise an [UnlockedEntitlementService]
@@ -28,4 +29,23 @@ final isPremiumProvider = StreamProvider<bool>((ref) {
 /// offerings are set up — the paywall then shows placeholder pricing.
 final premiumOffersProvider = FutureProvider<List<PremiumOffer>>((ref) {
   return ref.watch(entitlementServiceProvider).offers();
+});
+
+/// The feature-gate helper: `canUse(feature)` is the one call every gate uses.
+/// A free feature is always usable; a premium feature needs an active
+/// entitlement. Unconfigured (and while loading) → premium, so nothing is
+/// locked — the graceful-degrade default.
+class PremiumGate {
+  const PremiumGate(this.isPremium);
+
+  final bool isPremium;
+
+  bool canUse(PremiumFeature feature) => isPremium || feature.isFree;
+}
+
+final premiumGateProvider = Provider<PremiumGate>((ref) {
+  // `?? true` covers the loading/error window so a gate never locks a feature
+  // before the entitlement stream has reported — reliability of the UX first.
+  final isPremium = ref.watch(isPremiumProvider).value ?? true;
+  return PremiumGate(isPremium);
 });

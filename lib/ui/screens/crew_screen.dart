@@ -6,16 +6,19 @@ import '../../data/nudge/nudge_service.dart';
 import '../../domain/crew_member.dart';
 import '../../domain/crew_state.dart';
 import '../../domain/crew_status.dart';
+import '../../domain/premium_feature.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
 import '../state/auth_providers.dart';
 import '../state/crew_providers.dart';
+import '../state/entitlement_providers.dart';
 import '../state/nudge_providers.dart';
 import '../state/status_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'friend_detail_screen.dart';
+import 'paywall_screen.dart';
 
 /// The Crew tab: add friends by username, manage requests, and see your crew.
 /// Signed out (or unconfigured) shows a prompt directing to the Profile tab.
@@ -85,16 +88,29 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
     }
   }
 
-  Future<void> _add(CrewMember m) => _run(() async {
-        await ref.read(crewServiceProvider).sendRequest(m.id);
-        if (!mounted) return;
-        _query.clear();
-        setState(() {
-          _found = null;
-          _searchMessage = null;
-        });
-        _snack('Request sent to @${m.username}.');
+  Future<void> _add(CrewMember m) {
+    // Free crew tops out at [kFreeCrewLimit]; a further add needs Premium. The
+    // gate counts accepted friends only (pending requests don't consume a seat).
+    // Unconfigured/unlocked → canUse is true, so there's no limit.
+    final gate = ref.read(premiumGateProvider);
+    final friendCount =
+        (ref.read(crewProvider).value ?? CrewState.empty).friends.length;
+    if (!gate.canUse(PremiumFeature.unlimitedCrew) &&
+        friendCount >= kFreeCrewLimit) {
+      openPaywall(context);
+      return Future.value();
+    }
+    return _run(() async {
+      await ref.read(crewServiceProvider).sendRequest(m.id);
+      if (!mounted) return;
+      _query.clear();
+      setState(() {
+        _found = null;
+        _searchMessage = null;
       });
+      _snack('Request sent to @${m.username}.');
+    });
+  }
 
   Future<void> _accept(String id) =>
       _run(() => ref.read(crewServiceProvider).acceptRequest(id));

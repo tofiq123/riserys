@@ -12,6 +12,7 @@ import '../../domain/crew_score.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/crew_state.dart';
 import '../../domain/period_stats.dart';
+import '../../domain/premium_feature.dart';
 import '../../domain/rise_settings.dart';
 import '../../domain/streak.dart';
 import '../../domain/streak_risk.dart';
@@ -25,6 +26,7 @@ import '../components/sparkline.dart';
 import '../share/stats_share.dart';
 import '../state/auth_providers.dart';
 import '../state/crew_providers.dart';
+import '../state/entitlement_providers.dart';
 import '../state/leaderboard_providers.dart';
 import '../state/nudge_providers.dart';
 import '../state/settings_providers.dart';
@@ -33,6 +35,36 @@ import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'friend_detail_screen.dart';
+import 'paywall_screen.dart';
+
+/// A tappable "this is premium" card that routes to the paywall. Used where a
+/// premium section would otherwise render, so the value is visible but locked.
+Widget premiumLockCard(BuildContext context, String label) => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => openPaywall(context),
+      child: RiseCard(
+        child: Row(
+          children: [
+            const Icon(Icons.lock_outline, size: 20, color: RiseColors.textDim),
+            const SizedBox(width: 12),
+            Expanded(
+                child: Text(label,
+                    style:
+                        RiseText.body.copyWith(fontWeight: FontWeight.w600))),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: RiseColors.primary,
+                borderRadius: BorderRadius.circular(RiseRadii.pill),
+              ),
+              child: Text('PREMIUM',
+                  style: RiseText.sectionLabel
+                      .copyWith(fontSize: 9, color: RiseColors.primaryText)),
+            ),
+          ],
+        ),
+      ),
+    );
 
 DateTime _todayLocal(DateTime now) {
   final l = now.toLocal();
@@ -121,6 +153,10 @@ class StatsScreen extends ConsumerWidget {
     final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
     final settings = ref.watch(currentSettingsProvider);
     final now = DateTime.now();
+    // Alertness history/trends is premium; the basic latest-score card stays
+    // free (the PVT hook). Unconfigured/unlocked → true, unchanged behaviour.
+    final trendUnlocked =
+        ref.watch(premiumGateProvider).canUse(PremiumFeature.alertnessHistory);
 
     return SafeArea(
       child: ListView(
@@ -161,7 +197,7 @@ class StatsScreen extends ConsumerWidget {
             const SectionLabel('Alertness'),
             const SizedBox(height: 12),
             _alertnessCard(events),
-            ..._alertnessTrendWidgets(events),
+            ..._alertnessTrendWidgets(context, events, locked: !trendUnlocked),
           ],
           const SizedBox(height: 24),
           const _LeaderboardSection(),
@@ -500,12 +536,26 @@ class StatsScreen extends ConsumerWidget {
   /// A longer-horizon alertness trend beyond the single Alertness card: a
   /// sparkline of the recent scores plus a plain-language direction. Hidden
   /// until there are enough scores for a trend to mean anything.
-  List<Widget> _alertnessTrendWidgets(List<WakeEvent> events) {
+  List<Widget> _alertnessTrendWidgets(BuildContext context,
+      List<WakeEvent> events,
+      {required bool locked}) {
     final scored = [
       for (final e in events)
         if (e.alertnessScore != null) e
     ]..sort((a, b) => a.firstRingAt.compareTo(b.firstRingAt));
     if (scored.length < kMinTrendScores) return const [];
+
+    if (locked) {
+      return [
+        const SizedBox(height: 24),
+        const SectionLabel('Alertness trend'),
+        const SizedBox(height: 6),
+        Text('See how your wake-up reaction speed is trending over time.',
+            style: RiseText.caption),
+        const SizedBox(height: 12),
+        premiumLockCard(context, 'Alertness history & trends'),
+      ];
+    }
 
     final recent =
         scored.length > 14 ? scored.sublist(scored.length - 14) : scored;
@@ -770,11 +820,23 @@ class _OverviewSectionState extends ConsumerState<_OverviewSection> {
   Widget build(BuildContext context) {
     final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
     final stats = aggregatePeriod(events, DateTime.now(), _period);
+    // Weekly stats are free; the Month/Year views are premium. Locked → tapping
+    // them routes to the paywall and the view stays on Week.
+    final periodsLocked =
+        !ref.watch(premiumGateProvider).canUse(PremiumFeature.monthlyYearlyStats);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionLabel('Overview'),
+        Row(
+          children: [
+            const SectionLabel('Overview'),
+            if (periodsLocked) ...[
+              const SizedBox(width: 8),
+              const Icon(Icons.lock_outline, size: 13, color: RiseColors.textDim),
+            ],
+          ],
+        ),
         const SizedBox(height: 12),
         SegmentedControl<StatsPeriod>(
           segments: [
@@ -782,7 +844,13 @@ class _OverviewSectionState extends ConsumerState<_OverviewSection> {
               (value: p, label: periodLabel(p)),
           ],
           selected: _period,
-          onChanged: (p) => setState(() => _period = p),
+          onChanged: (p) {
+            if (p != StatsPeriod.week && periodsLocked) {
+              openPaywall(context);
+              return;
+            }
+            setState(() => _period = p);
+          },
         ),
         const SizedBox(height: 12),
         RiseCard(
@@ -894,6 +962,9 @@ class _ShareCardState extends ConsumerState<_ShareCard> {
         .toList();
     final account = ref.watch(accountProvider).value;
     final handle = account?.username != null ? '@${account!.username}' : null;
+    // The shareable card is premium; locked → tapping routes to the paywall.
+    final locked =
+        !ref.watch(premiumGateProvider).canUse(PremiumFeature.shareableCard);
 
     return Stack(
       clipBehavior: Clip.none,
@@ -901,7 +972,9 @@ class _ShareCardState extends ConsumerState<_ShareCard> {
         GestureDetector(
           key: const Key('share-stats-card'),
           behavior: HitTestBehavior.opaque,
-          onTap: _busy ? null : _share,
+          onTap: _busy
+              ? null
+              : (locked ? () => openPaywall(context) : _share),
           child: RiseCard(
             child: Row(
               children: [
@@ -927,6 +1000,9 @@ class _ShareCardState extends ConsumerState<_ShareCard> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
+                else if (locked)
+                  const Icon(Icons.lock_outline,
+                      color: RiseColors.textDim, size: 18)
                 else
                   const Icon(Icons.chevron_right,
                       color: RiseColors.textFaint, size: 20),
