@@ -51,6 +51,8 @@
 	<string>Rise uses the camera to scan your wake-up QR code.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Rise counts your steps to confirm you're up and moving.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Rise uses the microphone to record short voice clips you send to wake up your crew.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

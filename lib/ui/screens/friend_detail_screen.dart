@@ -16,6 +16,7 @@ import '../state/status_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import 'voice_composer_screen.dart';
 
 /// A single crew member's page: their live status, streak, on-time %, and how
 /// you two stack up, plus the same nudge / remove actions as the Crew list.
@@ -278,14 +279,27 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
         ),
       );
 
-  Widget _actions() => Row(
+  void _openVoiceComposer() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => VoiceComposerScreen(member: _member)));
+  }
+
+  Widget _actions() => Column(
         children: [
-          Expanded(
-            child: _button('Nudge', _nudging ? null : _nudge, filled: true),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _button('Remove', _removing ? null : _remove, danger: true),
+          _button('Send a voice clip 🎙️', _openVoiceComposer),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child:
+                    _button('Nudge', _nudging ? null : _nudge, filled: true),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _button('Remove', _removing ? null : _remove,
+                    danger: true),
+              ),
+            ],
           ),
         ],
       );

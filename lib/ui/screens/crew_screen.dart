@@ -15,12 +15,14 @@ import '../state/crew_providers.dart';
 import '../state/entitlement_providers.dart';
 import '../state/nudge_providers.dart';
 import '../state/status_providers.dart';
+import '../state/voice_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'friend_detail_screen.dart';
 import 'groups_tab.dart';
 import 'paywall_screen.dart';
+import 'voice_inbox_screen.dart';
 
 /// The two sub-views of the Crew tab.
 enum _CrewView { friends, groups }
@@ -178,6 +180,8 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
           if (_view == _CrewView.groups)
             const GroupsTab()
           else ...[
+            _voiceInboxTile(),
+            const SizedBox(height: 16),
             _addSection(),
             if (crew.incoming.isNotEmpty) ...[
               const SizedBox(height: 24),
@@ -224,6 +228,63 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
             ],
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _voiceInboxTile() {
+    final clips = ref.watch(voiceInboxProvider).value ?? const [];
+    final unread = clips.where((c) => !c.isPlayed).length;
+    return GestureDetector(
+      key: const Key('voice-inbox-tile'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const VoiceInboxScreen())),
+      child: RiseCard(
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                  color: RiseColors.accentSoft, shape: BoxShape.circle),
+              child: const Icon(Icons.graphic_eq,
+                  color: RiseColors.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Voice inbox',
+                      style:
+                          RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                  Text(
+                      unread > 0
+                          ? '$unread new ${unread == 1 ? 'clip' : 'clips'}'
+                          : 'Voice clips from your crew',
+                      style: RiseText.caption),
+                ],
+              ),
+            ),
+            if (unread > 0)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: RiseColors.primary,
+                    borderRadius: BorderRadius.circular(RiseRadii.pill)),
+                child: Text('$unread',
+                    style: RiseText.mono(
+                        size: 12,
+                        weight: FontWeight.w600,
+                        color: RiseColors.primaryText)),
+              ),
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right, color: RiseColors.textFaint),
+          ],
+        ),
       ),
     );
   }
