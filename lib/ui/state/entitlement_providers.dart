@@ -23,3 +23,9 @@ final entitlementServiceProvider = Provider<EntitlementService>((ref) {
 final isPremiumProvider = StreamProvider<bool>((ref) {
   return ref.watch(entitlementServiceProvider).isPremium();
 });
+
+/// The available upgrade offers for the paywall. Empty when unconfigured or no
+/// offerings are set up — the paywall then shows placeholder pricing.
+final premiumOffersProvider = FutureProvider<List<PremiumOffer>>((ref) {
+  return ref.watch(entitlementServiceProvider).offers();
+});

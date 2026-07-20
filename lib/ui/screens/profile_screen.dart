@@ -11,9 +11,11 @@ import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
 import '../state/auth_providers.dart';
+import '../state/entitlement_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import 'paywall_screen.dart';
 import 'setup_guardian_screen.dart';
 import 'wellbeing_checkin_screen.dart';
 
@@ -37,6 +39,8 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 16),
           const _AccountSection(),
           const SizedBox(height: 24),
+          const _PremiumEntry(),
+          const SizedBox(height: 12),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onSettings,
@@ -149,6 +153,51 @@ class ProfileScreen extends ConsumerWidget {
         Text(label, style: RiseText.body.copyWith(color: RiseColors.textDim)),
         Text(value, style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
       ],
+    );
+  }
+}
+
+/// The "Rise Premium" row: opens the paywall, or shows an "Active" state when
+/// premium (including the unconfigured graceful-degrade default, where everyone
+/// is premium). Never gates anything itself — just the way in.
+class _PremiumEntry extends ConsumerWidget {
+  const _PremiumEntry();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isPremium = ref.watch(isPremiumProvider).value ?? true;
+    return GestureDetector(
+      key: const Key('premium-entry'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => openPaywall(context),
+      child: RiseCard(
+        child: Row(
+          children: [
+            Icon(isPremium ? Icons.verified : Icons.workspace_premium_outlined,
+                color: isPremium ? RiseColors.primary : RiseColors.accent,
+                size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Rise Premium',
+                      style:
+                          RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(
+                      isPremium
+                          ? 'Active — everything unlocked'
+                          : 'Unlock every mission, deeper stats, and groups',
+                      style: RiseText.caption),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right,
+                color: RiseColors.textFaint, size: 20),
+          ],
+        ),
+      ),
     );
   }
 }
