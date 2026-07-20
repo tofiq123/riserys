@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/permission_gateway.dart';
 import '../components/permissions_section.dart';
 import '../components/rise_buttons.dart';
+import '../state/settings_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 
-class OnboardingScreen extends StatefulWidget {
+class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({
     super.key,
     required this.onDone,
@@ -17,18 +19,27 @@ class OnboardingScreen extends StatefulWidget {
   final PermissionGateway permissions;
 
   @override
-  State<OnboardingScreen> createState() => _OnboardingScreenState();
+  ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> {
+class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _controller = PageController();
+  final _intention = TextEditingController();
   int _page = 0;
 
-  static const _lastPage = 2;
+  static const _lastPage = 3;
+
+  /// Tappable starters for the implementation-intention prompt.
+  static const _suggestions = [
+    'Put my feet on the floor',
+    'Walk to the kitchen',
+    'Stand up and stretch',
+  ];
 
   @override
   void dispose() {
     _controller.dispose();
+    _intention.dispose();
     super.dispose();
   }
 
@@ -37,8 +48,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _controller.nextPage(
           duration: const Duration(milliseconds: 280), curve: Curves.easeOut);
     } else {
-      widget.onDone();
+      _finish();
     }
+  }
+
+  /// Persists the (optional) intention, then hands off to [OnboardingScreen.onDone].
+  /// The persist is best-effort: a settings failure must never trap the user in
+  /// onboarding.
+  void _finish() {
+    final text = _intention.text.trim();
+    if (text.isNotEmpty) {
+      try {
+        ref.read(settingsProvider.notifier).setWakeIntention(text);
+      } catch (_) {}
+    }
+    widget.onDone();
   }
 
   @override
@@ -53,7 +77,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: Padding(
                 padding: const EdgeInsets.only(right: 8, top: 4),
                 child: _page < _lastPage
-                    ? GhostButton(label: 'Skip', onPressed: widget.onDone)
+                    ? GhostButton(label: 'Skip', onPressed: _finish)
                     : const SizedBox(height: 44),
               ),
             ),
@@ -74,6 +98,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     body:
                         'Turn your alarm off with a quick mission — a little math, a pattern, or a button hold. A gentle nudge past the half-asleep swipe.',
                   ),
+                  _intentionPage(),
                   _permissionsPage(),
                 ],
               ),
@@ -116,6 +141,72 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               textAlign: TextAlign.center,
               style: RiseText.body.copyWith(color: RiseColors.textDim)),
         ],
+      ),
+    );
+  }
+
+  /// The implementation-intention step. A concrete "when X, I will Y" plan is
+  /// one of the most evidence-backed nudges for follow-through, and it costs the
+  /// user nothing — so it stays fully optional and skippable.
+  Widget _intentionPage() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+          RiseSpacing.screen, 12, RiseSpacing.screen, 12),
+      children: [
+        Text('Make a tiny plan', style: RiseText.title),
+        const SizedBox(height: 8),
+        Text(
+            'Deciding your first move in advance makes getting up easier. When '
+            'your alarm rings, what will you do first?',
+            style: RiseText.body.copyWith(color: RiseColors.textDim)),
+        const SizedBox(height: 20),
+        Text('When my alarm rings, I will…',
+            style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [for (final s in _suggestions) _chip(s)],
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          key: const Key('intention-field'),
+          controller: _intention,
+          textCapitalization: TextCapitalization.sentences,
+          cursorColor: RiseColors.primary,
+          onChanged: (_) => setState(() {}), // refresh chip highlight
+          decoration: const InputDecoration(
+            hintText: 'Put my feet on the floor',
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text('Optional — you can skip this and set it later in Settings.',
+            style: RiseText.caption),
+      ],
+    );
+  }
+
+  Widget _chip(String label) {
+    final selected = _intention.text.trim() == label;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() {
+        _intention.text = label;
+        _intention.selection =
+            TextSelection.collapsed(offset: label.length);
+      }),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? RiseColors.accentSoft : RiseColors.surface2,
+          borderRadius: BorderRadius.circular(RiseRadii.pill),
+          border: Border.all(
+              color: selected ? RiseColors.accent : RiseColors.border),
+        ),
+        child: Text(label,
+            style: RiseText.caption.copyWith(
+                color: selected ? RiseColors.text : RiseColors.textDim,
+                fontWeight: FontWeight.w600)),
       ),
     );
   }

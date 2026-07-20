@@ -105,6 +105,15 @@ class SettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+            const SectionLabel('Wake plan'),
+            const SizedBox(height: 6),
+            Text(
+                'The first thing you\'ll do when the alarm rings — shown on the '
+                'alarm screen as a gentle reminder.',
+                style: RiseText.caption),
+            const SizedBox(height: 12),
+            RiseCard(child: const _WakePlanField()),
           ],
         ),
       ),
@@ -154,4 +163,37 @@ class SettingsScreen extends ConsumerWidget {
           child: Icon(icon, size: 18, color: RiseColors.textDim),
         ),
       );
+}
+
+/// The editable wake-plan (implementation intention) field. Its own stateful
+/// widget so the controller is seeded once from the persisted value and
+/// survives Settings rebuilds. Persists on each edit (trimmed).
+class _WakePlanField extends ConsumerStatefulWidget {
+  const _WakePlanField();
+
+  @override
+  ConsumerState<_WakePlanField> createState() => _WakePlanFieldState();
+}
+
+class _WakePlanFieldState extends ConsumerState<_WakePlanField> {
+  late final TextEditingController _controller =
+      TextEditingController(text: ref.read(settingsProvider).wakeIntention);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      key: const Key('wake-plan-field'),
+      controller: _controller,
+      textCapitalization: TextCapitalization.sentences,
+      cursorColor: RiseColors.primary,
+      onChanged: (v) => ref.read(settingsProvider.notifier).setWakeIntention(v),
+      decoration: const InputDecoration(hintText: 'Put my feet on the floor'),
+    );
+  }
 }

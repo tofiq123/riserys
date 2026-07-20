@@ -56,4 +56,33 @@ void main() {
     await t.pump();
     expect(store.wakeCheckEnabled, isFalse); // default true → toggled off
   });
+
+  testWidgets('editing the wake plan persists it', (t) async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    await _pump(
+        t,
+        ProviderScope(
+          overrides: [appSettingsProvider.overrideWithValue(store)],
+          child: const MaterialApp(home: SettingsScreen()),
+        ));
+    await t.pump();
+    await t.enterText(
+        find.byKey(const Key('wake-plan-field')), 'Walk to the kitchen');
+    await t.pump();
+    expect(store.wakeIntention, 'Walk to the kitchen');
+  });
+
+  testWidgets('the wake plan field seeds from the persisted value', (t) async {
+    SharedPreferences.setMockInitialValues({'wakeIntention': 'Stand up'});
+    final store = await AppSettings.load();
+    await _pump(
+        t,
+        ProviderScope(
+          overrides: [appSettingsProvider.overrideWithValue(store)],
+          child: const MaterialApp(home: SettingsScreen()),
+        ));
+    await t.pump();
+    expect(find.text('Stand up'), findsOneWidget);
+  });
 }
