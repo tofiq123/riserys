@@ -219,7 +219,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         Text('Ring through anything', style: RiseText.title),
         const SizedBox(height: 8),
         Text(
-            'Rise needs a few permissions to reach you on silent, locked, or dozing.',
+            'Just a few permissions so your alarm always reaches you — through '
+            'silent mode, a locked screen, or when the phone tries to doze off.',
             style: RiseText.body.copyWith(color: RiseColors.textDim)),
         const SizedBox(height: 18),
         PermissionsSection(gateway: widget.permissions),
