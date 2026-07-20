@@ -14,6 +14,7 @@ import '../components/time_dial.dart';
 import '../state/alarm_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import 'qr_register_screen.dart';
 
 /// Mission keys ↔ display labels. The `SoundChips` pill row is a generic
 /// single-select chip strip, reused here for the mission picker.
@@ -24,6 +25,10 @@ const Map<String, String> _missionLabels = {
   'tap': 'Tap',
   'memory': 'Memory',
   'pvt': 'Alertness (PVT)',
+  'typing': 'Type a phrase',
+  'shake': 'Shake it off',
+  'qr': 'Scan a code',
+  'steps': 'Walk it off',
 };
 
 class CreateEditScreen extends ConsumerStatefulWidget {
@@ -88,6 +93,51 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
   void _cancel() {
     ref.read(draftProvider.notifier).clear();
     widget.onDone();
+  }
+
+  /// Scans a QR/barcode once and stores it as the alarm's registered code
+  /// ([Alarm.missionData]) — what the 'qr' dismiss mission will require.
+  Future<void> _registerQr() async {
+    final code = await registerQrCode(context);
+    if (!mounted || code == null) return;
+    final draft = ref.read(draftProvider);
+    if (draft == null) return;
+    _update(draft.copyWith(missionData: code));
+    ref.read(toastProvider.notifier).state = 'QR code registered';
+  }
+
+  /// The "Register QR code" control shown for the 'qr' mission. When no code is
+  /// registered the mission accepts any scan (never a trap), which this states
+  /// plainly so the choice is explicit.
+  Widget _qrRegisterRow(Alarm draft) {
+    final hasCode = (draft.missionData?.trim() ?? '').isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(hasCode ? Icons.check_circle : Icons.qr_code_2,
+                size: 18,
+                color: hasCode ? RiseColors.positive : RiseColors.textDim),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                hasCode
+                    ? 'Code registered — scan it to dismiss'
+                    : 'No code yet — any scan will dismiss',
+                style: RiseText.caption,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SecondaryButton(
+          label: hasCode ? 'Re-register QR code' : 'Register QR code',
+          icon: Icons.qr_code_scanner,
+          onPressed: _busy ? null : _registerQr,
+        ),
+      ],
+    );
   }
 
   @override
@@ -173,6 +223,18 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
               selected: draft.missionDiff,
               onChanged: (d) => _update(draft.copyWith(missionDiff: d)),
             )),
+          if (draft.mission != 'none')
+            _section('Repeat mission', SegmentedControl<int>(
+              segments: const [
+                (value: 1, label: '1×'),
+                (value: 2, label: '2×'),
+                (value: 3, label: '3×'),
+              ],
+              selected: draft.missionCount,
+              onChanged: (n) => _update(draft.copyWith(missionCount: n)),
+            )),
+          if (draft.mission == 'qr')
+            _section('QR code', _qrRegisterRow(draft)),
           const SizedBox(height: 20),
           RiseCard(
             radius: RiseRadii.base,

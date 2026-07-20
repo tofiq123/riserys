@@ -6,7 +6,11 @@ import 'hold_mission.dart';
 import 'math_mission.dart';
 import 'memory_mission.dart';
 import 'pvt_mission.dart';
+import 'qr_mission.dart';
+import 'shake_mission.dart';
+import 'steps_mission.dart';
 import 'tap_mission.dart';
+import 'typing_mission.dart';
 
 /// Structurally a `MissionBuilder` (see `ring_screen.dart`): picks the mission
 /// widget for [alarm.mission]. `'none'` never reaches here — RingScreen shows
@@ -29,6 +33,14 @@ Widget buildMission(BuildContext context, Alarm alarm, VoidCallback onSolved,
     case 'pvt':
       return PvtMission(
           diff: alarm.missionDiff, onSolved: onSolved, onResult: onAlertness);
+    case 'typing':
+      return TypingMission(diff: alarm.missionDiff, onSolved: onSolved);
+    case 'shake':
+      return ShakeMission(diff: alarm.missionDiff, onSolved: onSolved);
+    case 'qr':
+      return QrMission(expected: alarm.missionData, onSolved: onSolved);
+    case 'steps':
+      return StepsMission(diff: alarm.missionDiff, onSolved: onSolved);
     default:
       return SlideToWake(onWake: onSolved);
   }

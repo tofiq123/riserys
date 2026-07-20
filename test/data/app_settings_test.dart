@@ -73,4 +73,18 @@ void main() {
     expect(s3.targetWakeHour, isNull);
     expect(s3.targetWakeMinute, isNull);
   });
+
+  test('adaptiveMissions defaults false, round-trips, and reaches the snapshot',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.adaptiveMissions, isFalse);
+    expect(s.settings.adaptiveMissions, isFalse);
+
+    await s.setAdaptiveMissions(true);
+
+    final s2 = await AppSettings.load();
+    expect(s2.adaptiveMissions, isTrue);
+    expect(s2.settings.adaptiveMissions, isTrue);
+  });
 }

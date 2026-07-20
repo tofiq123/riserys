@@ -9,6 +9,7 @@ class RiseSettings {
     this.wakeIntention = '',
     this.targetWakeHour,
     this.targetWakeMinute,
+    this.adaptiveMissions = false,
   });
 
   /// Max snoozes before the button hides (0 disables snooze).
@@ -39,6 +40,11 @@ class RiseSettings {
   /// Whether a steady wake time is set (both components present).
   bool get hasTargetWake => targetWakeHour != null && targetWakeMinute != null;
 
+  /// Opt-in adaptive mission difficulty. When on, a user who breezes through
+  /// their mission is nudged one tier harder at ring time (never a lockout —
+  /// see [adaptiveDifficulty]). Default off keeps the chosen difficulty exactly.
+  final bool adaptiveMissions;
+
   static const _shrinking = [9, 5, 3, 2, 1];
 
   /// The duration (minutes) of the [index]-th snooze (0-based): a flat value
@@ -56,6 +62,7 @@ class RiseSettings {
     String? wakeIntention,
     int? targetWakeHour,
     int? targetWakeMinute,
+    bool? adaptiveMissions,
     // The `field ?? this.field` idiom cannot express "clear this nullable field
     // back to null" — passing null is indistinguishable from not passing it. A
     // sentinel flag keeps the intent explicit at the call site:
@@ -74,6 +81,7 @@ class RiseSettings {
         targetWakeMinute: clearTargetWake
             ? null
             : (targetWakeMinute ?? this.targetWakeMinute),
+        adaptiveMissions: adaptiveMissions ?? this.adaptiveMissions,
       );
 
   @override
@@ -85,7 +93,8 @@ class RiseSettings {
       other.wakeCheckDelayMinutes == wakeCheckDelayMinutes &&
       other.wakeIntention == wakeIntention &&
       other.targetWakeHour == targetWakeHour &&
-      other.targetWakeMinute == targetWakeMinute;
+      other.targetWakeMinute == targetWakeMinute &&
+      other.adaptiveMissions == adaptiveMissions;
 
   @override
   int get hashCode => Object.hash(
@@ -95,5 +104,6 @@ class RiseSettings {
       wakeCheckDelayMinutes,
       wakeIntention,
       targetWakeHour,
-      targetWakeMinute);
+      targetWakeMinute,
+      adaptiveMissions);
 }

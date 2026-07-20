@@ -38,7 +38,7 @@ void main() {
     expect(rows.single.missionDiff, 'easy');
     // schemaVersion is a synchronous getter (not a Future); await on it here
     // would be a no-op that only trips the await_only_futures lint.
-    expect(db.schemaVersion, 6);
+    expect(db.schemaVersion, 8);
   });
 
   test('upgrading is idempotent when the new columns already exist', () async {
@@ -118,7 +118,7 @@ void main() {
     expect(ev.alarmId, 1);
     expect(ev.snoozeCount, 0, reason: 'new-column defaults');
     expect(ev.onTime, isFalse);
-    expect(db.schemaVersion, 6);
+    expect(db.schemaVersion, 8);
   });
 
   test('upgrading to v3 is idempotent when wake_events already exists', () async {
@@ -206,7 +206,7 @@ void main() {
     final alarms = await db.select(db.alarms).get();
     expect(alarms.single.label, 'Run', reason: 'alarms survive the upgrade');
     expect(alarms.single.snoozedUntil, isNull, reason: 'new column defaults null');
-    expect(db.schemaVersion, 6);
+    expect(db.schemaVersion, 8);
   });
 
   test('upgrading to v4 is idempotent when snoozed_until already exists', () async {
@@ -293,7 +293,7 @@ void main() {
     final ev = await db.select(db.wakeEvents).getSingle();
     expect(ev.label, 'Kept', reason: 'existing event survives the upgrade');
     expect(ev.alertnessScore, isNull, reason: 'new column defaults null');
-    expect(db.schemaVersion, 6);
+    expect(db.schemaVersion, 8);
   });
 
   test('upgrading to v5 is idempotent when alertness_score already exists', () async {
@@ -388,7 +388,7 @@ void main() {
     await db.into(db.excusedDays).insert(ExcusedDaysCompanion.insert(day: day));
     final rows = await db.select(db.excusedDays).get();
     expect(rows.single.day, day);
-    expect(db.schemaVersion, 6);
+    expect(db.schemaVersion, 8);
   });
 
   test('upgrading to v6 is idempotent when excused_days already exists', () async {
@@ -443,6 +443,168 @@ void main() {
         .insert(ExcusedDaysCompanion.insert(day: day));
     final rows = await db.select(db.excusedDays).get();
     expect(rows.single.day, day);
-    expect(db.schemaVersion, 6);
+    expect(db.schemaVersion, 8);
+  });
+
+  test('upgrading a v6 database adds mission_count and keeps existing alarms',
+      () async {
+    final raw = sqlite3.openInMemory();
+    // A v6 alarms table: mission/mission_diff present, but no mission_count.
+    raw.execute('''
+      CREATE TABLE alarms (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        hour INTEGER NOT NULL, minute INTEGER NOT NULL,
+        days TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1,
+        label TEXT NOT NULL DEFAULT 'Alarm',
+        sound_asset TEXT NOT NULL DEFAULT 'sounds/default_alarm.mp3',
+        vibrate INTEGER NOT NULL DEFAULT 1, last_dismissed_at INTEGER,
+        mission TEXT NOT NULL DEFAULT 'none', mission_diff TEXT NOT NULL DEFAULT 'easy',
+        snoozed_until INTEGER,
+        CHECK (hour BETWEEN 0 AND 23), CHECK (minute BETWEEN 0 AND 59)
+      );
+    ''');
+    raw.execute('''
+      CREATE TABLE wake_events (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        alarm_id INTEGER NOT NULL, scheduled_at INTEGER NOT NULL,
+        first_ring_at INTEGER NOT NULL, dismissed_at INTEGER, method TEXT,
+        snooze_count INTEGER NOT NULL DEFAULT 0, mission_failures INTEGER NOT NULL DEFAULT 0,
+        on_time INTEGER NOT NULL DEFAULT 0, label TEXT NOT NULL DEFAULT 'Alarm',
+        alertness_score INTEGER
+      );
+    ''');
+    raw.execute('CREATE TABLE excused_days (day INTEGER NOT NULL PRIMARY KEY);');
+    raw.execute("INSERT INTO alarms (hour, minute, label) VALUES (6, 30, 'Run');");
+    raw.execute('PRAGMA user_version = 6;');
+
+    final db = RiseDatabase(NativeDatabase.opened(raw));
+    addTearDown(db.close);
+
+    final alarms = await db.select(db.alarms).get();
+    expect(alarms.single.label, 'Run', reason: 'alarms survive the upgrade');
+    expect(alarms.single.missionCount, 1, reason: 'new column defaults to 1');
+    expect(db.schemaVersion, 8);
+  });
+
+  test('upgrading to v7 is idempotent when mission_count already exists',
+      () async {
+    final raw = sqlite3.openInMemory();
+    // mission_count already present (a losing isolate / partial prior run), but
+    // user_version still says 6, so onUpgrade(6 -> 7) will run.
+    raw.execute('''
+      CREATE TABLE alarms (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        hour INTEGER NOT NULL, minute INTEGER NOT NULL,
+        days TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1,
+        label TEXT NOT NULL DEFAULT 'Alarm',
+        sound_asset TEXT NOT NULL DEFAULT 'sounds/default_alarm.mp3',
+        vibrate INTEGER NOT NULL DEFAULT 1, last_dismissed_at INTEGER,
+        mission TEXT NOT NULL DEFAULT 'none', mission_diff TEXT NOT NULL DEFAULT 'easy',
+        snoozed_until INTEGER, mission_count INTEGER NOT NULL DEFAULT 1,
+        CHECK (hour BETWEEN 0 AND 23), CHECK (minute BETWEEN 0 AND 59)
+      );
+    ''');
+    raw.execute("INSERT INTO alarms (hour, minute, label, mission_count) VALUES (7, 0, 'Kept', 3);");
+    raw.execute('PRAGMA user_version = 6;');
+
+    final db = RiseDatabase(NativeDatabase.opened(raw));
+    addTearDown(db.close);
+
+    // Must not throw "duplicate column name mission_count"; the row is intact.
+    final rows = await db.select(db.alarms).get();
+    expect(rows.single.label, 'Kept');
+    expect(rows.single.missionCount, 3);
+  });
+
+  test('a fresh database is created at v7 with mission_count', () async {
+    final db = RiseDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final id = await db.into(db.alarms).insert(
+        AlarmsCompanion.insert(hour: 6, minute: 30, missionCount: const Value(2)));
+    final row = await (db.select(db.alarms)..where((t) => t.id.equals(id))).getSingle();
+    expect(row.missionCount, 2);
+    expect(db.schemaVersion, 8);
+  });
+
+  test('upgrading a v7 database adds mission_data and keeps existing alarms',
+      () async {
+    final raw = sqlite3.openInMemory();
+    // A v7 alarms table: mission_count present, but no mission_data.
+    raw.execute('''
+      CREATE TABLE alarms (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        hour INTEGER NOT NULL, minute INTEGER NOT NULL,
+        days TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1,
+        label TEXT NOT NULL DEFAULT 'Alarm',
+        sound_asset TEXT NOT NULL DEFAULT 'sounds/default_alarm.mp3',
+        vibrate INTEGER NOT NULL DEFAULT 1, last_dismissed_at INTEGER,
+        mission TEXT NOT NULL DEFAULT 'none', mission_diff TEXT NOT NULL DEFAULT 'easy',
+        snoozed_until INTEGER, mission_count INTEGER NOT NULL DEFAULT 1,
+        CHECK (hour BETWEEN 0 AND 23), CHECK (minute BETWEEN 0 AND 59)
+      );
+    ''');
+    raw.execute('''
+      CREATE TABLE wake_events (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        alarm_id INTEGER NOT NULL, scheduled_at INTEGER NOT NULL,
+        first_ring_at INTEGER NOT NULL, dismissed_at INTEGER, method TEXT,
+        snooze_count INTEGER NOT NULL DEFAULT 0, mission_failures INTEGER NOT NULL DEFAULT 0,
+        on_time INTEGER NOT NULL DEFAULT 0, label TEXT NOT NULL DEFAULT 'Alarm',
+        alertness_score INTEGER
+      );
+    ''');
+    raw.execute('CREATE TABLE excused_days (day INTEGER NOT NULL PRIMARY KEY);');
+    raw.execute("INSERT INTO alarms (hour, minute, label) VALUES (6, 30, 'Run');");
+    raw.execute('PRAGMA user_version = 7;');
+
+    final db = RiseDatabase(NativeDatabase.opened(raw));
+    addTearDown(db.close);
+
+    final alarms = await db.select(db.alarms).get();
+    expect(alarms.single.label, 'Run', reason: 'alarms survive the upgrade');
+    expect(alarms.single.missionData, isNull, reason: 'new column defaults null');
+    expect(db.schemaVersion, 8);
+  });
+
+  test('upgrading to v8 is idempotent when mission_data already exists',
+      () async {
+    final raw = sqlite3.openInMemory();
+    // mission_data already present (a losing isolate / partial prior run), but
+    // user_version still says 7, so onUpgrade(7 -> 8) will run.
+    raw.execute('''
+      CREATE TABLE alarms (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        hour INTEGER NOT NULL, minute INTEGER NOT NULL,
+        days TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1,
+        label TEXT NOT NULL DEFAULT 'Alarm',
+        sound_asset TEXT NOT NULL DEFAULT 'sounds/default_alarm.mp3',
+        vibrate INTEGER NOT NULL DEFAULT 1, last_dismissed_at INTEGER,
+        mission TEXT NOT NULL DEFAULT 'none', mission_diff TEXT NOT NULL DEFAULT 'easy',
+        snoozed_until INTEGER, mission_count INTEGER NOT NULL DEFAULT 1,
+        mission_data TEXT,
+        CHECK (hour BETWEEN 0 AND 23), CHECK (minute BETWEEN 0 AND 59)
+      );
+    ''');
+    raw.execute(
+        "INSERT INTO alarms (hour, minute, label, mission, mission_data) VALUES (7, 0, 'Kept', 'qr', 'RISE-123');");
+    raw.execute('PRAGMA user_version = 7;');
+
+    final db = RiseDatabase(NativeDatabase.opened(raw));
+    addTearDown(db.close);
+
+    // Must not throw "duplicate column name mission_data"; the row is intact.
+    final rows = await db.select(db.alarms).get();
+    expect(rows.single.label, 'Kept');
+    expect(rows.single.missionData, 'RISE-123');
+  });
+
+  test('a fresh database is created at v8 with mission_data', () async {
+    final db = RiseDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final id = await db.into(db.alarms).insert(AlarmsCompanion.insert(
+        hour: 6, minute: 30, missionData: const Value('RISE-QR-payload')));
+    final row = await (db.select(db.alarms)..where((t) => t.id.equals(id))).getSingle();
+    expect(row.missionData, 'RISE-QR-payload');
+    expect(db.schemaVersion, 8);
   });
 }

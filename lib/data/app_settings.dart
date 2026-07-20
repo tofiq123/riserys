@@ -29,6 +29,7 @@ class AppSettings {
   static const _kWakeIntention = 'wakeIntention';
   static const _kTargetWakeHour = 'targetWakeHour';
   static const _kTargetWakeMinute = 'targetWakeMinute';
+  static const _kAdaptiveMissions = 'adaptiveMissions';
 
   int get snoozeMaxCount => _prefs.getInt(_kSnoozeMaxCount) ?? 3;
   Future<void> setSnoozeMaxCount(int v) => _prefs.setInt(_kSnoozeMaxCount, v);
@@ -64,6 +65,10 @@ class AppSettings {
     await _prefs.remove(_kTargetWakeMinute);
   }
 
+  bool get adaptiveMissions => _prefs.getBool(_kAdaptiveMissions) ?? false;
+  Future<void> setAdaptiveMissions(bool v) =>
+      _prefs.setBool(_kAdaptiveMissions, v);
+
   /// A snapshot of the mutable settings (snooze + wake-check + wake plan +
   /// steady wake time).
   RiseSettings get settings => RiseSettings(
@@ -74,5 +79,6 @@ class AppSettings {
         wakeIntention: wakeIntention,
         targetWakeHour: targetWakeHour,
         targetWakeMinute: targetWakeMinute,
+        adaptiveMissions: adaptiveMissions,
       );
 }

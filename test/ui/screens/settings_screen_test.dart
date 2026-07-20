@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/app_settings.dart';
-import 'package:rise/ui/components/rise_switch.dart';
 import 'package:rise/ui/screens/settings_screen.dart';
 import 'package:rise/ui/state/settings_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,9 +51,25 @@ void main() {
           child: const MaterialApp(home: SettingsScreen()),
         ));
     await t.pump();
-    await t.tap(find.byType(RiseSwitch));
+    await t.tap(find.byKey(const Key('wake-check-switch')));
     await t.pump();
     expect(store.wakeCheckEnabled, isFalse); // default true → toggled off
+  });
+
+  testWidgets('toggling adaptive difficulty persists it', (t) async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    await _pump(
+        t,
+        ProviderScope(
+          overrides: [appSettingsProvider.overrideWithValue(store)],
+          child: const MaterialApp(home: SettingsScreen()),
+        ));
+    await t.pump();
+    expect(store.adaptiveMissions, isFalse); // default off
+    await t.tap(find.byKey(const Key('adaptive-missions-switch')));
+    await t.pump();
+    expect(store.adaptiveMissions, isTrue);
   });
 
   testWidgets('editing the wake plan persists it', (t) async {

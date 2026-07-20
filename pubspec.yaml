@@ -49,6 +49,14 @@ dependencies:
   firebase_messaging: ^16.4.3
   url_launcher: ^6.3.2
 
+  # Device-sensor dismiss missions (Phase 9B). sensors_plus: accelerometer for
+  # the shake mission (no permission). mobile_scanner: camera QR scan (CAMERA
+  # permission + NSCameraUsageDescription). pedometer: step stream for the walk
+  # mission (ACTIVITY_RECOGNITION permission + NSMotionUsageDescription).
+  sensors_plus: ^6.1.1
+  mobile_scanner: ^5.2.3
+  pedometer: ^4.0.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

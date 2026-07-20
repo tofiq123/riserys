@@ -15,10 +15,13 @@ class Alarm {
     this.vibrate = true,
     this.mission = 'none',
     this.missionDiff = 'easy',
+    this.missionCount = 1,
+    this.missionData,
     this.lastDismissedAt,
     this.snoozedUntil,
   })  : assert(hour >= 0 && hour <= 23),
-        assert(minute >= 0 && minute <= 59);
+        assert(minute >= 0 && minute <= 59),
+        assert(missionCount >= 1 && missionCount <= 3);
 
   final int id;
   final int hour;
@@ -29,11 +32,26 @@ class Alarm {
   final String soundAsset;
   final bool vibrate;
 
-  /// Dismiss mission: 'none' | 'math' | 'hold' | 'tap' | 'memory' | 'pvt'.
+  /// Dismiss mission:
+  /// 'none' | 'math' | 'hold' | 'tap' | 'memory' | 'pvt' | 'typing' |
+  /// 'shake' | 'qr' | 'steps'.
   final String mission;
 
   /// Mission difficulty: 'easy' | 'medium' | 'hard'.
   final String missionDiff;
+
+  /// How many times the chosen mission must be completed in a row before the
+  /// alarm dismisses (a mission "chain"). 1–3; default 1. Only meaningful when
+  /// [mission] is not 'none'. Completing the required count always dismisses —
+  /// the count never locks the user out.
+  final int missionCount;
+
+  /// Mission-specific config, e.g. the registered QR payload the 'qr' mission
+  /// must scan to dismiss. Null/empty means unconfigured — a mission that reads
+  /// this must degrade gracefully (the QR mission accepts any first scan) so an
+  /// unconfigured alarm never traps the user. Ignored by missions that don't
+  /// need extra config.
+  final String? missionData;
 
   /// UTC instant this alarm was last dismissed, or null if never dismissed.
   /// Recovery uses this to avoid re-ringing an occurrence already dealt with.
@@ -68,6 +86,8 @@ class Alarm {
     bool? vibrate,
     String? mission,
     String? missionDiff,
+    int? missionCount,
+    String? missionData,
     DateTime? lastDismissedAt,
     // The `field ?? this.field` idiom used above cannot express "set this
     // nullable field back to null" — passing null is indistinguishable from
@@ -92,6 +112,8 @@ class Alarm {
       vibrate: vibrate ?? this.vibrate,
       mission: mission ?? this.mission,
       missionDiff: missionDiff ?? this.missionDiff,
+      missionCount: missionCount ?? this.missionCount,
+      missionData: missionData ?? this.missionData,
       lastDismissedAt: clearLastDismissedAt
           ? null
           : (lastDismissedAt ?? this.lastDismissedAt),
@@ -114,6 +136,8 @@ class Alarm {
       other.vibrate == vibrate &&
       other.mission == mission &&
       other.missionDiff == missionDiff &&
+      other.missionCount == missionCount &&
+      other.missionData == missionData &&
       _sameInstant(other.lastDismissedAt, lastDismissedAt) &&
       _sameInstant(other.snoozedUntil, snoozedUntil);
 
@@ -129,6 +153,8 @@ class Alarm {
       vibrate,
       mission,
       missionDiff,
+      missionCount,
+      missionData,
       // Normalized to UTC, not the raw DateTime: Dart's DateTime.== treats a
       // UTC and a local DateTime representing the exact same instant as
       // unequal, even though DateTime.hashCode (derived only from the epoch
