@@ -14,6 +14,7 @@ import '../state/auth_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import 'wellbeing_checkin_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen(
@@ -47,6 +48,37 @@ class ProfileScreen extends ConsumerWidget {
                     child: Text('Settings',
                         style:
                             RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                  ),
+                  const Icon(Icons.chevron_right,
+                      color: RiseColors.textFaint, size: 20),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            key: const Key('wellbeing-checkin-entry'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const WellbeingCheckinScreen())),
+            child: RiseCard(
+              child: Row(
+                children: [
+                  const Icon(Icons.favorite_outline,
+                      color: RiseColors.textDim, size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('How you\'ve been feeling',
+                            style: RiseText.body
+                                .copyWith(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 2),
+                        Text('A quick, private check-in — optional, anytime',
+                            style: RiseText.caption),
+                      ],
+                    ),
                   ),
                   const Icon(Icons.chevron_right,
                       color: RiseColors.textFaint, size: 20),
