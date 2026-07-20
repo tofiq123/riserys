@@ -8,6 +8,7 @@ import 'memory_mission.dart';
 import 'pvt_mission.dart';
 import 'qr_mission.dart';
 import 'shake_mission.dart';
+import 'steps_mission.dart';
 import 'tap_mission.dart';
 import 'typing_mission.dart';
 
@@ -38,6 +39,8 @@ Widget buildMission(BuildContext context, Alarm alarm, VoidCallback onSolved,
       return ShakeMission(diff: alarm.missionDiff, onSolved: onSolved);
     case 'qr':
       return QrMission(expected: alarm.missionData, onSolved: onSolved);
+    case 'steps':
+      return StepsMission(diff: alarm.missionDiff, onSolved: onSolved);
     default:
       return SlideToWake(onWake: onSolved);
   }
