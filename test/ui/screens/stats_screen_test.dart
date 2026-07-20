@@ -291,6 +291,31 @@ void main() {
     expect(find.textContaining('Couldn\'t share right now'), findsOneWidget);
   });
 
+  testWidgets('overview toggles between Week, Month and Year aggregates',
+      (t) async {
+    // Five on-time days this week, plus an older day only the Month/Year see.
+    final today = DateTime.now();
+    final events = [
+      for (var i = 0; i < 5; i++)
+        evOn(today.subtract(Duration(days: i))),
+      evOn(today.subtract(const Duration(days: 20))), // outside the week window
+    ];
+    await _pump(t, _host(events: events));
+    await t.pump();
+
+    expect(find.text('OVERVIEW'), findsOneWidget); // SectionLabel uppercases
+    expect(find.text('Week'), findsOneWidget);
+    expect(find.text('Month'), findsOneWidget);
+    expect(find.text('Year'), findsOneWidget);
+    // Week: 5 of 5 on time.
+    expect(find.text('5/5'), findsOneWidget);
+
+    // Switch to Month: now 6 of 6.
+    await t.tap(find.text('Month'));
+    await t.pumpAndSettle();
+    expect(find.text('6/6'), findsOneWidget);
+  });
+
   test('consistencyLine reports the on-time count for the week', () {
     final now = DateTime(2026, 7, 20, 12);
     final events = [

@@ -4,14 +4,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/local/excused_days_repository.dart';
 import '../../domain/achievements.dart';
 import '../../domain/alertness_trend.dart';
+import '../../domain/clock_format.dart';
 import '../../domain/consistency.dart';
 import '../../domain/crew_standing.dart';
+import '../../domain/period_stats.dart';
 import '../../domain/rise_settings.dart';
 import '../../domain/streak.dart';
 import '../../domain/wake_event.dart';
 import '../../domain/wake_insights.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
+import '../components/segmented.dart';
 import '../components/shareable_stats_card.dart';
 import '../components/sparkline.dart';
 import '../share/stats_share.dart';
@@ -126,6 +129,8 @@ class StatsScreen extends ConsumerWidget {
             const _RoughNightCard(),
             const SizedBox(height: 12),
             _ShareCard(shareRunner: shareRunner),
+            const SizedBox(height: 24),
+            const _OverviewSection(),
             const SizedBox(height: 24),
             const SectionLabel('Last 30 days'),
             const SizedBox(height: 12),
@@ -738,6 +743,88 @@ class _RoughNightCard extends ConsumerWidget {
       const SnackBar(content: Text('Marked. Your streak\'s safe — rest up.')),
     );
   }
+}
+
+/// A Week / Month / Year overview: a period toggle over three pure aggregates —
+/// on-time rate, average wake time, and best on-time run in the window.
+class _OverviewSection extends ConsumerStatefulWidget {
+  const _OverviewSection();
+
+  @override
+  ConsumerState<_OverviewSection> createState() => _OverviewSectionState();
+}
+
+class _OverviewSectionState extends ConsumerState<_OverviewSection> {
+  StatsPeriod _period = StatsPeriod.week;
+
+  @override
+  Widget build(BuildContext context) {
+    final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
+    final stats = aggregatePeriod(events, DateTime.now(), _period);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionLabel('Overview'),
+        const SizedBox(height: 12),
+        SegmentedControl<StatsPeriod>(
+          segments: [
+            for (final p in StatsPeriod.values)
+              (value: p, label: periodLabel(p)),
+          ],
+          selected: _period,
+          onChanged: (p) => setState(() => _period = p),
+        ),
+        const SizedBox(height: 12),
+        RiseCard(
+          padding: const EdgeInsets.all(RiseSpacing.screen),
+          child: stats.count == 0
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Text('No wake-ups in this ${periodLabel(_period).toLowerCase()} yet.',
+                      style: RiseText.caption),
+                )
+              : Row(
+                  children: [
+                    _metric(
+                        'On time',
+                        '${(stats.onTimeRate! * 100).round()}%',
+                        '${stats.onTimeCount}/${stats.count}'),
+                    _divider(),
+                    _metric(
+                        'Avg wake',
+                        stats.avgWakeMinute == null
+                            ? '—'
+                            : formatClock(stats.avgWakeMinute! ~/ 60,
+                                stats.avgWakeMinute! % 60),
+                        'typical'),
+                    _divider(),
+                    _metric('Best run', '${stats.bestStreak}',
+                        stats.bestStreak == 1 ? 'day' : 'days'),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _divider() =>
+      Container(width: 1, height: 40, color: RiseColors.divider);
+
+  Widget _metric(String label, String value, String sub) => Expanded(
+        child: Column(
+          children: [
+            Text(value,
+                style: RiseText.mono(size: 20, weight: FontWeight.w600),
+                maxLines: 1),
+            const SizedBox(height: 3),
+            Text(label, style: RiseText.caption),
+            Text(sub,
+                style: RiseText.caption
+                    .copyWith(fontSize: 10, color: RiseColors.textFaint)),
+          ],
+        ),
+      );
 }
 
 /// A tappable "share your progress" affordance. It hosts an offscreen
