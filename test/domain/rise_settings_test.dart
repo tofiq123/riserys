@@ -12,6 +12,21 @@ void main() {
     expect(s.targetWakeHour, isNull);
     expect(s.targetWakeMinute, isNull);
     expect(s.hasTargetWake, isFalse);
+    expect(s.adaptiveMissions, isFalse);
+  });
+
+  test('adaptiveMissions copyWith and equality', () {
+    const s = RiseSettings();
+    expect(s.copyWith(adaptiveMissions: true).adaptiveMissions, isTrue);
+    expect(const RiseSettings(adaptiveMissions: true) == const RiseSettings(),
+        isFalse);
+    expect(
+        const RiseSettings(adaptiveMissions: true).hashCode ==
+            const RiseSettings().hashCode,
+        isFalse);
+    // Unrelated copyWith preserves it.
+    expect(const RiseSettings(adaptiveMissions: true).copyWith(snoozeMaxCount: 2)
+        .adaptiveMissions, isTrue);
   });
 
   test('snoozeDurationMinutes uses the shrinking schedule by default', () {

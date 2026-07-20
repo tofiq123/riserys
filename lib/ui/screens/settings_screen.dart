@@ -92,6 +92,7 @@ class SettingsScreen extends ConsumerWidget {
                     children: [
                       Text('Enabled', style: RiseText.body),
                       RiseSwitch(
+                          key: const Key('wake-check-switch'),
                           value: s.wakeCheckEnabled,
                           onChanged: ctrl.setWakeCheckEnabled),
                     ],
@@ -128,6 +129,27 @@ class SettingsScreen extends ConsumerWidget {
                 style: RiseText.caption),
             const SizedBox(height: 12),
             const _SleepGoalCard(),
+            const SizedBox(height: 24),
+            const SectionLabel('Missions'),
+            const SizedBox(height: 6),
+            Text(
+                'Adaptive difficulty nudges your mission one tier harder when '
+                'you\'ve been breezing through it. Completing it always dismisses '
+                '— it never locks you out.',
+                style: RiseText.caption),
+            const SizedBox(height: 12),
+            RiseCard(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Adaptive difficulty', style: RiseText.body),
+                  RiseSwitch(
+                      key: const Key('adaptive-missions-switch'),
+                      value: s.adaptiveMissions,
+                      onChanged: ctrl.setAdaptiveMissions),
+                ],
+              ),
+            ),
           ],
         ),
       ),

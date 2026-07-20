@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/alarm_sync_service.dart';
 import '../../data/native/alarm_api.g.dart';
 import '../../data/snooze.dart';
+import '../../domain/adaptive_difficulty.dart';
 import '../../domain/alarm.dart';
+import '../../domain/wake_event.dart';
 import '../components/slide_to_wake.dart';
 import '../state/alarm_providers.dart';
 import '../state/settings_providers.dart';
@@ -274,10 +276,9 @@ class _RingScreenState extends ConsumerState<RingScreen>
         .value
         ?.firstWhereOrNull((a) => a.id == widget.alarmId);
     final settings = ref.watch(currentSettingsProvider);
-    final snoozeCount = ref
-            .watch(wakeEventsProvider)
-            .value
-            ?.firstWhereOrNull((e) => e.alarmId == widget.alarmId && e.isOpen)
+    final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
+    final snoozeCount = events
+            .firstWhereOrNull((e) => e.alarmId == widget.alarmId && e.isOpen)
             ?.snoozeCount ??
         0;
     final canSnooze = snoozeCount < settings.snoozeMaxCount;
@@ -309,7 +310,17 @@ class _RingScreenState extends ConsumerState<RingScreen>
       // failed dismissal resets the current rep, a completion advances the chain.
       key: ValueKey('$_attempt-$_completions'),
       child: isMissioned
-          ? widget.missionBuilder!(context, alarm, () => _onMissionSolved(missionCount),
+          ? widget.missionBuilder!(
+              context,
+              // When adaptive difficulty is opt-in ON, a breezing user is shown
+              // one tier harder — a suggestion only; completing it still
+              // dismisses. Off (default): the chosen difficulty is used as-is.
+              settings.adaptiveMissions
+                  ? alarm.copyWith(
+                      missionDiff:
+                          adaptiveDifficulty(alarm.missionDiff, events))
+                  : alarm,
+              () => _onMissionSolved(missionCount),
               (score) => _pendingAlertness = score)
           : SlideToWake(onWake: () => _dismiss('slide')),
     );

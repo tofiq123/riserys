@@ -236,6 +236,59 @@ void main() {
     expect(dismissed, 7);
   });
 
+  // Three clean mission-method dismissals — a "breezing" history.
+  List<WakeEvent> breezingHistory(int alarmId) => [
+        for (var i = 1; i <= 3; i++)
+          WakeEvent(
+            id: i,
+            alarmId: alarmId,
+            scheduledAt: DateTime.utc(2026, 7, 20, 6).subtract(Duration(days: i)),
+            firstRingAt: DateTime.utc(2026, 7, 20, 6).subtract(Duration(days: i)),
+            dismissedAt:
+                DateTime.utc(2026, 7, 20, 6, 1).subtract(Duration(days: i)),
+            method: 'mission',
+            onTime: true,
+          ),
+      ];
+
+  testWidgets('adaptive difficulty on: a breezing user is shown a harder mission',
+      (t) async {
+    String? diffSeen;
+    await t.pumpWidget(_host(
+      alarms: const [
+        Alarm(id: 5, hour: 6, minute: 30, mission: 'math', missionDiff: 'easy')
+      ],
+      alarmId: 5,
+      settings: const RiseSettings(adaptiveMissions: true),
+      wakeEvents: breezingHistory(5),
+      missionBuilder: (context, alarm, onSolved, onAlertness) {
+        diffSeen = alarm.missionDiff;
+        return const Text('MISSION');
+      },
+    ));
+    await t.pump();
+    expect(diffSeen, 'medium', reason: 'easy bumps one tier when breezing');
+  });
+
+  testWidgets('adaptive difficulty off (default): the chosen difficulty is unchanged',
+      (t) async {
+    String? diffSeen;
+    await t.pumpWidget(_host(
+      alarms: const [
+        Alarm(id: 5, hour: 6, minute: 30, mission: 'math', missionDiff: 'easy')
+      ],
+      alarmId: 5,
+      settings: const RiseSettings(), // adaptiveMissions defaults off
+      wakeEvents: breezingHistory(5),
+      missionBuilder: (context, alarm, onSolved, onAlertness) {
+        diffSeen = alarm.missionDiff;
+        return const Text('MISSION');
+      },
+    ));
+    await t.pump();
+    expect(diffSeen, 'easy');
+  });
+
   testWidgets('with record: opens on mount and finalizes "slide" on a slide dismiss',
       (t) async {
     final rec = _RecordingRecorder();
