@@ -1,0 +1,23 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "Rise",
+  "@appTitle": {
+    "description": "The application's display name / title."
+  },
+
+  "commonSave": "Save",
+  "@commonSave": {
+    "description": "Label for a generic confirm/save button."
+  },
+
+  "commonCancel": "Cancel",
+  "@commonCancel": {
+    "description": "Label for a generic dismiss/cancel button."
+  },
+
+  "commonDone": "Done",
+  "@commonDone": {
+    "description": "Label for a generic completion button."
+  }
+}

@@ -1,0 +1,6 @@
+# Configuration for `flutter gen-l10n`, which generates the AppLocalizations
+# class from the ARB files in lib/l10n. See docs/l10n.md for how to add strings.
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations

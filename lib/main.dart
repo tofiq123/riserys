@@ -6,6 +6,7 @@ import 'package:timezone/data/latest.dart' as tzdata;
 
 import 'config/revenuecat_config.dart';
 import 'config/supabase_config.dart';
+import 'l10n/app_localizations.dart';
 import 'data/alarm_sync_service.dart';
 import 'data/app_settings.dart';
 import 'data/iap/revenuecat_entitlement_service.dart';
@@ -225,6 +226,12 @@ class _RiseAppState extends State<RiseApp> with WidgetsBindingObserver {
       title: 'Rise',
       navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
+      // Localization infrastructure (scaffolding only). These delegates bundle
+      // the global Material/Widgets/Cupertino delegates alongside the generated
+      // AppLocalizations; existing UI strings are not yet migrated. See
+      // docs/l10n.md.
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: repository == null
           ? const _StartupFailedPage()
           : (_showOnboarding
