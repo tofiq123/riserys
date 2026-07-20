@@ -182,13 +182,15 @@ drop policy if exists group_members_select_member on public.group_members;
 create policy group_members_select_member on public.group_members for select
   using (public.is_group_member(group_id, auth.uid()));
 
--- INSERT: a user may add ONLY themselves and ONLY as 'member'. A direct
--- self-insert can never mint 'owner' (the owner row is created by create_group,
--- which runs as owner and bypasses this). The invite_code remains the capability
--- to actually join, because a non-member has no way to learn a group's uuid.
+-- INSERT: intentionally NO policy → RLS default-denies every direct client
+-- insert into group_members. Both legitimate join paths are SECURITY DEFINER
+-- functions that bypass RLS: create_group() writes the owner row, and
+-- join_group_by_code() writes the member row after validating the invite code.
+-- This makes the invite_code the SOLE capability to join — a user can never
+-- self-join a group merely by knowing its uuid, closing a latent hole should a
+-- group id ever leak to a non-member. (Drop any prior policy for idempotent
+-- re-runs.)
 drop policy if exists group_members_insert_self on public.group_members;
-create policy group_members_insert_self on public.group_members for insert
-  with check (user_id = auth.uid() and role = 'member');
 
 -- UPDATE: owner only. Combined with the immutable-columns guard below (which
 -- freezes role too), no update can escalate anyone — this policy plus the guard
