@@ -2,13 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/excused_days_repository.dart';
+import '../../domain/achievements.dart';
+import '../../domain/alertness_trend.dart';
+import '../../domain/clock_format.dart';
+import '../../domain/consistency.dart';
 import '../../domain/crew_standing.dart';
+import '../../domain/period_stats.dart';
 import '../../domain/rise_settings.dart';
 import '../../domain/streak.dart';
 import '../../domain/wake_event.dart';
 import '../../domain/wake_insights.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
+import '../components/segmented.dart';
+import '../components/shareable_stats_card.dart';
+import '../components/sparkline.dart';
+import '../share/stats_share.dart';
 import '../state/auth_providers.dart';
 import '../state/leaderboard_providers.dart';
 import '../state/settings_providers.dart';
@@ -91,7 +100,12 @@ String alertnessBand(int score) {
 }
 
 class StatsScreen extends ConsumerWidget {
-  const StatsScreen({super.key});
+  const StatsScreen({super.key, this.shareRunner});
+
+  /// Test seam: overrides the capture-and-share step so the failure UI can be
+  /// exercised headlessly. Null in production, where the real
+  /// [captureAndShare] rasterises the offscreen card and opens the share sheet.
+  final Future<void> Function(GlobalKey boundaryKey)? shareRunner;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -113,6 +127,10 @@ class StatsScreen extends ConsumerWidget {
             _streakCard(streak),
             const SizedBox(height: 12),
             const _RoughNightCard(),
+            const SizedBox(height: 12),
+            _ShareCard(shareRunner: shareRunner),
+            const SizedBox(height: 24),
+            const _OverviewSection(),
             const SizedBox(height: 24),
             const SectionLabel('Last 30 days'),
             const SizedBox(height: 12),
@@ -123,11 +141,18 @@ class StatsScreen extends ConsumerWidget {
             Text(consistencyLine(events, now), style: RiseText.caption),
             const SizedBox(height: 14),
             _weekChart(weekWakes(events, now)),
+            const SizedBox(height: 24),
+            const SectionLabel('Consistency'),
+            const SizedBox(height: 12),
+            _consistencyCard(events),
+            const SizedBox(height: 24),
+            const _AchievementsSection(),
             ..._insightsWidgets(events, settings),
             const SizedBox(height: 24),
             const SectionLabel('Alertness'),
             const SizedBox(height: 12),
             _alertnessCard(events),
+            ..._alertnessTrendWidgets(events),
           ],
           const SizedBox(height: 24),
           const _LeaderboardSection(),
@@ -389,6 +414,160 @@ class StatsScreen extends ConsumerWidget {
     );
   }
 
+  /// Wake-time regularity as a single 0–100 figure. Shows a gentle helper until
+  /// there are enough completed wake-ups to be meaningful.
+  Widget _consistencyCard(List<WakeEvent> events) {
+    final score = consistencyScore(events);
+    if (score == null) {
+      return RiseCard(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+          child: Column(
+            children: [
+              const Icon(Icons.insights_outlined,
+                  size: 32, color: RiseColors.textFaint),
+              const SizedBox(height: 10),
+              Text('Building your consistency score',
+                  style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(
+                  'A few more wake-ups and we\'ll show how steady your wake '
+                  'time is.',
+                  textAlign: TextAlign.center,
+                  style: RiseText.caption),
+            ],
+          ),
+        ),
+      );
+    }
+    final color = _consistencyColor(score);
+    return RiseCard(
+      padding: const EdgeInsets.all(RiseSpacing.screen),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('$score',
+                  style: RiseText.mono(size: 44, weight: FontWeight.w600)),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: RiseColors.surface2,
+                    borderRadius: BorderRadius.circular(RiseRadii.pill),
+                    border: Border.all(color: color),
+                  ),
+                  child: Text(consistencyBand(score),
+                      style: RiseText.caption.copyWith(
+                          color: color, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text('consistency', style: RiseText.caption),
+          const SizedBox(height: 12),
+          Text(
+              'How steady your wake time is, day to day — higher is more '
+              'regular. Not a judgement.',
+              style: RiseText.caption),
+        ],
+      ),
+    );
+  }
+
+  Color _consistencyColor(int score) {
+    if (score >= 80) return RiseColors.positive;
+    if (score >= 60) return RiseColors.waking;
+    return RiseColors.asleep;
+  }
+
+  /// A longer-horizon alertness trend beyond the single Alertness card: a
+  /// sparkline of the recent scores plus a plain-language direction. Hidden
+  /// until there are enough scores for a trend to mean anything.
+  List<Widget> _alertnessTrendWidgets(List<WakeEvent> events) {
+    final scored = [
+      for (final e in events)
+        if (e.alertnessScore != null) e
+    ]..sort((a, b) => a.firstRingAt.compareTo(b.firstRingAt));
+    if (scored.length < kMinTrendScores) return const [];
+
+    final recent =
+        scored.length > 14 ? scored.sublist(scored.length - 14) : scored;
+    final scores = [for (final e in recent) e.alertnessScore!];
+    final trend = alertnessTrendOf(scores);
+
+    return [
+      const SizedBox(height: 24),
+      const SectionLabel('Alertness trend'),
+      const SizedBox(height: 6),
+      Text(_trendLine(trend), style: RiseText.caption),
+      const SizedBox(height: 12),
+      RiseCard(
+        padding: const EdgeInsets.all(RiseSpacing.screen),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(_trendIcon(trend), size: 18, color: _trendColor(trend)),
+                const SizedBox(width: 8),
+                Text(_trendWord(trend),
+                    style: RiseText.body.copyWith(
+                        fontWeight: FontWeight.w700, color: _trendColor(trend))),
+                const Spacer(),
+                Text('last ${recent.length}',
+                    style: RiseText.caption.copyWith(fontSize: 10)),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Sparkline(
+              values: [for (final s in scores) s.toDouble()],
+              color: RiseColors.text,
+              height: 48,
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  String _trendWord(AlertnessTrend t) => switch (t) {
+        AlertnessTrend.rising => 'Trending up',
+        AlertnessTrend.steady => 'Holding steady',
+        AlertnessTrend.easing => 'Easing off',
+        AlertnessTrend.insufficient => 'Not enough data',
+      };
+
+  String _trendLine(AlertnessTrend t) => switch (t) {
+        AlertnessTrend.rising =>
+          'Your wake-up reaction speed is picking up lately.',
+        AlertnessTrend.steady => 'Your wake-up reaction speed is holding steady.',
+        AlertnessTrend.easing =>
+          'Your wake-up reaction speed has dipped a little lately.',
+        AlertnessTrend.insufficient => 'A few more scores and a trend appears.',
+      };
+
+  IconData _trendIcon(AlertnessTrend t) => switch (t) {
+        AlertnessTrend.rising => Icons.trending_up,
+        AlertnessTrend.steady => Icons.trending_flat,
+        AlertnessTrend.easing => Icons.trending_down,
+        AlertnessTrend.insufficient => Icons.remove,
+      };
+
+  Color _trendColor(AlertnessTrend t) => switch (t) {
+        AlertnessTrend.rising => RiseColors.positive,
+        AlertnessTrend.steady => RiseColors.textDim,
+        AlertnessTrend.easing => RiseColors.waking,
+        AlertnessTrend.insufficient => RiseColors.textDim,
+      };
+
   Widget _bandChip(int score) {
     final color = _bandColor(score);
     return Container(
@@ -564,6 +743,332 @@ class _RoughNightCard extends ConsumerWidget {
       const SnackBar(content: Text('Marked. Your streak\'s safe — rest up.')),
     );
   }
+}
+
+/// A Week / Month / Year overview: a period toggle over three pure aggregates —
+/// on-time rate, average wake time, and best on-time run in the window.
+class _OverviewSection extends ConsumerStatefulWidget {
+  const _OverviewSection();
+
+  @override
+  ConsumerState<_OverviewSection> createState() => _OverviewSectionState();
+}
+
+class _OverviewSectionState extends ConsumerState<_OverviewSection> {
+  StatsPeriod _period = StatsPeriod.week;
+
+  @override
+  Widget build(BuildContext context) {
+    final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
+    final stats = aggregatePeriod(events, DateTime.now(), _period);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionLabel('Overview'),
+        const SizedBox(height: 12),
+        SegmentedControl<StatsPeriod>(
+          segments: [
+            for (final p in StatsPeriod.values)
+              (value: p, label: periodLabel(p)),
+          ],
+          selected: _period,
+          onChanged: (p) => setState(() => _period = p),
+        ),
+        const SizedBox(height: 12),
+        RiseCard(
+          padding: const EdgeInsets.all(RiseSpacing.screen),
+          child: stats.count == 0
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Text('No wake-ups in this ${periodLabel(_period).toLowerCase()} yet.',
+                      style: RiseText.caption),
+                )
+              : Row(
+                  children: [
+                    _metric(
+                        'On time',
+                        '${(stats.onTimeRate! * 100).round()}%',
+                        '${stats.onTimeCount}/${stats.count}'),
+                    _divider(),
+                    _metric(
+                        'Avg wake',
+                        stats.avgWakeMinute == null
+                            ? '—'
+                            : formatClock(stats.avgWakeMinute! ~/ 60,
+                                stats.avgWakeMinute! % 60),
+                        'typical'),
+                    _divider(),
+                    _metric('Best run', '${stats.bestStreak}',
+                        stats.bestStreak == 1 ? 'day' : 'days'),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _divider() =>
+      Container(width: 1, height: 40, color: RiseColors.divider);
+
+  Widget _metric(String label, String value, String sub) => Expanded(
+        child: Column(
+          children: [
+            Text(value,
+                style: RiseText.mono(size: 20, weight: FontWeight.w600),
+                maxLines: 1),
+            const SizedBox(height: 3),
+            Text(label, style: RiseText.caption),
+            Text(sub,
+                style: RiseText.caption
+                    .copyWith(fontSize: 10, color: RiseColors.textFaint)),
+          ],
+        ),
+      );
+}
+
+/// A tappable "share your progress" affordance. It hosts an offscreen
+/// [ShareableStatsCard] inside a [RepaintBoundary]; on tap it rasterises that
+/// card and hands it to the OS share sheet. A capture/share hiccup only ever
+/// surfaces a gentle snackbar — sharing is a nicety, never load-bearing.
+class _ShareCard extends ConsumerStatefulWidget {
+  const _ShareCard({this.shareRunner});
+
+  final Future<void> Function(GlobalKey boundaryKey)? shareRunner;
+
+  @override
+  ConsumerState<_ShareCard> createState() => _ShareCardState();
+}
+
+class _ShareCardState extends ConsumerState<_ShareCard> {
+  final GlobalKey _boundaryKey = GlobalKey();
+  bool _busy = false;
+
+  /// The offscreen capture target only exists while a share is in flight, so it
+  /// never duplicates the on-screen stats in the widget tree (or in tests).
+  bool _capturing = false;
+
+  Future<void> _share() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _capturing = true;
+    });
+    try {
+      // Let the offscreen card build, lay out and paint before rasterising it.
+      await WidgetsBinding.instance.endOfFrame;
+      final runner = widget.shareRunner ??
+          (key) => captureAndShare(key, text: 'My Rise wake-up stats');
+      await runner(_boundaryKey);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Couldn\'t share right now. Try again.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _capturing = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final streak = ref.watch(streakProvider);
+    final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
+    final earned = earnedAchievements(streak: streak, events: events)
+        .where((b) => b.earned)
+        .toList();
+    final account = ref.watch(accountProvider).value;
+    final handle = account?.username != null ? '@${account!.username}' : null;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        GestureDetector(
+          key: const Key('share-stats-card'),
+          behavior: HitTestBehavior.opaque,
+          onTap: _busy ? null : _share,
+          child: RiseCard(
+            child: Row(
+              children: [
+                const Icon(Icons.ios_share,
+                    color: RiseColors.textDim, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Share your progress',
+                          style: RiseText.body
+                              .copyWith(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text('A clean card of your streak and badges.',
+                          style: RiseText.caption),
+                    ],
+                  ),
+                ),
+                if (_busy)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  const Icon(Icons.chevron_right,
+                      color: RiseColors.textFaint, size: 20),
+              ],
+            ),
+          ),
+        ),
+        // Offscreen capture target: laid out and painted (so toImage works) but
+        // parked far off-screen, and only present while capturing so it never
+        // duplicates the on-screen stats. Fixed size for a clean PNG.
+        if (_capturing)
+          Positioned(
+            left: -10000,
+            top: 0,
+            width: kShareCardWidth,
+            height: kShareCardHeight,
+            child: RepaintBoundary(
+              key: _boundaryKey,
+              child: ShareableStatsCard(
+                streakDays: streak.current,
+                bestStreak: streak.best,
+                consistency: consistencyScore(events),
+                badges: earned,
+                handle: handle,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// The badges wall: every achievement, earned or locked. Badges reward what
+/// you *did* (a streak, an early morning), never a label about who you are — and
+/// a locked badge is framed as the next goal to reach, never a failure.
+class _AchievementsSection extends ConsumerWidget {
+  const _AchievementsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final streak = ref.watch(streakProvider);
+    final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
+    final badges = earnedAchievements(streak: streak, events: events);
+    final earned = badges.where((b) => b.earned).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const SectionLabel('Achievements'),
+            const Spacer(),
+            Text('$earned / ${badges.length}',
+                style: RiseText.mono(size: 12.5, color: RiseColors.textDim)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text('Badges for what you did. Locked ones are simply what\'s next.',
+            style: RiseText.caption),
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            const gap = 10.0;
+            final tileWidth = (constraints.maxWidth - gap) / 2;
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final b in badges)
+                  SizedBox(width: tileWidth, child: _badgeTile(b)),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _badgeTile(Achievement a) {
+    final earned = a.earned;
+    final iconColor = earned ? RiseColors.primaryText : RiseColors.textFaint;
+    final ringColor = earned ? RiseColors.positive : RiseColors.surface2;
+    return RiseCard(
+      radius: RiseRadii.base,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: ringColor,
+                  shape: BoxShape.circle,
+                  border: earned
+                      ? null
+                      : Border.all(color: RiseColors.border),
+                ),
+                child: Icon(_badgeIcon(a.id), size: 18, color: iconColor),
+              ),
+              const Spacer(),
+              if (earned)
+                const Icon(Icons.check_circle,
+                    size: 18, color: RiseColors.positive),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(a.title,
+              style: RiseText.body.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: earned ? RiseColors.text : RiseColors.textDim)),
+          const SizedBox(height: 2),
+          Text(a.description,
+              style: RiseText.caption, maxLines: 2, overflow: TextOverflow.ellipsis),
+          if (!earned && a.fraction != null) ...[
+            const SizedBox(height: 10),
+            _progressBar(a.fraction!),
+            const SizedBox(height: 4),
+            Text('${a.progress} / ${a.target}',
+                style: RiseText.mono(size: 10.5, color: RiseColors.textFaint)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _progressBar(double fraction) => ClipRRect(
+        borderRadius: BorderRadius.circular(RiseRadii.pill),
+        child: Container(
+          height: 5,
+          color: RiseColors.surface2,
+          child: FractionallySizedBox(
+            alignment: Alignment.centerLeft,
+            widthFactor: fraction.clamp(0.0, 1.0),
+            child: Container(color: RiseColors.textDim),
+          ),
+        ),
+      );
+
+  IconData _badgeIcon(String id) => switch (id) {
+        'first_light' => Icons.wb_twilight,
+        'streak_7' || 'streak_30' || 'streak_100' =>
+          Icons.local_fire_department,
+        'perfect_week' => Icons.verified_outlined,
+        'no_snooze_week' => Icons.do_not_disturb_on_outlined,
+        'early_bird' => Icons.wb_sunny_outlined,
+        'sharp' => Icons.bolt,
+        _ => Icons.emoji_events_outlined,
+      };
 }
 
 /// The crew leaderboard on the Stats tab: own + crew ranked by wake

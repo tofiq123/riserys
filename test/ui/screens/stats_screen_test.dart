@@ -10,6 +10,7 @@ import 'package:rise/domain/crew_standing.dart';
 import 'package:rise/domain/streak.dart';
 import 'package:rise/domain/wake_event.dart';
 import 'package:rise/domain/wake_stats.dart';
+import 'package:rise/ui/components/sparkline.dart';
 import 'package:rise/ui/screens/stats_screen.dart';
 import 'package:rise/ui/state/auth_providers.dart';
 import 'package:rise/ui/state/leaderboard_providers.dart';
@@ -51,13 +52,17 @@ Future<void> _pump(WidgetTester t, Widget w) async {
   await t.pumpWidget(w);
 }
 
-Widget _host({List<WakeEvent> events = const [], StreakStats streak = StreakStats.empty}) {
+Widget _host(
+    {List<WakeEvent> events = const [],
+    StreakStats streak = StreakStats.empty,
+    Future<void> Function(GlobalKey)? shareRunner}) {
   return ProviderScope(
     overrides: [
       wakeEventsProvider.overrideWith((ref) => Stream.value(events)),
       streakProvider.overrideWithValue(streak),
     ],
-    child: const MaterialApp(home: Scaffold(body: StatsScreen())),
+    child: MaterialApp(
+        home: Scaffold(body: StatsScreen(shareRunner: shareRunner))),
   );
 }
 
@@ -221,6 +226,94 @@ void main() {
     expect(find.textContaining('Alertness (PVT)'), findsOneWidget);
     // The honest subtext only accompanies real scores, so it is absent here.
     expect(find.textContaining('Not a medical measure'), findsNothing);
+  });
+
+  testWidgets('renders the achievements wall with earned and locked badges',
+      (t) async {
+    // One completed wake-up: First light earns; the streak badges stay locked.
+    await _pump(t, _host(events: [evOn(DateTime.now())]));
+    await t.pump();
+    expect(find.text('ACHIEVEMENTS'), findsOneWidget); // SectionLabel uppercases
+    expect(find.text('First light'), findsOneWidget); // earned
+    expect(find.text('7-day streak'), findsOneWidget); // locked, still shown
+    expect(find.text('1 / 8'), findsOneWidget); // one of eight badges earned
+  });
+
+  testWidgets('surfaces a consistency score once there is enough data',
+      (t) async {
+    // Six wake-ups all dismissed at 06:03 -> perfectly regular -> 100.
+    final events = [for (var d = 20; d <= 25; d++) evOn(DateTime(2026, 3, d))];
+    await _pump(t, _host(events: events));
+    await t.pump();
+    expect(find.text('CONSISTENCY'), findsOneWidget); // SectionLabel uppercases
+    expect(find.text('very steady'), findsOneWidget); // band for a top score
+  });
+
+  testWidgets('shows the alertness trend section once enough scores exist',
+      (t) async {
+    final events = [
+      evScore(45, order: 1),
+      evScore(50, order: 2),
+      evScore(78, order: 3),
+      evScore(82, order: 4), // rising over time -> Trending up
+    ];
+    await _pump(t, _host(events: events));
+    await t.pump();
+    expect(find.text('ALERTNESS TREND'), findsOneWidget);
+    expect(find.text('Trending up'), findsOneWidget);
+    expect(find.byType(Sparkline), findsOneWidget);
+  });
+
+  testWidgets('share affordance runs the share step on tap', (t) async {
+    GlobalKey? captured;
+    await _pump(t, _host(
+      events: [evOn(DateTime.now())],
+      shareRunner: (key) async => captured = key,
+    ));
+    await t.pump();
+    expect(find.byKey(const Key('share-stats-card')), findsOneWidget);
+    await t.tap(find.byKey(const Key('share-stats-card')));
+    await t.pumpAndSettle();
+    expect(captured, isNotNull); // the injected runner was invoked
+    // A clean run shows no error snackbar.
+    expect(find.textContaining('Couldn\'t share'), findsNothing);
+  });
+
+  testWidgets('share failure surfaces a graceful snackbar, never a crash',
+      (t) async {
+    await _pump(t, _host(
+      events: [evOn(DateTime.now())],
+      shareRunner: (key) async => throw Exception('boom'),
+    ));
+    await t.pump();
+    await t.tap(find.byKey(const Key('share-stats-card')));
+    await t.pumpAndSettle();
+    expect(find.textContaining('Couldn\'t share right now'), findsOneWidget);
+  });
+
+  testWidgets('overview toggles between Week, Month and Year aggregates',
+      (t) async {
+    // Five on-time days this week, plus an older day only the Month/Year see.
+    final today = DateTime.now();
+    final events = [
+      for (var i = 0; i < 5; i++)
+        evOn(today.subtract(Duration(days: i))),
+      evOn(today.subtract(const Duration(days: 20))), // outside the week window
+    ];
+    await _pump(t, _host(events: events));
+    await t.pump();
+
+    expect(find.text('OVERVIEW'), findsOneWidget); // SectionLabel uppercases
+    expect(find.text('Week'), findsOneWidget);
+    expect(find.text('Month'), findsOneWidget);
+    expect(find.text('Year'), findsOneWidget);
+    // Week: 5 of 5 on time.
+    expect(find.text('5/5'), findsOneWidget);
+
+    // Switch to Month: now 6 of 6.
+    await t.tap(find.text('Month'));
+    await t.pumpAndSettle();
+    expect(find.text('6/6'), findsOneWidget);
   });
 
   test('consistencyLine reports the on-time count for the week', () {
