@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/excused_days_repository.dart';
 import '../../domain/achievements.dart';
+import '../../domain/alertness_trend.dart';
+import '../../domain/consistency.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/rise_settings.dart';
 import '../../domain/streak.dart';
@@ -10,6 +12,7 @@ import '../../domain/wake_event.dart';
 import '../../domain/wake_insights.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
+import '../components/sparkline.dart';
 import '../state/auth_providers.dart';
 import '../state/leaderboard_providers.dart';
 import '../state/settings_providers.dart';
@@ -125,12 +128,17 @@ class StatsScreen extends ConsumerWidget {
             const SizedBox(height: 14),
             _weekChart(weekWakes(events, now)),
             const SizedBox(height: 24),
+            const SectionLabel('Consistency'),
+            const SizedBox(height: 12),
+            _consistencyCard(events),
+            const SizedBox(height: 24),
             const _AchievementsSection(),
             ..._insightsWidgets(events, settings),
             const SizedBox(height: 24),
             const SectionLabel('Alertness'),
             const SizedBox(height: 12),
             _alertnessCard(events),
+            ..._alertnessTrendWidgets(events),
           ],
           const SizedBox(height: 24),
           const _LeaderboardSection(),
@@ -391,6 +399,160 @@ class StatsScreen extends ConsumerWidget {
       ),
     );
   }
+
+  /// Wake-time regularity as a single 0–100 figure. Shows a gentle helper until
+  /// there are enough completed wake-ups to be meaningful.
+  Widget _consistencyCard(List<WakeEvent> events) {
+    final score = consistencyScore(events);
+    if (score == null) {
+      return RiseCard(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+          child: Column(
+            children: [
+              const Icon(Icons.insights_outlined,
+                  size: 32, color: RiseColors.textFaint),
+              const SizedBox(height: 10),
+              Text('Building your consistency score',
+                  style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(
+                  'A few more wake-ups and we\'ll show how steady your wake '
+                  'time is.',
+                  textAlign: TextAlign.center,
+                  style: RiseText.caption),
+            ],
+          ),
+        ),
+      );
+    }
+    final color = _consistencyColor(score);
+    return RiseCard(
+      padding: const EdgeInsets.all(RiseSpacing.screen),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('$score',
+                  style: RiseText.mono(size: 44, weight: FontWeight.w600)),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: RiseColors.surface2,
+                    borderRadius: BorderRadius.circular(RiseRadii.pill),
+                    border: Border.all(color: color),
+                  ),
+                  child: Text(consistencyBand(score),
+                      style: RiseText.caption.copyWith(
+                          color: color, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text('consistency', style: RiseText.caption),
+          const SizedBox(height: 12),
+          Text(
+              'How steady your wake time is, day to day — higher is more '
+              'regular. Not a judgement.',
+              style: RiseText.caption),
+        ],
+      ),
+    );
+  }
+
+  Color _consistencyColor(int score) {
+    if (score >= 80) return RiseColors.positive;
+    if (score >= 60) return RiseColors.waking;
+    return RiseColors.asleep;
+  }
+
+  /// A longer-horizon alertness trend beyond the single Alertness card: a
+  /// sparkline of the recent scores plus a plain-language direction. Hidden
+  /// until there are enough scores for a trend to mean anything.
+  List<Widget> _alertnessTrendWidgets(List<WakeEvent> events) {
+    final scored = [
+      for (final e in events)
+        if (e.alertnessScore != null) e
+    ]..sort((a, b) => a.firstRingAt.compareTo(b.firstRingAt));
+    if (scored.length < kMinTrendScores) return const [];
+
+    final recent =
+        scored.length > 14 ? scored.sublist(scored.length - 14) : scored;
+    final scores = [for (final e in recent) e.alertnessScore!];
+    final trend = alertnessTrendOf(scores);
+
+    return [
+      const SizedBox(height: 24),
+      const SectionLabel('Alertness trend'),
+      const SizedBox(height: 6),
+      Text(_trendLine(trend), style: RiseText.caption),
+      const SizedBox(height: 12),
+      RiseCard(
+        padding: const EdgeInsets.all(RiseSpacing.screen),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(_trendIcon(trend), size: 18, color: _trendColor(trend)),
+                const SizedBox(width: 8),
+                Text(_trendWord(trend),
+                    style: RiseText.body.copyWith(
+                        fontWeight: FontWeight.w700, color: _trendColor(trend))),
+                const Spacer(),
+                Text('last ${recent.length}',
+                    style: RiseText.caption.copyWith(fontSize: 10)),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Sparkline(
+              values: [for (final s in scores) s.toDouble()],
+              color: RiseColors.text,
+              height: 48,
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  String _trendWord(AlertnessTrend t) => switch (t) {
+        AlertnessTrend.rising => 'Trending up',
+        AlertnessTrend.steady => 'Holding steady',
+        AlertnessTrend.easing => 'Easing off',
+        AlertnessTrend.insufficient => 'Not enough data',
+      };
+
+  String _trendLine(AlertnessTrend t) => switch (t) {
+        AlertnessTrend.rising =>
+          'Your wake-up reaction speed is picking up lately.',
+        AlertnessTrend.steady => 'Your wake-up reaction speed is holding steady.',
+        AlertnessTrend.easing =>
+          'Your wake-up reaction speed has dipped a little lately.',
+        AlertnessTrend.insufficient => 'A few more scores and a trend appears.',
+      };
+
+  IconData _trendIcon(AlertnessTrend t) => switch (t) {
+        AlertnessTrend.rising => Icons.trending_up,
+        AlertnessTrend.steady => Icons.trending_flat,
+        AlertnessTrend.easing => Icons.trending_down,
+        AlertnessTrend.insufficient => Icons.remove,
+      };
+
+  Color _trendColor(AlertnessTrend t) => switch (t) {
+        AlertnessTrend.rising => RiseColors.positive,
+        AlertnessTrend.steady => RiseColors.textDim,
+        AlertnessTrend.easing => RiseColors.waking,
+        AlertnessTrend.insufficient => RiseColors.textDim,
+      };
 
   Widget _bandChip(int score) {
     final color = _bandColor(score);

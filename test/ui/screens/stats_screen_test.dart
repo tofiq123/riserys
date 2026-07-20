@@ -10,6 +10,7 @@ import 'package:rise/domain/crew_standing.dart';
 import 'package:rise/domain/streak.dart';
 import 'package:rise/domain/wake_event.dart';
 import 'package:rise/domain/wake_stats.dart';
+import 'package:rise/ui/components/sparkline.dart';
 import 'package:rise/ui/screens/stats_screen.dart';
 import 'package:rise/ui/state/auth_providers.dart';
 import 'package:rise/ui/state/leaderboard_providers.dart';
@@ -232,6 +233,31 @@ void main() {
     expect(find.text('First light'), findsOneWidget); // earned
     expect(find.text('7-day streak'), findsOneWidget); // locked, still shown
     expect(find.text('1 / 8'), findsOneWidget); // one of eight badges earned
+  });
+
+  testWidgets('surfaces a consistency score once there is enough data',
+      (t) async {
+    // Six wake-ups all dismissed at 06:03 -> perfectly regular -> 100.
+    final events = [for (var d = 20; d <= 25; d++) evOn(DateTime(2026, 3, d))];
+    await _pump(t, _host(events: events));
+    await t.pump();
+    expect(find.text('CONSISTENCY'), findsOneWidget); // SectionLabel uppercases
+    expect(find.text('very steady'), findsOneWidget); // band for a top score
+  });
+
+  testWidgets('shows the alertness trend section once enough scores exist',
+      (t) async {
+    final events = [
+      evScore(45, order: 1),
+      evScore(50, order: 2),
+      evScore(78, order: 3),
+      evScore(82, order: 4), // rising over time -> Trending up
+    ];
+    await _pump(t, _host(events: events));
+    await t.pump();
+    expect(find.text('ALERTNESS TREND'), findsOneWidget);
+    expect(find.text('Trending up'), findsOneWidget);
+    expect(find.byType(Sparkline), findsOneWidget);
   });
 
   test('consistencyLine reports the on-time count for the week', () {
