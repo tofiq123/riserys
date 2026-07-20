@@ -11,6 +11,7 @@ import 'package:rise/ui/missions/memory_mission.dart';
 import 'package:rise/ui/missions/mission_host.dart';
 import 'package:rise/ui/missions/pvt_mission.dart';
 import 'package:rise/ui/missions/tap_mission.dart';
+import 'package:rise/ui/missions/typing_mission.dart';
 import 'package:rise/ui/screens/ring_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
 import 'package:rise/ui/state/settings_providers.dart';
@@ -194,6 +195,71 @@ void main() {
     });
   });
 
+  group('TypingMission', () {
+    testWidgets('typing the exact phrase solves', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(TypingMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        phrase: 'wake up now',
+      )));
+      await t.enterText(find.byType(TextField), 'wake up now');
+      await t.tap(find.text('Check'));
+      await t.pump();
+      expect(solved, isTrue);
+    });
+
+    testWidgets('a wrong phrase does not solve and shows a retry hint', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(TypingMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        phrase: 'wake up now',
+      )));
+      await t.enterText(find.byType(TextField), 'not it');
+      await t.tap(find.text('Check'));
+      await t.pump();
+      expect(solved, isFalse);
+      expect(find.text('Try again'), findsOneWidget);
+    });
+
+    testWidgets('the match is case-insensitive and trims whitespace', (t) async {
+      var solved = false;
+      await t.pumpWidget(_wrap(TypingMission(
+        diff: 'easy',
+        onSolved: () => solved = true,
+        phrase: 'Rise and Shine',
+      )));
+      await t.enterText(find.byType(TextField), '  rise and shine  ');
+      await t.tap(find.text('Check'));
+      await t.pump();
+      expect(solved, isTrue);
+    });
+
+    testWidgets('tapping Check again after solving does not re-fire onSolved',
+        (t) async {
+      var solves = 0;
+      await t.pumpWidget(_wrap(TypingMission(
+        diff: 'easy',
+        onSolved: () => solves++,
+        phrase: 'wake up now',
+      )));
+      await t.enterText(find.byType(TextField), 'wake up now');
+      await t.tap(find.text('Check'));
+      await t.pump();
+      expect(solves, 1);
+      await t.tap(find.text('Check'));
+      await t.pump();
+      expect(solves, 1);
+    });
+  });
+
+  test('pickPhrase returns a phrase from the matching difficulty pool', () {
+    for (final d in ['easy', 'medium', 'hard']) {
+      expect(phrasesFor(d), contains(pickPhrase(d)), reason: 'diff $d');
+    }
+  });
+
   group('buildMission host', () {
     testWidgets('dispatches to the right mission widget', (t) async {
       final cases = <String, Type>{
@@ -202,6 +268,7 @@ void main() {
         'tap': TapMission,
         'memory': MemoryMission,
         'pvt': PvtMission,
+        'typing': TypingMission,
       };
       for (final entry in cases.entries) {
         await t.pumpWidget(_wrap(Builder(

@@ -31,7 +31,8 @@ class Alarm {
   final String soundAsset;
   final bool vibrate;
 
-  /// Dismiss mission: 'none' | 'math' | 'hold' | 'tap' | 'memory' | 'pvt'.
+  /// Dismiss mission:
+  /// 'none' | 'math' | 'hold' | 'tap' | 'memory' | 'pvt' | 'typing'.
   final String mission;
 
   /// Mission difficulty: 'easy' | 'medium' | 'hard'.
