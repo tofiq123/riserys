@@ -83,8 +83,10 @@ class AppSettings {
   bool get sunriseWake => _prefs.getBool(_kSunriseWake) ?? false;
   Future<void> setSunriseWake(bool v) => _prefs.setBool(_kSunriseWake, v);
 
-  /// The honest "get real light" ring prompt (Phase 10, Sensory). Default on.
-  bool get realLightPrompt => _prefs.getBool(_kRealLightPrompt) ?? true;
+  /// The honest "get real light" ring prompt (Phase 10, Sensory). Default
+  /// off — opt-in via Settings, so the ring screen looks exactly as before
+  /// unless the user enables it.
+  bool get realLightPrompt => _prefs.getBool(_kRealLightPrompt) ?? false;
   Future<void> setRealLightPrompt(bool v) =>
       _prefs.setBool(_kRealLightPrompt, v);
 

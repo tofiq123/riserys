@@ -15,24 +15,24 @@ void main() {
     expect(s.adaptiveMissions, isFalse);
     expect(s.smartWakeCheck, isFalse);
     expect(s.sunriseWake, isFalse);
-    expect(s.realLightPrompt, isTrue);
+    expect(s.realLightPrompt, isFalse);
   });
 
-  test('realLightPrompt defaults on; copyWith and equality', () {
+  test('realLightPrompt defaults off; copyWith and equality', () {
     const s = RiseSettings();
-    expect(s.copyWith(realLightPrompt: false).realLightPrompt, isFalse);
-    expect(const RiseSettings(realLightPrompt: false) == const RiseSettings(),
+    expect(s.copyWith(realLightPrompt: true).realLightPrompt, isTrue);
+    expect(const RiseSettings(realLightPrompt: true) == const RiseSettings(),
         isFalse);
     expect(
-        const RiseSettings(realLightPrompt: false).hashCode ==
+        const RiseSettings(realLightPrompt: true).hashCode ==
             const RiseSettings().hashCode,
         isFalse);
     // Unrelated copyWith preserves it.
     expect(
-        const RiseSettings(realLightPrompt: false)
+        const RiseSettings(realLightPrompt: true)
             .copyWith(snoozeMaxCount: 2)
             .realLightPrompt,
-        isFalse);
+        isTrue);
   });
 
   test('sunriseWake copyWith and equality', () {

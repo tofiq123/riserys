@@ -12,7 +12,7 @@ class RiseSettings {
     this.adaptiveMissions = false,
     this.smartWakeCheck = false,
     this.sunriseWake = false,
-    this.realLightPrompt = true,
+    this.realLightPrompt = false,
   });
 
   /// Max snoozes before the button hides (0 disables snooze).

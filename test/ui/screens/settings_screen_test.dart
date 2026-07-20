@@ -105,7 +105,7 @@ void main() {
     expect(store.sunriseWake, isTrue);
   });
 
-  testWidgets('toggling the real-light prompt persists it (default on)',
+  testWidgets('toggling the real-light prompt persists it (default off)',
       (t) async {
     SharedPreferences.setMockInitialValues({});
     final store = await AppSettings.load();
@@ -116,10 +116,10 @@ void main() {
           child: const MaterialApp(home: SettingsScreen()),
         ));
     await t.pump();
-    expect(store.realLightPrompt, isTrue); // default on
+    expect(store.realLightPrompt, isFalse); // default off
     await t.tap(find.byKey(const Key('real-light-prompt-switch')));
     await t.pump();
-    expect(store.realLightPrompt, isFalse);
+    expect(store.realLightPrompt, isTrue);
   });
 
   testWidgets('editing the wake plan persists it', (t) async {
