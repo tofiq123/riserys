@@ -223,6 +223,17 @@ void main() {
     expect(find.textContaining('Not a medical measure'), findsNothing);
   });
 
+  testWidgets('renders the achievements wall with earned and locked badges',
+      (t) async {
+    // One completed wake-up: First light earns; the streak badges stay locked.
+    await _pump(t, _host(events: [evOn(DateTime.now())]));
+    await t.pump();
+    expect(find.text('ACHIEVEMENTS'), findsOneWidget); // SectionLabel uppercases
+    expect(find.text('First light'), findsOneWidget); // earned
+    expect(find.text('7-day streak'), findsOneWidget); // locked, still shown
+    expect(find.text('1 / 8'), findsOneWidget); // one of eight badges earned
+  });
+
   test('consistencyLine reports the on-time count for the week', () {
     final now = DateTime(2026, 7, 20, 12);
     final events = [

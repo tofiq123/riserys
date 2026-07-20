@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/excused_days_repository.dart';
+import '../../domain/achievements.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/rise_settings.dart';
 import '../../domain/streak.dart';
@@ -123,6 +124,8 @@ class StatsScreen extends ConsumerWidget {
             Text(consistencyLine(events, now), style: RiseText.caption),
             const SizedBox(height: 14),
             _weekChart(weekWakes(events, now)),
+            const SizedBox(height: 24),
+            const _AchievementsSection(),
             ..._insightsWidgets(events, settings),
             const SizedBox(height: 24),
             const SectionLabel('Alertness'),
@@ -564,6 +567,127 @@ class _RoughNightCard extends ConsumerWidget {
       const SnackBar(content: Text('Marked. Your streak\'s safe — rest up.')),
     );
   }
+}
+
+/// The badges wall: every achievement, earned or locked. Badges reward what
+/// you *did* (a streak, an early morning), never a label about who you are — and
+/// a locked badge is framed as the next goal to reach, never a failure.
+class _AchievementsSection extends ConsumerWidget {
+  const _AchievementsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final streak = ref.watch(streakProvider);
+    final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
+    final badges = earnedAchievements(streak: streak, events: events);
+    final earned = badges.where((b) => b.earned).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const SectionLabel('Achievements'),
+            const Spacer(),
+            Text('$earned / ${badges.length}',
+                style: RiseText.mono(size: 12.5, color: RiseColors.textDim)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text('Badges for what you did. Locked ones are simply what\'s next.',
+            style: RiseText.caption),
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            const gap = 10.0;
+            final tileWidth = (constraints.maxWidth - gap) / 2;
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final b in badges)
+                  SizedBox(width: tileWidth, child: _badgeTile(b)),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _badgeTile(Achievement a) {
+    final earned = a.earned;
+    final iconColor = earned ? RiseColors.primaryText : RiseColors.textFaint;
+    final ringColor = earned ? RiseColors.positive : RiseColors.surface2;
+    return RiseCard(
+      radius: RiseRadii.base,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: ringColor,
+                  shape: BoxShape.circle,
+                  border: earned
+                      ? null
+                      : Border.all(color: RiseColors.border),
+                ),
+                child: Icon(_badgeIcon(a.id), size: 18, color: iconColor),
+              ),
+              const Spacer(),
+              if (earned)
+                const Icon(Icons.check_circle,
+                    size: 18, color: RiseColors.positive),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(a.title,
+              style: RiseText.body.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: earned ? RiseColors.text : RiseColors.textDim)),
+          const SizedBox(height: 2),
+          Text(a.description,
+              style: RiseText.caption, maxLines: 2, overflow: TextOverflow.ellipsis),
+          if (!earned && a.fraction != null) ...[
+            const SizedBox(height: 10),
+            _progressBar(a.fraction!),
+            const SizedBox(height: 4),
+            Text('${a.progress} / ${a.target}',
+                style: RiseText.mono(size: 10.5, color: RiseColors.textFaint)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _progressBar(double fraction) => ClipRRect(
+        borderRadius: BorderRadius.circular(RiseRadii.pill),
+        child: Container(
+          height: 5,
+          color: RiseColors.surface2,
+          child: FractionallySizedBox(
+            alignment: Alignment.centerLeft,
+            widthFactor: fraction.clamp(0.0, 1.0),
+            child: Container(color: RiseColors.textDim),
+          ),
+        ),
+      );
+
+  IconData _badgeIcon(String id) => switch (id) {
+        'first_light' => Icons.wb_twilight,
+        'streak_7' || 'streak_30' || 'streak_100' =>
+          Icons.local_fire_department,
+        'perfect_week' => Icons.verified_outlined,
+        'no_snooze_week' => Icons.do_not_disturb_on_outlined,
+        'early_bird' => Icons.wb_sunny_outlined,
+        'sharp' => Icons.bolt,
+        _ => Icons.emoji_events_outlined,
+      };
 }
 
 /// The crew leaderboard on the Stats tab: own + crew ranked by wake
