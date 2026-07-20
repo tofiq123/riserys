@@ -14,6 +14,7 @@ import '../state/auth_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import 'setup_guardian_screen.dart';
 import 'wellbeing_checkin_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -90,6 +91,38 @@ class ProfileScreen extends ConsumerWidget {
           const SectionLabel('Reliability'),
           const SizedBox(height: 6),
           Text('Make sure Rise can always reach you.', style: RiseText.caption),
+          const SizedBox(height: 12),
+          GestureDetector(
+            key: const Key('setup-guardian-entry'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) =>
+                    SetupGuardianScreen(permissions: permissions))),
+            child: RiseCard(
+              child: Row(
+                children: [
+                  const Icon(Icons.shield_outlined,
+                      color: RiseColors.textDim, size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Setup Guardian',
+                            style: RiseText.body
+                                .copyWith(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 2),
+                        Text('Check everything that keeps your alarm firing',
+                            style: RiseText.caption),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right,
+                      color: RiseColors.textFaint, size: 20),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 12),
           PermissionsSection(gateway: permissions),
           const SizedBox(height: 24),

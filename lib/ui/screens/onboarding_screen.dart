@@ -10,6 +10,7 @@ import '../components/time_dial.dart';
 import '../state/settings_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import 'setup_guardian_screen.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({
@@ -311,6 +312,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             style: RiseText.body.copyWith(color: RiseColors.textDim)),
         const SizedBox(height: 18),
         PermissionsSection(gateway: widget.permissions),
+        const SizedBox(height: 4),
+        Center(
+          child: GhostButton(
+            label: 'Open Setup Guardian',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) =>
+                    SetupGuardianScreen(permissions: widget.permissions))),
+          ),
+        ),
       ],
     );
   }
