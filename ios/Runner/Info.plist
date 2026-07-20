@@ -47,6 +47,10 @@
 	<true/>
 	<key>NSAlarmKitUsageDescription</key>
 	<string>Rise uses alarms to wake you at the times you set, even when your phone is silent.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Rise uses the camera to scan your wake-up QR code.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Rise counts your steps to confirm you're up and moving.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

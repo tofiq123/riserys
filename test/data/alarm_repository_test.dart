@@ -201,4 +201,17 @@ void main() {
     await repo.recordDismissed(saved.id, DateTime.utc(2026, 7, 20, 6, 40));
     expect((await repo.all()).single.snoozedUntil, isNull);
   });
+
+  test('missionData round-trips through upsert (null default and a set value)',
+      () async {
+    final plain = await repo.upsert(const Alarm(id: 0, hour: 6, minute: 30));
+    expect((await repo.all()).firstWhere((a) => a.id == plain.id).missionData,
+        isNull,
+        reason: 'unset mission config stays null');
+
+    final qr = await repo.upsert(const Alarm(
+        id: 0, hour: 7, minute: 0, mission: 'qr', missionData: 'RISE-QR-42'));
+    expect((await repo.all()).firstWhere((a) => a.id == qr.id).missionData,
+        'RISE-QR-42');
+  });
 }
