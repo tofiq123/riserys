@@ -31,6 +31,18 @@ void main() {
     expect(c.read(settingsProvider).wakeCheckEnabled, isFalse);
   });
 
+  test('SettingsController toggles the smart wake-check (default off)', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    final c = ProviderContainer(
+        overrides: [appSettingsProvider.overrideWithValue(store)]);
+    addTearDown(c.dispose);
+    expect(c.read(settingsProvider).smartWakeCheck, isFalse);
+    await c.read(settingsProvider.notifier).setSmartWakeCheck(true);
+    expect(c.read(settingsProvider).smartWakeCheck, isTrue); // state updated
+    expect((await AppSettings.load()).smartWakeCheck, isTrue); // persisted
+  });
+
   test('SettingsController sets and clears the steady wake time', () async {
     SharedPreferences.setMockInitialValues({});
     final store = await AppSettings.load();

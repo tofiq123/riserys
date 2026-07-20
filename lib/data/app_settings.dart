@@ -30,6 +30,7 @@ class AppSettings {
   static const _kTargetWakeHour = 'targetWakeHour';
   static const _kTargetWakeMinute = 'targetWakeMinute';
   static const _kAdaptiveMissions = 'adaptiveMissions';
+  static const _kSmartWakeCheck = 'smartWakeCheck';
 
   int get snoozeMaxCount => _prefs.getInt(_kSnoozeMaxCount) ?? 3;
   Future<void> setSnoozeMaxCount(int v) => _prefs.setInt(_kSnoozeMaxCount, v);
@@ -69,6 +70,12 @@ class AppSettings {
   Future<void> setAdaptiveMissions(bool v) =>
       _prefs.setBool(_kAdaptiveMissions, v);
 
+  /// Opt-in smart wake-check (Phase 11). Default off → the wake-check behaves
+  /// exactly as before unless the user enables it.
+  bool get smartWakeCheck => _prefs.getBool(_kSmartWakeCheck) ?? false;
+  Future<void> setSmartWakeCheck(bool v) =>
+      _prefs.setBool(_kSmartWakeCheck, v);
+
   /// A snapshot of the mutable settings (snooze + wake-check + wake plan +
   /// steady wake time).
   RiseSettings get settings => RiseSettings(
@@ -80,5 +87,6 @@ class AppSettings {
         targetWakeHour: targetWakeHour,
         targetWakeMinute: targetWakeMinute,
         adaptiveMissions: adaptiveMissions,
+        smartWakeCheck: smartWakeCheck,
       );
 }

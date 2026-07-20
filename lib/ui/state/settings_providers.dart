@@ -55,6 +55,11 @@ class SettingsController extends StateNotifier<RiseSettings> {
     await _store.setAdaptiveMissions(v);
     state = state.copyWith(adaptiveMissions: v);
   }
+
+  Future<void> setSmartWakeCheck(bool v) async {
+    await _store.setSmartWakeCheck(v);
+    state = state.copyWith(smartWakeCheck: v);
+  }
 }
 
 final settingsProvider =

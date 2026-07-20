@@ -87,4 +87,18 @@ void main() {
     expect(s2.adaptiveMissions, isTrue);
     expect(s2.settings.adaptiveMissions, isTrue);
   });
+
+  test('smartWakeCheck defaults false, round-trips, and reaches the snapshot',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.smartWakeCheck, isFalse);
+    expect(s.settings.smartWakeCheck, isFalse);
+
+    await s.setSmartWakeCheck(true);
+
+    final s2 = await AppSettings.load();
+    expect(s2.smartWakeCheck, isTrue);
+    expect(s2.settings.smartWakeCheck, isTrue);
+  });
 }

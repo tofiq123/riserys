@@ -10,6 +10,7 @@ class RiseSettings {
     this.targetWakeHour,
     this.targetWakeMinute,
     this.adaptiveMissions = false,
+    this.smartWakeCheck = false,
   });
 
   /// Max snoozes before the button hides (0 disables snooze).
@@ -45,6 +46,15 @@ class RiseSettings {
   /// see [adaptiveDifficulty]). Default off keeps the chosen difficulty exactly.
   final bool adaptiveMissions;
 
+  /// Opt-in "smart" wake-check (Phase 11). When on, after a dismissal Rise
+  /// fuses passive signals (sustained motion, app interaction, PVT alertness)
+  /// into an awake-confidence score: if it's confident the user got up, the
+  /// stay-up check is satisfied without a re-ring; if confidence is low OR
+  /// unknown it falls back to the ordinary wake-check re-ring. Default off, so
+  /// the wake-check behaves exactly as before unless the user enables it. Only
+  /// has effect while [wakeCheckEnabled] is on (it refines that check).
+  final bool smartWakeCheck;
+
   static const _shrinking = [9, 5, 3, 2, 1];
 
   /// The duration (minutes) of the [index]-th snooze (0-based): a flat value
@@ -63,6 +73,7 @@ class RiseSettings {
     int? targetWakeHour,
     int? targetWakeMinute,
     bool? adaptiveMissions,
+    bool? smartWakeCheck,
     // The `field ?? this.field` idiom cannot express "clear this nullable field
     // back to null" — passing null is indistinguishable from not passing it. A
     // sentinel flag keeps the intent explicit at the call site:
@@ -82,6 +93,7 @@ class RiseSettings {
             ? null
             : (targetWakeMinute ?? this.targetWakeMinute),
         adaptiveMissions: adaptiveMissions ?? this.adaptiveMissions,
+        smartWakeCheck: smartWakeCheck ?? this.smartWakeCheck,
       );
 
   @override
@@ -94,7 +106,8 @@ class RiseSettings {
       other.wakeIntention == wakeIntention &&
       other.targetWakeHour == targetWakeHour &&
       other.targetWakeMinute == targetWakeMinute &&
-      other.adaptiveMissions == adaptiveMissions;
+      other.adaptiveMissions == adaptiveMissions &&
+      other.smartWakeCheck == smartWakeCheck;
 
   @override
   int get hashCode => Object.hash(
@@ -105,5 +118,6 @@ class RiseSettings {
       wakeIntention,
       targetWakeHour,
       targetWakeMinute,
-      adaptiveMissions);
+      adaptiveMissions,
+      smartWakeCheck);
 }
