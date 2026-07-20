@@ -52,4 +52,25 @@ void main() {
     expect(s2.wakeIntention, 'Put my feet on the floor');
     expect(s2.settings.wakeIntention, 'Put my feet on the floor');
   });
+
+  test('targetWakeTime defaults unset, round-trips, and clears', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.targetWakeHour, isNull);
+    expect(s.targetWakeMinute, isNull);
+    expect(s.settings.hasTargetWake, isFalse);
+
+    await s.setTargetWakeTime(6, 30);
+
+    final s2 = await AppSettings.load();
+    expect(s2.targetWakeHour, 6);
+    expect(s2.targetWakeMinute, 30);
+    expect(s2.settings.targetWakeHour, 6);
+    expect(s2.settings.targetWakeMinute, 30);
+
+    await s2.clearTargetWakeTime();
+    final s3 = await AppSettings.load();
+    expect(s3.targetWakeHour, isNull);
+    expect(s3.targetWakeMinute, isNull);
+  });
 }

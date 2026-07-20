@@ -27,6 +27,8 @@ class AppSettings {
   static const _kWakeCheckEnabled = 'wakeCheckEnabled';
   static const _kWakeCheckDelayMinutes = 'wakeCheckDelayMinutes';
   static const _kWakeIntention = 'wakeIntention';
+  static const _kTargetWakeHour = 'targetWakeHour';
+  static const _kTargetWakeMinute = 'targetWakeMinute';
 
   int get snoozeMaxCount => _prefs.getInt(_kSnoozeMaxCount) ?? 3;
   Future<void> setSnoozeMaxCount(int v) => _prefs.setInt(_kSnoozeMaxCount, v);
@@ -47,12 +49,30 @@ class AppSettings {
   Future<void> setWakeIntention(String v) =>
       _prefs.setString(_kWakeIntention, v);
 
-  /// A snapshot of the mutable settings (snooze + wake-check + wake plan).
+  /// The steady target wake time (24-hour), or null when unset. The two
+  /// components are always stored and cleared together.
+  int? get targetWakeHour => _prefs.getInt(_kTargetWakeHour);
+  int? get targetWakeMinute => _prefs.getInt(_kTargetWakeMinute);
+
+  Future<void> setTargetWakeTime(int hour, int minute) async {
+    await _prefs.setInt(_kTargetWakeHour, hour);
+    await _prefs.setInt(_kTargetWakeMinute, minute);
+  }
+
+  Future<void> clearTargetWakeTime() async {
+    await _prefs.remove(_kTargetWakeHour);
+    await _prefs.remove(_kTargetWakeMinute);
+  }
+
+  /// A snapshot of the mutable settings (snooze + wake-check + wake plan +
+  /// steady wake time).
   RiseSettings get settings => RiseSettings(
         snoozeMaxCount: snoozeMaxCount,
         snoozeFlatMinutes: snoozeFlatMinutes,
         wakeCheckEnabled: wakeCheckEnabled,
         wakeCheckDelayMinutes: wakeCheckDelayMinutes,
         wakeIntention: wakeIntention,
+        targetWakeHour: targetWakeHour,
+        targetWakeMinute: targetWakeMinute,
       );
 }

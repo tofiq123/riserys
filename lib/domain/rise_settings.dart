@@ -7,6 +7,8 @@ class RiseSettings {
     this.wakeCheckEnabled = true,
     this.wakeCheckDelayMinutes = 5,
     this.wakeIntention = '',
+    this.targetWakeHour,
+    this.targetWakeMinute,
   });
 
   /// Max snoozes before the button hides (0 disables snooze).
@@ -26,6 +28,17 @@ class RiseSettings {
   /// cue with a concrete action markedly improves follow-through.
   final String wakeIntention;
 
+  /// The user's steady target wake time (24-hour), or null when unset. Framed
+  /// as a gentle rhythm anchor — a consistent wake time is general wellness, not
+  /// a treatment. Feeds the honest wake-pattern insights; never used to silently
+  /// reschedule alarms. [targetWakeHour] and [targetWakeMinute] are always set
+  /// or cleared together — [hasTargetWake] guards reads.
+  final int? targetWakeHour;
+  final int? targetWakeMinute;
+
+  /// Whether a steady wake time is set (both components present).
+  bool get hasTargetWake => targetWakeHour != null && targetWakeMinute != null;
+
   static const _shrinking = [9, 5, 3, 2, 1];
 
   /// The duration (minutes) of the [index]-th snooze (0-based): a flat value
@@ -41,6 +54,13 @@ class RiseSettings {
     bool? wakeCheckEnabled,
     int? wakeCheckDelayMinutes,
     String? wakeIntention,
+    int? targetWakeHour,
+    int? targetWakeMinute,
+    // The `field ?? this.field` idiom cannot express "clear this nullable field
+    // back to null" — passing null is indistinguishable from not passing it. A
+    // sentinel flag keeps the intent explicit at the call site:
+    // `copyWith(clearTargetWake: true)` reads unambiguously.
+    bool clearTargetWake = false,
   }) =>
       RiseSettings(
         snoozeMaxCount: snoozeMaxCount ?? this.snoozeMaxCount,
@@ -49,6 +69,11 @@ class RiseSettings {
         wakeCheckDelayMinutes:
             wakeCheckDelayMinutes ?? this.wakeCheckDelayMinutes,
         wakeIntention: wakeIntention ?? this.wakeIntention,
+        targetWakeHour:
+            clearTargetWake ? null : (targetWakeHour ?? this.targetWakeHour),
+        targetWakeMinute: clearTargetWake
+            ? null
+            : (targetWakeMinute ?? this.targetWakeMinute),
       );
 
   @override
@@ -58,9 +83,17 @@ class RiseSettings {
       other.snoozeFlatMinutes == snoozeFlatMinutes &&
       other.wakeCheckEnabled == wakeCheckEnabled &&
       other.wakeCheckDelayMinutes == wakeCheckDelayMinutes &&
-      other.wakeIntention == wakeIntention;
+      other.wakeIntention == wakeIntention &&
+      other.targetWakeHour == targetWakeHour &&
+      other.targetWakeMinute == targetWakeMinute;
 
   @override
-  int get hashCode => Object.hash(snoozeMaxCount, snoozeFlatMinutes,
-      wakeCheckEnabled, wakeCheckDelayMinutes, wakeIntention);
+  int get hashCode => Object.hash(
+      snoozeMaxCount,
+      snoozeFlatMinutes,
+      wakeCheckEnabled,
+      wakeCheckDelayMinutes,
+      wakeIntention,
+      targetWakeHour,
+      targetWakeMinute);
 }

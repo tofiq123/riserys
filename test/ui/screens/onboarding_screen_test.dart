@@ -54,9 +54,9 @@ Widget _host(_FakeGateway gw, AppSettings store, {VoidCallback? onDone}) =>
       ),
     );
 
-/// Advances from the first page to the permissions page (the last of four).
+/// Advances from the first page to the permissions page (the last of five).
 Future<void> _toPermissions(WidgetTester t) async {
-  for (var i = 0; i < 3; i++) {
+  for (var i = 0; i < 4; i++) {
     await t.tap(find.text('Next'));
     await t.pumpAndSettle();
   }
@@ -103,7 +103,9 @@ void main() {
     await t.enterText(
         find.byKey(const Key('intention-field')), 'Walk to the kitchen');
     await t.pump();
-    // Intention -> Permissions -> finish.
+    // Intention -> Sleep goal -> Permissions -> finish.
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
     await t.tap(find.text('Next'));
     await t.pumpAndSettle();
     await t.tap(find.text('Start using Rise'));
@@ -122,12 +124,46 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('Stand up and stretch'));
     await t.pump();
-    // Finishing now persists the chip's text.
+    // Intention -> Sleep goal -> Permissions -> finish persists the chip's text.
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
     await t.tap(find.text('Next'));
     await t.pumpAndSettle();
     await t.tap(find.text('Start using Rise'));
     await t.pumpAndSettle();
     expect(store.wakeIntention, 'Stand up and stretch');
+  });
+
+  testWidgets('opting into a steady wake time persists it on finish', (t) async {
+    final store = await _newStore();
+    await t.pumpWidget(_host(_FakeGateway(_perms()), store));
+    await t.pumpAndSettle();
+    // Wake -> Mission -> Intention -> Sleep goal (page index 3).
+    for (var i = 0; i < 3; i++) {
+      await t.tap(find.text('Next'));
+      await t.pumpAndSettle();
+    }
+    expect(find.text('Aim for a steady wake time'), findsOneWidget);
+    // Opt in — reveals the dial seeded at 7:00 AM.
+    await t.tap(find.byKey(const Key('sleep-goal-add')));
+    await t.pumpAndSettle();
+    // Sleep goal -> Permissions -> finish.
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Start using Rise'));
+    await t.pumpAndSettle();
+    expect(store.targetWakeHour, 7);
+    expect(store.targetWakeMinute, 0);
+  });
+
+  testWidgets('skipping leaves the steady wake time unset', (t) async {
+    final store = await _newStore();
+    await t.pumpWidget(_host(_FakeGateway(_perms()), store));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Skip'));
+    await t.pumpAndSettle();
+    expect(store.targetWakeHour, isNull);
+    expect(store.targetWakeMinute, isNull);
   });
 
   testWidgets('skipping leaves the intention unset', (t) async {

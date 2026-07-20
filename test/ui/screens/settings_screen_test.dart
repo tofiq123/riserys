@@ -85,4 +85,41 @@ void main() {
     await t.pump();
     expect(find.text('Stand up'), findsOneWidget);
   });
+
+  testWidgets('sleep goal shows Not set and saving persists the default',
+      (t) async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    await _pump(
+        t,
+        ProviderScope(
+          overrides: [appSettingsProvider.overrideWithValue(store)],
+          child: const MaterialApp(home: SettingsScreen()),
+        ));
+    await t.pump();
+    expect(find.text('Not set'), findsOneWidget);
+
+    await t.tap(find.byKey(const Key('sleep-goal-card')));
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const Key('sleep-goal-save')));
+    await t.pumpAndSettle();
+
+    expect(store.targetWakeHour, 7); // seeded default 7:00 AM
+    expect(store.targetWakeMinute, 0);
+    expect(find.text('7:00 AM'), findsOneWidget);
+  });
+
+  testWidgets('sleep goal shows the persisted time', (t) async {
+    SharedPreferences.setMockInitialValues(
+        {'targetWakeHour': 6, 'targetWakeMinute': 45});
+    final store = await AppSettings.load();
+    await _pump(
+        t,
+        ProviderScope(
+          overrides: [appSettingsProvider.overrideWithValue(store)],
+          child: const MaterialApp(home: SettingsScreen()),
+        ));
+    await t.pump();
+    expect(find.text('6:45 AM'), findsOneWidget);
+  });
 }
