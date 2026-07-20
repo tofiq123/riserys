@@ -12,7 +12,9 @@ import '../../domain/wake_event.dart';
 import '../../domain/wake_insights.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
+import '../components/shareable_stats_card.dart';
 import '../components/sparkline.dart';
+import '../share/stats_share.dart';
 import '../state/auth_providers.dart';
 import '../state/leaderboard_providers.dart';
 import '../state/settings_providers.dart';
@@ -95,7 +97,12 @@ String alertnessBand(int score) {
 }
 
 class StatsScreen extends ConsumerWidget {
-  const StatsScreen({super.key});
+  const StatsScreen({super.key, this.shareRunner});
+
+  /// Test seam: overrides the capture-and-share step so the failure UI can be
+  /// exercised headlessly. Null in production, where the real
+  /// [captureAndShare] rasterises the offscreen card and opens the share sheet.
+  final Future<void> Function(GlobalKey boundaryKey)? shareRunner;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -117,6 +124,8 @@ class StatsScreen extends ConsumerWidget {
             _streakCard(streak),
             const SizedBox(height: 12),
             const _RoughNightCard(),
+            const SizedBox(height: 12),
+            _ShareCard(shareRunner: shareRunner),
             const SizedBox(height: 24),
             const SectionLabel('Last 30 days'),
             const SizedBox(height: 12),
@@ -727,6 +736,129 @@ class _RoughNightCard extends ConsumerWidget {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Marked. Your streak\'s safe — rest up.')),
+    );
+  }
+}
+
+/// A tappable "share your progress" affordance. It hosts an offscreen
+/// [ShareableStatsCard] inside a [RepaintBoundary]; on tap it rasterises that
+/// card and hands it to the OS share sheet. A capture/share hiccup only ever
+/// surfaces a gentle snackbar — sharing is a nicety, never load-bearing.
+class _ShareCard extends ConsumerStatefulWidget {
+  const _ShareCard({this.shareRunner});
+
+  final Future<void> Function(GlobalKey boundaryKey)? shareRunner;
+
+  @override
+  ConsumerState<_ShareCard> createState() => _ShareCardState();
+}
+
+class _ShareCardState extends ConsumerState<_ShareCard> {
+  final GlobalKey _boundaryKey = GlobalKey();
+  bool _busy = false;
+
+  /// The offscreen capture target only exists while a share is in flight, so it
+  /// never duplicates the on-screen stats in the widget tree (or in tests).
+  bool _capturing = false;
+
+  Future<void> _share() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _capturing = true;
+    });
+    try {
+      // Let the offscreen card build, lay out and paint before rasterising it.
+      await WidgetsBinding.instance.endOfFrame;
+      final runner = widget.shareRunner ??
+          (key) => captureAndShare(key, text: 'My Rise wake-up stats');
+      await runner(_boundaryKey);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Couldn\'t share right now. Try again.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _capturing = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final streak = ref.watch(streakProvider);
+    final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
+    final earned = earnedAchievements(streak: streak, events: events)
+        .where((b) => b.earned)
+        .toList();
+    final account = ref.watch(accountProvider).value;
+    final handle = account?.username != null ? '@${account!.username}' : null;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        GestureDetector(
+          key: const Key('share-stats-card'),
+          behavior: HitTestBehavior.opaque,
+          onTap: _busy ? null : _share,
+          child: RiseCard(
+            child: Row(
+              children: [
+                const Icon(Icons.ios_share,
+                    color: RiseColors.textDim, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Share your progress',
+                          style: RiseText.body
+                              .copyWith(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text('A clean card of your streak and badges.',
+                          style: RiseText.caption),
+                    ],
+                  ),
+                ),
+                if (_busy)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  const Icon(Icons.chevron_right,
+                      color: RiseColors.textFaint, size: 20),
+              ],
+            ),
+          ),
+        ),
+        // Offscreen capture target: laid out and painted (so toImage works) but
+        // parked far off-screen, and only present while capturing so it never
+        // duplicates the on-screen stats. Fixed size for a clean PNG.
+        if (_capturing)
+          Positioned(
+            left: -10000,
+            top: 0,
+            width: kShareCardWidth,
+            height: kShareCardHeight,
+            child: RepaintBoundary(
+              key: _boundaryKey,
+              child: ShareableStatsCard(
+                streakDays: streak.current,
+                bestStreak: streak.best,
+                consistency: consistencyScore(events),
+                badges: earned,
+                handle: handle,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

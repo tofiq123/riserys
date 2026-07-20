@@ -52,13 +52,17 @@ Future<void> _pump(WidgetTester t, Widget w) async {
   await t.pumpWidget(w);
 }
 
-Widget _host({List<WakeEvent> events = const [], StreakStats streak = StreakStats.empty}) {
+Widget _host(
+    {List<WakeEvent> events = const [],
+    StreakStats streak = StreakStats.empty,
+    Future<void> Function(GlobalKey)? shareRunner}) {
   return ProviderScope(
     overrides: [
       wakeEventsProvider.overrideWith((ref) => Stream.value(events)),
       streakProvider.overrideWithValue(streak),
     ],
-    child: const MaterialApp(home: Scaffold(body: StatsScreen())),
+    child: MaterialApp(
+        home: Scaffold(body: StatsScreen(shareRunner: shareRunner))),
   );
 }
 
@@ -258,6 +262,33 @@ void main() {
     expect(find.text('ALERTNESS TREND'), findsOneWidget);
     expect(find.text('Trending up'), findsOneWidget);
     expect(find.byType(Sparkline), findsOneWidget);
+  });
+
+  testWidgets('share affordance runs the share step on tap', (t) async {
+    GlobalKey? captured;
+    await _pump(t, _host(
+      events: [evOn(DateTime.now())],
+      shareRunner: (key) async => captured = key,
+    ));
+    await t.pump();
+    expect(find.byKey(const Key('share-stats-card')), findsOneWidget);
+    await t.tap(find.byKey(const Key('share-stats-card')));
+    await t.pumpAndSettle();
+    expect(captured, isNotNull); // the injected runner was invoked
+    // A clean run shows no error snackbar.
+    expect(find.textContaining('Couldn\'t share'), findsNothing);
+  });
+
+  testWidgets('share failure surfaces a graceful snackbar, never a crash',
+      (t) async {
+    await _pump(t, _host(
+      events: [evOn(DateTime.now())],
+      shareRunner: (key) async => throw Exception('boom'),
+    ));
+    await t.pump();
+    await t.tap(find.byKey(const Key('share-stats-card')));
+    await t.pumpAndSettle();
+    expect(find.textContaining('Couldn\'t share right now'), findsOneWidget);
   });
 
   test('consistencyLine reports the on-time count for the week', () {
