@@ -15,6 +15,7 @@ import '../state/status_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import 'friend_detail_screen.dart';
 
 /// The Crew tab: add friends by username, manage requests, and see your crew.
 /// Signed out (or unconfigured) shows a prompt directing to the Profile tab.
@@ -104,6 +105,11 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
   Future<void> _remove(String id) =>
       _run(() => ref.read(crewServiceProvider).removeFriend(id));
 
+  void _openDetail(CrewMember m) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => FriendDetailScreen(member: m)));
+  }
+
   Future<void> _nudge(CrewMember m) async {
     if (_nudging.contains(m.id)) return;
     setState(() => _nudging.add(m.id));
@@ -163,6 +169,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
           else
             for (final m in crew.friends)
               _memberRow(m, statuses[m.id] ?? CrewStatus.unknown,
+                  onTap: () => _openDetail(m),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     _pill('Nudge',
                         (_busy || _nudging.contains(m.id))
@@ -241,10 +248,9 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
     );
   }
 
-  Widget _memberRow(CrewMember m, CrewStatus status, {required Widget trailing}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: RiseCard(
+  Widget _memberRow(CrewMember m, CrewStatus status,
+      {required Widget trailing, VoidCallback? onTap}) {
+    final card = RiseCard(
         child: Row(
           children: [
             Container(
@@ -301,7 +307,16 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
             trailing,
           ],
         ),
-      ),
+      );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: onTap == null
+          ? card
+          : GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: card,
+            ),
     );
   }
 

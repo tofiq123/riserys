@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/excused_days_repository.dart';
+import '../../data/nudge/nudge_service.dart';
 import '../../domain/achievements.dart';
 import '../../domain/alertness_trend.dart';
 import '../../domain/clock_format.dart';
 import '../../domain/consistency.dart';
+import '../../domain/crew_member.dart';
+import '../../domain/crew_score.dart';
 import '../../domain/crew_standing.dart';
+import '../../domain/crew_state.dart';
 import '../../domain/period_stats.dart';
 import '../../domain/rise_settings.dart';
 import '../../domain/streak.dart';
+import '../../domain/streak_risk.dart';
 import '../../domain/wake_event.dart';
 import '../../domain/wake_insights.dart';
 import '../components/rise_card.dart';
@@ -19,12 +24,15 @@ import '../components/shareable_stats_card.dart';
 import '../components/sparkline.dart';
 import '../share/stats_share.dart';
 import '../state/auth_providers.dart';
+import '../state/crew_providers.dart';
 import '../state/leaderboard_providers.dart';
+import '../state/nudge_providers.dart';
 import '../state/settings_providers.dart';
 import '../state/wake_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import 'friend_detail_screen.dart';
 
 DateTime _todayLocal(DateTime now) {
   final l = now.toLocal();
@@ -125,6 +133,7 @@ class StatsScreen extends ConsumerWidget {
             _empty()
           else ...[
             _streakCard(streak),
+            const _AccountabilityPingCard(),
             const SizedBox(height: 12),
             const _RoughNightCard(),
             const SizedBox(height: 12),
@@ -1116,8 +1125,10 @@ class _LeaderboardSection extends ConsumerWidget {
               ? Text('No leaderboard yet — add crew and start a streak.',
                   style: RiseText.caption)
               : Column(children: [
+                  _crewScoreCard(computeCrewScore(standings)),
+                  const SizedBox(height: 14),
                   for (var i = 0; i < standings.length; i++)
-                    _standingRow(i + 1, standings[i]),
+                    _standingRow(context, i + 1, standings[i]),
                 ]),
           loading: () => const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
@@ -1148,11 +1159,56 @@ class _LeaderboardSection extends ConsumerWidget {
     );
   }
 
-  Widget _standingRow(int rank, CrewStanding s) {
+  /// The hybrid crew score: one shared total the whole crew grows together,
+  /// plus your own contribution to it. Individuals stay ranked in the list
+  /// below — together, that's the research's individual+group model.
+  Widget _crewScoreCard(CrewScore score) {
+    final you = score.you;
+    final sub = you == null
+        ? '${score.memberCount} in your crew, climbing together.'
+        : 'Your part: ${you.points} pts · ${you.sharePercent}% of the crew.';
+    return Container(
+      padding: const EdgeInsets.all(RiseSpacing.screen),
+      decoration: BoxDecoration(
+        color: RiseColors.primary,
+        borderRadius: BorderRadius.circular(RiseRadii.base),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('${score.crewTotal}',
+                  style: RiseText.mono(
+                      size: 38,
+                      weight: FontWeight.w600,
+                      color: RiseColors.primaryText)),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 5),
+                child: Text('crew score',
+                    style:
+                        RiseText.body.copyWith(color: RiseColors.primaryText)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Opacity(
+            opacity: 0.75,
+            child: Text(sub,
+                style:
+                    RiseText.caption.copyWith(color: RiseColors.primaryText)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _standingRow(BuildContext context, int rank, CrewStanding s) {
     final onTimePct = (s.stats.onTimeRate * 100).round();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
+    final row = Container(
         padding: const EdgeInsets.all(RiseSpacing.cardPad),
         decoration: BoxDecoration(
           color: s.isMe ? RiseColors.accentSoft : RiseColors.card,
@@ -1217,7 +1273,186 @@ class _LeaderboardSection extends ConsumerWidget {
             ),
           ],
         ),
+      );
+    // Tap a crew member's row to open their detail page. Your own row (isMe)
+    // isn't a friend to inspect, so it stays non-navigating.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: s.isMe
+          ? row
+          : GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => FriendDetailScreen(
+                        member: CrewMember(
+                          id: s.id,
+                          username: s.username,
+                          displayName: s.displayName,
+                          avatarColor: s.avatarColor,
+                        ),
+                      ))),
+              child: row,
+            ),
+    );
+  }
+}
+
+/// A gentle, opt-in accountability prompt. When the user's own streak is on the
+/// line today or just reset, it offers a one-tap, pro-social way to tell their
+/// crew they're on it — reusing the existing nudge path (a client-side loop over
+/// the crew, no new server fanout). Framed as encouragement, never shame.
+///
+/// Hidden entirely unless signed in, with crew, AND a streak moment worth
+/// prompting — so it degrades to nothing when the backend isn't wired.
+class _AccountabilityPingCard extends ConsumerStatefulWidget {
+  const _AccountabilityPingCard();
+
+  @override
+  ConsumerState<_AccountabilityPingCard> createState() =>
+      _AccountabilityPingCardState();
+}
+
+class _AccountabilityPingCardState
+    extends ConsumerState<_AccountabilityPingCard> {
+  bool _sending = false;
+
+  @override
+  Widget build(BuildContext context) {
+    // Gate on the account/crew being live (not compile-time config): when the
+    // backend is unconfigured there is no account and the card simply vanishes.
+    final account = ref.watch(accountProvider).value;
+    if (account == null) return const SizedBox.shrink();
+    final crew = ref.watch(crewProvider).value ?? CrewState.empty;
+    if (crew.friends.isEmpty) return const SizedBox.shrink();
+    final risk = streakRisk(ref.watch(streakProvider), DateTime.now());
+    if (risk == StreakRisk.none) return const SizedBox.shrink();
+
+    final broke = risk == StreakRisk.broke;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: GestureDetector(
+        key: const Key('accountability-ping-card'),
+        behavior: HitTestBehavior.opaque,
+        onTap: _sending ? null : () => _confirm(crew.friends, broke),
+        child: RiseCard(
+          child: Row(
+            children: [
+              Icon(broke ? Icons.wb_twilight : Icons.favorite_border,
+                  color: RiseColors.accent, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(broke ? 'Back on it' : 'Keep your streak alive',
+                        style:
+                            RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(
+                        broke
+                            ? 'Streaks break — getting back up is the point. '
+                                'Tell your crew you\'re on it.'
+                            : 'It\'s on the line today. Lean on your crew to '
+                                'stay accountable.',
+                        style: RiseText.caption),
+                  ],
+                ),
+              ),
+              if (_sending)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                const Icon(Icons.chevron_right,
+                    color: RiseColors.textFaint, size: 20),
+            ],
+          ),
+        ),
       ),
     );
+  }
+
+  void _confirm(List<CrewMember> friends, bool broke) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: RiseColors.card,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(RiseSpacing.screen),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(broke ? 'Let your crew know you\'re back on it?' : 'Rally your crew?',
+                  style: RiseText.title),
+              const SizedBox(height: 6),
+              Text(
+                  'We\'ll give your crew a friendly heads-up that you\'re on '
+                  'your wake-ups. A little accountability — no pressure, no '
+                  'shame.',
+                  style: RiseText.caption),
+              const SizedBox(height: 18),
+              GestureDetector(
+                key: const Key('accountability-ping-confirm'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _send(friends);
+                },
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  decoration: BoxDecoration(
+                    color: RiseColors.primary,
+                    borderRadius: BorderRadius.circular(RiseRadii.sm),
+                  ),
+                  child: Text('Let my crew know',
+                      style: RiseText.body.copyWith(
+                          color: RiseColors.primaryText,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(sheetContext).pop(),
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text('Not now',
+                      style: RiseText.body.copyWith(color: RiseColors.textDim)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _send(List<CrewMember> friends) async {
+    if (_sending) return;
+    setState(() => _sending = true);
+    final nudge = ref.read(nudgeServiceProvider);
+    var sent = 0;
+    for (final m in friends) {
+      try {
+        await nudge.nudge(m.id);
+        sent++;
+      } on NudgeException {
+        // Best-effort per member (e.g. rate-limited) — keep going.
+      } catch (_) {
+        // Ignore and continue; this is a nicety, never load-bearing.
+      }
+    }
+    if (!mounted) return;
+    setState(() => _sending = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(sent > 0
+          ? 'Your crew knows you\'re on it. 💪'
+          : 'Couldn\'t reach your crew right now. Try again later.'),
+    ));
   }
 }

@@ -3,17 +3,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/auth/auth_service.dart';
+import 'package:rise/data/crew/crew_service.dart';
 import 'package:rise/data/leaderboard/leaderboard_service.dart';
 import 'package:rise/data/local/database.dart';
 import 'package:rise/data/local/excused_days_repository.dart';
+import 'package:rise/data/nudge/nudge_service.dart';
+import 'package:rise/domain/crew_member.dart';
 import 'package:rise/domain/crew_standing.dart';
+import 'package:rise/domain/crew_state.dart';
 import 'package:rise/domain/streak.dart';
 import 'package:rise/domain/wake_event.dart';
 import 'package:rise/domain/wake_stats.dart';
 import 'package:rise/ui/components/sparkline.dart';
 import 'package:rise/ui/screens/stats_screen.dart';
 import 'package:rise/ui/state/auth_providers.dart';
+import 'package:rise/ui/state/crew_providers.dart';
 import 'package:rise/ui/state/leaderboard_providers.dart';
+import 'package:rise/ui/state/nudge_providers.dart';
 import 'package:rise/ui/state/wake_providers.dart';
 
 WakeEvent evOn(DateTime day, {bool onTime = true}) {
@@ -97,6 +103,46 @@ Future<void> _pumpSignedIn(WidgetTester t, {List<CrewStanding> standings = const
   await t.pumpAndSettle();
 }
 
+CrewMember _member(String id, String username) => CrewMember(
+    id: id, username: username, displayName: username, avatarColor: '#7C9CF4');
+
+/// Pumps the Stats screen signed-in with a controllable streak + crew, for the
+/// accountability-ping card. Returns the [FakeNudgeService] so the ping's fan
+/// out can be asserted.
+Future<FakeNudgeService> _pumpPing(
+  WidgetTester t, {
+  required StreakStats streak,
+  List<CrewMember> friends = const [],
+}) async {
+  final auth = FakeAuthService();
+  await auth.signInWithGoogle();
+  await auth.claimUsername('me', displayName: 'Me');
+  addTearDown(auth.dispose);
+  final crew = FakeCrewService(
+      selfId: auth.current!.id, initial: CrewState(friends: friends));
+  addTearDown(crew.dispose);
+  final nudge = FakeNudgeService();
+
+  t.view.physicalSize = const Size(1200, 6000);
+  t.view.devicePixelRatio = 1.0;
+  addTearDown(t.view.reset);
+  await t.pumpWidget(ProviderScope(
+    overrides: [
+      wakeEventsProvider
+          .overrideWith((ref) => Stream.value([evOn(DateTime.now())])),
+      streakProvider.overrideWithValue(streak),
+      authServiceProvider.overrideWithValue(auth),
+      crewServiceProvider.overrideWithValue(crew),
+      nudgeServiceProvider.overrideWithValue(nudge),
+      leaderboardServiceProvider
+          .overrideWithValue(FakeLeaderboardService()),
+    ],
+    child: const MaterialApp(home: Scaffold(body: StatsScreen())),
+  ));
+  await t.pumpAndSettle();
+  return nudge;
+}
+
 void main() {
   testWidgets('signed out shows the leaderboard sign-in prompt', (t) async {
     await _pump(t, _host()); // default providers -> account null
@@ -112,6 +158,28 @@ void main() {
     expect(find.text('CREW LEADERBOARD'), findsOneWidget); // SectionLabel uppercases
     expect(find.textContaining('@me'), findsOneWidget);
     expect(find.textContaining('@bo'), findsOneWidget);
+  });
+
+  testWidgets('shows the hybrid crew score with your contribution', (t) async {
+    await _pumpSignedIn(t, standings: [
+      _standing('fake-uid', 'me', 5, isMe: true),
+      _standing('u2', 'bo', 3),
+    ]);
+    // Group aggregate + the signed-in user's individual share.
+    expect(find.text('crew score'), findsOneWidget);
+    expect(find.textContaining('Your part:'), findsOneWidget);
+  });
+
+  testWidgets('tapping a crew member on the leaderboard opens their detail',
+      (t) async {
+    await _pumpSignedIn(t, standings: [
+      _standing('fake-uid', 'me', 5, isMe: true),
+      _standing('u2', 'bo', 3),
+    ]);
+    await t.tap(find.text('bo')); // bo's row (display name)
+    await t.pumpAndSettle();
+    // The friend detail screen's own section label — only present there.
+    expect(find.text('THEIR WAKE-UPS'), findsOneWidget);
   });
 
   testWidgets('shows an empty state when there are no wake events', (t) async {
@@ -363,5 +431,57 @@ void main() {
     final wakes = weekWakes([lateMiss, onTimeEarly], now);
     expect(wakes.last.onTime, isTrue);
     expect(wakes.last.deltaMinutes, 3);
+  });
+
+  group('accountability ping', () {
+    StreakStats atRiskToday() {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      return StreakStats(
+          current: 3,
+          best: 3,
+          freezesRemaining: 0,
+          byDay: {today: DayOutcome.pending});
+    }
+
+    testWidgets('appears when the streak is on the line and crew exists',
+        (t) async {
+      await _pumpPing(t,
+          streak: atRiskToday(), friends: [_member('u1', 'ada')]);
+      expect(
+          find.byKey(const Key('accountability-ping-card')), findsOneWidget);
+    });
+
+    testWidgets('confirm pings every crew member via the nudge path',
+        (t) async {
+      final nudge = await _pumpPing(t,
+          streak: atRiskToday(),
+          friends: [_member('u1', 'ada'), _member('u2', 'bo')]);
+      await t.tap(find.byKey(const Key('accountability-ping-card')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('accountability-ping-confirm')));
+      await t.pumpAndSettle();
+      // Reuses the existing single-target nudge, once per crew member.
+      expect(nudge.nudgeCount, 2);
+      expect(find.textContaining('Your crew knows'), findsOneWidget);
+    });
+
+    testWidgets('hidden when the streak is not at risk', (t) async {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      await _pumpPing(t,
+          streak: StreakStats(
+              current: 4,
+              best: 4,
+              freezesRemaining: 0,
+              byDay: {today: DayOutcome.success}),
+          friends: [_member('u1', 'ada')]);
+      expect(find.byKey(const Key('accountability-ping-card')), findsNothing);
+    });
+
+    testWidgets('hidden when there is no crew to tell', (t) async {
+      await _pumpPing(t, streak: atRiskToday(), friends: const []);
+      expect(find.byKey(const Key('accountability-ping-card')), findsNothing);
+    });
   });
 }
