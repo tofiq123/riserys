@@ -126,6 +126,20 @@ void main() {
     expect(find.text('9'), findsOneWidget); // best
     expect(find.text('LAST 30 DAYS'), findsOneWidget); // SectionLabel uppercases
     expect(find.text('THIS WEEK'), findsOneWidget);
+    // Too little data for insights — the patterns section stays hidden.
+    expect(find.text('YOUR PATTERNS'), findsNothing);
+  });
+
+  testWidgets('surfaces honest insights once there is enough data', (t) async {
+    // Five completed, on-time wake-ups clears the minimum-event gate.
+    final events = [
+      for (var d = 20; d <= 24; d++) evOn(DateTime(2026, 7, d)),
+    ];
+    await _pump(t, _host(events: events));
+    await t.pump();
+    expect(find.text('YOUR PATTERNS'), findsOneWidget); // SectionLabel uppercases
+    expect(find.textContaining('woke on time on 100%'), findsOneWidget);
+    expect(find.textContaining('not judgements'), findsOneWidget);
   });
 
   testWidgets('rough-night affordance excuses the chosen day', (t) async {
