@@ -114,6 +114,16 @@ void main() {
     expect(find.textContaining('@bo'), findsOneWidget);
   });
 
+  testWidgets('shows the hybrid crew score with your contribution', (t) async {
+    await _pumpSignedIn(t, standings: [
+      _standing('fake-uid', 'me', 5, isMe: true),
+      _standing('u2', 'bo', 3),
+    ]);
+    // Group aggregate + the signed-in user's individual share.
+    expect(find.text('crew score'), findsOneWidget);
+    expect(find.textContaining('Your part:'), findsOneWidget);
+  });
+
   testWidgets('shows an empty state when there are no wake events', (t) async {
     await _pump(t, _host());
     await t.pump();

@@ -6,6 +6,7 @@ import '../../domain/achievements.dart';
 import '../../domain/alertness_trend.dart';
 import '../../domain/clock_format.dart';
 import '../../domain/consistency.dart';
+import '../../domain/crew_score.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/period_stats.dart';
 import '../../domain/rise_settings.dart';
@@ -1116,6 +1117,8 @@ class _LeaderboardSection extends ConsumerWidget {
               ? Text('No leaderboard yet — add crew and start a streak.',
                   style: RiseText.caption)
               : Column(children: [
+                  _crewScoreCard(computeCrewScore(standings)),
+                  const SizedBox(height: 14),
                   for (var i = 0; i < standings.length; i++)
                     _standingRow(i + 1, standings[i]),
                 ]),
@@ -1145,6 +1148,53 @@ class _LeaderboardSection extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+
+  /// The hybrid crew score: one shared total the whole crew grows together,
+  /// plus your own contribution to it. Individuals stay ranked in the list
+  /// below — together, that's the research's individual+group model.
+  Widget _crewScoreCard(CrewScore score) {
+    final you = score.you;
+    final sub = you == null
+        ? '${score.memberCount} in your crew, climbing together.'
+        : 'Your part: ${you.points} pts · ${you.sharePercent}% of the crew.';
+    return Container(
+      padding: const EdgeInsets.all(RiseSpacing.screen),
+      decoration: BoxDecoration(
+        color: RiseColors.primary,
+        borderRadius: BorderRadius.circular(RiseRadii.base),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('${score.crewTotal}',
+                  style: RiseText.mono(
+                      size: 38,
+                      weight: FontWeight.w600,
+                      color: RiseColors.primaryText)),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 5),
+                child: Text('crew score',
+                    style:
+                        RiseText.body.copyWith(color: RiseColors.primaryText)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Opacity(
+            opacity: 0.75,
+            child: Text(sub,
+                style:
+                    RiseText.caption.copyWith(color: RiseColors.primaryText)),
+          ),
+        ],
+      ),
     );
   }
 
