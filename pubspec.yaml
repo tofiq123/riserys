@@ -71,6 +71,8 @@ dependencies:
   device_info_plus: ^11.5.0
   purchases_flutter: ^10.4.2
   screen_brightness: ^2.1.11
+  record: ^6.2.1
+  just_audio: ^0.10.6
 
 dev_dependencies:
   flutter_test:

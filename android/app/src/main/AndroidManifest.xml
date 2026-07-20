@@ -19,6 +19,8 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Walk-N-steps dismiss mission (pedometer step counter). -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <!-- Voice wake-ups (Phase 16): record a short clip to send to your crew. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:label="Rise"
