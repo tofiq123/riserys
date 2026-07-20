@@ -72,12 +72,24 @@ class WakeEvents extends Table {
   IntColumn get alertnessScore => integer().nullable()();
 }
 
-@DriftDatabase(tables: [Alarms, WakeEvents])
+/// Local calendar days the user marked as a "rough night" (added in schema v6).
+/// Each row exempts that day from breaking the streak — see [computeStreak]'s
+/// `excusedDays`. The day is stored as its local-midnight instant and is the
+/// primary key, so re-marking the same day is idempotent (insert-or-replace).
+@DataClassName('ExcusedDayRow')
+class ExcusedDays extends Table {
+  DateTimeColumn get day => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {day};
+}
+
+@DriftDatabase(tables: [Alarms, WakeEvents, ExcusedDays])
 class RiseDatabase extends _$RiseDatabase {
   RiseDatabase(super.e);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -126,6 +138,16 @@ class RiseDatabase extends _$RiseDatabase {
             final existing = await _columnNames('wake_events');
             if (!existing.contains('alertness_score')) {
               await m.addColumn(wakeEvents, wakeEvents.alertnessScore);
+            }
+          }
+
+          // v5 -> v6: the excused_days table (rough-night streak exemption).
+          // Idempotent like the v2->v3 table create — a losing isolate (or a
+          // partial prior run) that finds it present skips the create rather
+          // than crashing on "table excused_days already exists".
+          if (from < 6) {
+            if (!await _tableExists('excused_days')) {
+              await m.createTable(excusedDays);
             }
           }
         },

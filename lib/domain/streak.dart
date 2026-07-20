@@ -31,11 +31,18 @@ class StreakStats {
 /// - A day with no events is NEUTRAL (absent from [StreakStats.byDay]; skipped).
 /// - A freeze (earned 1 per [earnEvery] consecutive successes, capped at
 ///   [freezeCap]) is consumed by a miss before the streak breaks.
+///
+/// [excusedDays] are local-midnight days the user marked as a "rough night".
+/// A past day in this set that would otherwise be a MISS becomes NEUTRAL — the
+/// streak neither breaks nor advances over it. This is abuse-safe by design:
+/// an excused day never *advances* a streak, only prevents a break, so no
+/// gamification cap is needed. Excusing a success or a no-event day is a no-op.
 StreakStats computeStreak(
   List<WakeEvent> events,
   DateTime now, {
   int freezeCap = 2,
   int earnEvery = 7,
+  Set<DateTime> excusedDays = const {},
 }) {
   final ln = now.toLocal();
   final today = DateTime(ln.year, ln.month, ln.day);
@@ -55,7 +62,10 @@ StreakStats computeStreak(
     } else if (day.isAtSameMomentAs(today)) {
       byDay[day] = DayOutcome.pending;
     } else {
-      byDay[day] = DayOutcome.miss;
+      // A past miss the user excused (a "rough night") holds the streak: it
+      // becomes neutral, so the fold neither breaks nor advances over it.
+      byDay[day] =
+          excusedDays.contains(day) ? DayOutcome.neutral : DayOutcome.miss;
     }
   });
 

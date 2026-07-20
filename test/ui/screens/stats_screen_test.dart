@@ -1,8 +1,11 @@
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/auth/auth_service.dart';
 import 'package:rise/data/leaderboard/leaderboard_service.dart';
+import 'package:rise/data/local/database.dart';
+import 'package:rise/data/local/excused_days_repository.dart';
 import 'package:rise/domain/crew_standing.dart';
 import 'package:rise/domain/streak.dart';
 import 'package:rise/domain/wake_event.dart';
@@ -123,6 +126,42 @@ void main() {
     expect(find.text('9'), findsOneWidget); // best
     expect(find.text('LAST 30 DAYS'), findsOneWidget); // SectionLabel uppercases
     expect(find.text('THIS WEEK'), findsOneWidget);
+  });
+
+  testWidgets('rough-night affordance excuses the chosen day', (t) async {
+    final db = RiseDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = ExcusedDaysRepository(db);
+
+    t.view.physicalSize = const Size(1200, 4000);
+    t.view.devicePixelRatio = 1.0;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        wakeEventsProvider
+            .overrideWith((ref) => Stream.value([evOn(DateTime.now())])),
+        streakProvider.overrideWithValue(
+            const StreakStats(current: 3, best: 3, freezesRemaining: 0, byDay: {})),
+        // The card only needs a plain stream for display; the real repo (below)
+        // handles the tap. Using the repo's drift watchAll() stream here would
+        // leave a pending stream-close timer at teardown.
+        excusedDaysProvider
+            .overrideWith((ref) => Stream.value(const <DateTime>{})),
+        excusedDaysRepositoryProvider.overrideWithValue(repo),
+      ],
+      child: const MaterialApp(home: Scaffold(body: StatsScreen())),
+    ));
+    await t.pumpAndSettle();
+
+    expect(find.text('Rough night?'), findsOneWidget);
+    await t.tap(find.byKey(const Key('rough-night-card')));
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const Key('rough-today')));
+    await t.pumpAndSettle();
+
+    final days = await repo.all();
+    expect(days, hasLength(1));
+    expect(days.single, ExcusedDaysRepository.dayOf(DateTime.now()));
   });
 
   test('averageAlertness averages non-null scores (rounded), else null', () {
