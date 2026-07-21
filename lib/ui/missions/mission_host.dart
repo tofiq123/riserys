@@ -5,6 +5,7 @@ import '../components/slide_to_wake.dart';
 import 'hold_mission.dart';
 import 'math_mission.dart';
 import 'memory_mission.dart';
+import 'photo_mission.dart';
 import 'pvt_mission.dart';
 import 'qr_mission.dart';
 import 'shake_mission.dart';
@@ -41,6 +42,8 @@ Widget buildMission(BuildContext context, Alarm alarm, VoidCallback onSolved,
       return QrMission(expected: alarm.missionData, onSolved: onSolved);
     case 'steps':
       return StepsMission(diff: alarm.missionDiff, onSolved: onSolved);
+    case 'photo':
+      return PhotoMission(reference: alarm.missionData, onSolved: onSolved);
     default:
       return SlideToWake(onWake: onSolved);
   }

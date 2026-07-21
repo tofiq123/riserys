@@ -152,7 +152,7 @@ void main() {
   testWidgets('renders without crashing for an unknown mission key', (t) async {
     final c = _container(_RecordingMutations());
     c.read(draftProvider.notifier).startEdit(
-        const Alarm(id: 5, hour: 6, minute: 30, mission: 'photo')); // future key, not in _missionLabels
+        const Alarm(id: 5, hour: 6, minute: 30, mission: 'bogus')); // future key, not in _missionLabels
     await _pump(t, _host(c));
     await t.pump();
     expect(t.takeException(), isNull);

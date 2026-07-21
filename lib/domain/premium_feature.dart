@@ -72,7 +72,8 @@ const int kFreeCrewLimit = 3;
 const int kFreeMissionCount = 1;
 
 /// Mission keys that require Premium. Everything else — none, math, hold, tap,
-/// memory, shake, and the PVT alertness hook — is free.
-const Set<String> kPremiumMissionKeys = {'typing', 'qr', 'steps'};
+/// memory, shake, and the PVT alertness hook — is free. The advanced
+/// camera/sensor missions (typing, QR, walk-it-off, photo-match) are premium.
+const Set<String> kPremiumMissionKeys = {'typing', 'qr', 'steps', 'photo'};
 
 bool isPremiumMissionKey(String key) => kPremiumMissionKeys.contains(key);

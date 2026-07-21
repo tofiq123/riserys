@@ -319,7 +319,7 @@ void main() {
       await t.pumpWidget(_wrap(Builder(
         builder: (context) => buildMission(
           context,
-          const Alarm(id: 1, hour: 6, minute: 0, mission: 'photo'), // not a known key
+          const Alarm(id: 1, hour: 6, minute: 0, mission: 'bogus'), // not a known key
           () {},
         ),
       )));
