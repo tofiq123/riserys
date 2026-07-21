@@ -110,16 +110,27 @@ void main() {
     expect(c.read(draftProvider)!.days.contains(1), isTrue);
   });
 
-  testWidgets('difficulty control appears only when a mission is chosen', (t) async {
+  testWidgets(
+      'the wake-mission sheet reveals Difficulty once a mission is chosen and '
+      'applies it on Done', (t) async {
     final c = _container(_RecordingMutations());
     c.read(draftProvider.notifier).startEdit(
         const Alarm(id: 5, hour: 6, minute: 30, mission: 'none'));
     await _pump(t, _host(c));
     await t.pump();
+    // The form itself no longer carries an inline difficulty control.
     expect(find.byType(SegmentedControl<String>), findsNothing);
+
+    // Open the browsable mission picker and choose Math.
+    await t.tap(find.byKey(const Key('wake-mission-row')));
+    await t.pumpAndSettle();
     await t.tap(find.text('Math'));
     await t.pump();
+    // Choosing a difficulty mission reveals its Difficulty control in the sheet.
     expect(find.byType(SegmentedControl<String>), findsOneWidget);
+
+    await t.tap(find.text('Done'));
+    await t.pumpAndSettle();
     expect(c.read(draftProvider)!.mission, 'math');
   });
 
@@ -164,26 +175,32 @@ void main() {
     expect(m.saved.length, 1);
   });
 
-  testWidgets('lists the "Alertness (PVT)" mission option and selects it', (t) async {
+  testWidgets('the wake-mission sheet lists and selects "Alertness (PVT)"',
+      (t) async {
     final c = _container(_RecordingMutations());
     c.read(draftProvider.notifier)
         .startEdit(const Alarm(id: 5, hour: 6, minute: 30, mission: 'none'));
     await _pump(t, _host(c));
     await t.pump();
+    await t.tap(find.byKey(const Key('wake-mission-row')));
+    await t.pumpAndSettle();
     expect(find.text('Alertness (PVT)'), findsOneWidget);
     await t.tap(find.text('Alertness (PVT)'));
     await t.pump();
+    await t.tap(find.text('Done'));
+    await t.pumpAndSettle();
     expect(c.read(draftProvider)!.mission, 'pvt');
   });
 
   testWidgets('renders without crashing for an unknown mission key', (t) async {
     final c = _container(_RecordingMutations());
     c.read(draftProvider.notifier).startEdit(
-        const Alarm(id: 5, hour: 6, minute: 30, mission: 'bogus')); // future key, not in _missionLabels
+        const Alarm(id: 5, hour: 6, minute: 30, mission: 'bogus')); // future key, not in kMissionLabels
     await _pump(t, _host(c));
     await t.pump();
     expect(t.takeException(), isNull);
     expect(find.text('Edit alarm'), findsOneWidget); // screen rendered
-    expect(find.byType(SegmentedControl<String>), findsOneWidget);
+    // The collapsed wake-mission row degrades gracefully (no inline controls).
+    expect(find.byKey(const Key('wake-mission-row')), findsOneWidget);
   });
 }

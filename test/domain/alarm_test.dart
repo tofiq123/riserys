@@ -72,6 +72,18 @@ void main() {
       expect(a == b, isFalse); // equality includes missionCount
       expect(a.hashCode == b.hashCode, isFalse);
     });
+
+    test('clearMissionData nulls missionData (sentinel); plain copyWith keeps it', () {
+      const a = Alarm(id: 1, hour: 6, minute: 30, mission: 'qr', missionData: 'CODE-123');
+      expect(a.missionData, 'CODE-123');
+      // The sentinel clears a stale registration when switching missions, so a
+      // QR payload can't masquerade as the next mission's config.
+      final cleared = a.copyWith(mission: 'photo', clearMissionData: true);
+      expect(cleared.missionData, isNull);
+      expect(cleared.mission, 'photo');
+      // Without the flag, missionData is preserved (plain copyWith can't null it).
+      expect(a.copyWith(label: 'x').missionData, 'CODE-123');
+    });
   });
 
   group('Alarm snoozedUntil', () {

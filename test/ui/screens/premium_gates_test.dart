@@ -50,6 +50,8 @@ void main() {
       c.read(draftProvider.notifier).startNew();
       await _pumpBig(t, _createEditHost(c));
 
+      await t.tap(find.byKey(const Key('wake-mission-row')));
+      await t.pumpAndSettle();
       await t.ensureVisible(find.text('Type a phrase'));
       await t.tap(find.text('Type a phrase'));
       await t.pumpAndSettle();
@@ -67,8 +69,12 @@ void main() {
       c.read(draftProvider.notifier).startNew();
       await _pumpBig(t, _createEditHost(c));
 
+      await t.tap(find.byKey(const Key('wake-mission-row')));
+      await t.pumpAndSettle();
       await t.ensureVisible(find.text('Type a phrase'));
       await t.tap(find.text('Type a phrase'));
+      await t.pump();
+      await t.tap(find.text('Done'));
       await t.pumpAndSettle();
 
       expect(find.byType(PaywallScreen), findsNothing);
@@ -87,6 +93,8 @@ void main() {
           const Alarm(id: 3, hour: 7, minute: 0, mission: 'math'));
       await _pumpBig(t, _createEditHost(c));
 
+      await t.tap(find.byKey(const Key('wake-mission-row')));
+      await t.pumpAndSettle();
       await t.ensureVisible(find.text('2×'));
       await t.tap(find.text('2×'));
       await t.pumpAndSettle();

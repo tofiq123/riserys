@@ -214,6 +214,9 @@ class _SoundPickerSheetState extends State<SoundPickerSheet> {
                 label: s.label,
                 selected: s.asset == _selected,
                 playing: s.asset == _playing,
+                // The Default tone and voice clips have no bundled preview, so
+                // they show no play affordance (tapping only selects them).
+                previewable: previewAssetKeyFor(s.asset) != null,
                 onTap: () => _onTapTone(s),
               );
             },
@@ -235,34 +238,57 @@ class _SoundPickerSheetState extends State<SoundPickerSheet> {
   }
 }
 
-/// One category section header (e.g. "GENTLE").
+/// One category section header (e.g. "GENTLE"). A full-width tinted band with
+/// a high-contrast label so the categories read at a glance while scrolling —
+/// the previous dim 11px section label was easy to miss on device.
 class _CategoryHeader extends StatelessWidget {
   const _CategoryHeader({required this.label});
   final String label;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(RiseSpacing.screen, 18, RiseSpacing.screen, 8),
-      child: Text(label.toUpperCase(), style: RiseText.sectionLabel),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(RiseSpacing.screen, 9, RiseSpacing.screen, 9),
+      decoration: BoxDecoration(
+        // appBg reads distinctly against the sheet's card surface in both
+        // themes (a light-grey band on white; a near-black band on dark card).
+        color: RiseColors.appBg,
+        border: Border(
+          top: BorderSide(color: RiseColors.divider),
+          bottom: BorderSide(color: RiseColors.divider),
+        ),
+      ),
+      child: Text(
+        label.toUpperCase(),
+        style: RiseText.sectionLabel.copyWith(
+          color: RiseColors.text,
+          fontSize: 12,
+          letterSpacing: 1.4,
+        ),
+      ),
     );
   }
 }
 
-/// A single tappable tone row: label on the left, a volume glyph while it is
-/// previewing, and a check on the right when selected. The selected row gets a
-/// soft highlight.
+/// A single tappable tone row: label on the left, a persistent play/stop glyph
+/// (so previewing is always discoverable — a play arrow when idle, a volume
+/// glyph while previewing), and a check on the right when selected. The
+/// selected row gets a soft highlight. Non-previewable rows ([previewable] is
+/// false — Default, voice clips) show no play glyph.
 class _ToneTile extends StatelessWidget {
   const _ToneTile({
     required this.label,
     required this.selected,
     required this.playing,
+    required this.previewable,
     required this.onTap,
   });
 
   final String label;
   final bool selected;
   final bool playing;
+  final bool previewable;
   final VoidCallback onTap;
 
   @override
@@ -284,8 +310,12 @@ class _ToneTile extends StatelessWidget {
                 ),
               ),
             ),
-            if (playing) ...[
-              Icon(Icons.volume_up_rounded, size: 17, color: RiseColors.textDim),
+            if (previewable) ...[
+              Icon(
+                playing ? Icons.volume_up_rounded : Icons.play_arrow_rounded,
+                size: playing ? 17 : 19,
+                color: playing ? RiseColors.text : RiseColors.textFaint,
+              ),
               const SizedBox(width: 10),
             ],
             if (selected)
