@@ -42,7 +42,12 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
     const { error: delErr } = await admin.auth.admin.deleteUser(user.id);
-    if (delErr) return json({ error: delErr.message }, 500);
+    if (delErr) {
+      // Log the detail server-side; return a generic message to the client
+      // (matches the catch block below — never forward raw admin errors).
+      console.error('delete-account admin.deleteUser failed:', delErr);
+      return json({ error: 'Internal error' }, 500);
+    }
 
     return json({ success: true }, 200);
   } catch (e) {
