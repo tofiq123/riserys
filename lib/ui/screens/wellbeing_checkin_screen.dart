@@ -47,7 +47,7 @@ class _WellbeingCheckinScreenState extends State<WellbeingCheckinScreen> {
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () => Navigator.of(context).maybePop(),
-                  child: const Padding(
+                  child: Padding(
                     padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                     child:
                         Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
@@ -241,7 +241,7 @@ class _DisclaimerNote extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline, size: 16, color: RiseColors.textDim),
+          Icon(Icons.info_outline, size: 16, color: RiseColors.textDim),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -272,7 +272,7 @@ class _ResourcesCard extends StatelessWidget {
           child: RiseCard(
             child: Row(
               children: [
-                const Icon(Icons.support_agent,
+                Icon(Icons.support_agent,
                     color: RiseColors.accent, size: 22),
                 const SizedBox(width: 12),
                 Expanded(
@@ -288,7 +288,7 @@ class _ResourcesCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Icon(Icons.open_in_new,
+                Icon(Icons.open_in_new,
                     color: RiseColors.textFaint, size: 18),
               ],
             ),
@@ -298,7 +298,7 @@ class _ResourcesCard extends StatelessWidget {
         RiseCard(
           child: Row(
             children: [
-              const Icon(Icons.local_hospital_outlined,
+              Icon(Icons.local_hospital_outlined,
                   color: RiseColors.textDim, size: 22),
               const SizedBox(width: 12),
               Expanded(

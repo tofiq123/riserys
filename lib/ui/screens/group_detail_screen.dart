@@ -191,7 +191,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => Navigator.of(context).maybePop(),
-            child: const Padding(
+            child: Padding(
               padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
               child: Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
             ),
@@ -207,7 +207,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _busy ? null : _rename,
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.all(6),
                 child: Icon(Icons.edit_outlined,
                     color: RiseColors.textDim, size: 20),

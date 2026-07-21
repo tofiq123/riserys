@@ -176,7 +176,7 @@ class _VoiceComposerScreenState extends ConsumerState<VoiceComposerScreen> {
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => Navigator.of(context).maybePop(),
-            child: const Padding(
+            child: Padding(
               padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
               child: Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
             ),

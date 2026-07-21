@@ -17,6 +17,7 @@ import 'ui/screens/app_shell.dart';
 import 'ui/screens/onboarding_screen.dart';
 import 'ui/screens/ring_screen.dart';
 import 'ui/state/settings_providers.dart';
+import 'ui/theme/tokens.dart';
 
 /// Headless entrypoint invoked by Android's BootReceiver after boot, app
 /// replacement, or a clock change. Re-arms the scheduler from the local
@@ -221,6 +222,11 @@ class _RiseAppState extends State<RiseApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // Set the active colour palette BEFORE the tree below builds, so every
+    // widget that reads a RiseColors/RiseText getter during its build sees the
+    // right theme. Light for now; the theme setting drives this in a follow-up.
+    RiseColors.setPalette(Brightness.light);
+
     final repository = widget.repository;
     return MaterialApp(
       title: 'Rise',

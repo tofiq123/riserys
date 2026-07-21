@@ -85,15 +85,15 @@ class RiseToast extends StatelessWidget {
   Widget _leading() {
     switch (kind) {
       case RiseToastKind.success:
-        return const Icon(Icons.check_circle_rounded,
+        return Icon(Icons.check_circle_rounded,
             size: 16, color: RiseColors.positive);
       case RiseToastKind.error:
-        return const Icon(Icons.error_rounded, size: 16, color: RiseColors.danger);
+        return Icon(Icons.error_rounded, size: 16, color: RiseColors.danger);
       case RiseToastKind.info:
         return Container(
           width: 8,
           height: 8,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
               color: RiseColors.primaryText, shape: BoxShape.circle),
         );
     }

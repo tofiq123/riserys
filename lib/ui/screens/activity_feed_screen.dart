@@ -29,7 +29,7 @@ class ActivityFeedScreen extends ConsumerWidget {
         backgroundColor: RiseColors.appBg,
         elevation: 0,
         title: Text('Activity', style: RiseText.title),
-        iconTheme: const IconThemeData(color: RiseColors.text),
+        iconTheme: IconThemeData(color: RiseColors.text),
       ),
       body: SafeArea(
         top: false,
@@ -209,7 +209,7 @@ class _FeedEmpty extends StatelessWidget {
       padding: const EdgeInsets.all(32),
       children: [
         const SizedBox(height: 80),
-        const Icon(Icons.wb_sunny_outlined,
+        Icon(Icons.wb_sunny_outlined,
             size: 44, color: RiseColors.textFaint),
         const SizedBox(height: 16),
         Text('No crew activity yet', textAlign: TextAlign.center,
@@ -233,7 +233,7 @@ class _FeedSignedOut extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.wb_sunny_outlined,
+          Icon(Icons.wb_sunny_outlined,
               size: 44, color: RiseColors.textFaint),
           const SizedBox(height: 16),
           Text('Cheer on your crew', style: RiseText.title),

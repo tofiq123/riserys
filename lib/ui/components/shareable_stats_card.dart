@@ -61,7 +61,7 @@ class ShareableStatsCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.wb_twilight,
+                  Icon(Icons.wb_twilight,
                       color: RiseColors.waking, size: 22),
                   const SizedBox(width: 8),
                   Text('RISE',
@@ -81,7 +81,7 @@ class ShareableStatsCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.only(bottom: 10),
                     child: Icon(Icons.local_fire_department,
                         color: RiseColors.waking, size: 40),
@@ -162,7 +162,7 @@ class ShareableStatsCard extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.check_circle, size: 15, color: RiseColors.positive),
+          Icon(Icons.check_circle, size: 15, color: RiseColors.positive),
           const SizedBox(width: 7),
           Text(a.title,
               style: RiseText.caption.copyWith(

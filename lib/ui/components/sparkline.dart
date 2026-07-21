@@ -13,7 +13,9 @@ class Sparkline extends StatelessWidget {
     this.min = 0,
     this.max = 100,
     this.height = 44,
-    this.color = RiseColors.text,
+    // Was `RiseColors.text`; the palette token is no longer const, so the
+    // default moved into build(). Null keeps the old behaviour.
+    this.color,
     this.strokeWidth = 2,
   });
 
@@ -21,7 +23,7 @@ class Sparkline extends StatelessWidget {
   final double min;
   final double max;
   final double height;
-  final Color color;
+  final Color? color;
   final double strokeWidth;
 
   @override
@@ -34,7 +36,7 @@ class Sparkline extends StatelessWidget {
           values: values,
           min: min,
           max: max,
-          color: color,
+          color: color ?? RiseColors.text,
           strokeWidth: strokeWidth,
         ),
       ),

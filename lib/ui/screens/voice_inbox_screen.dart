@@ -142,7 +142,7 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
                       horizontal: RiseSpacing.screen, vertical: 14),
                   child: Row(
                     children: [
-                      const Icon(Icons.alarm,
+                      Icon(Icons.alarm,
                           size: 20, color: RiseColors.textDim),
                       const SizedBox(width: 12),
                       Expanded(
@@ -215,7 +215,7 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => Navigator.of(context).maybePop(),
-            child: const Padding(
+            child: Padding(
               padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
               child: Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
             ),
@@ -229,7 +229,7 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
         padding: const EdgeInsets.only(top: 40),
         child: Column(
           children: [
-            const Icon(Icons.graphic_eq,
+            Icon(Icons.graphic_eq,
                 size: 40, color: RiseColors.textFaint),
             const SizedBox(height: 14),
             Text('No voice clips yet',
@@ -288,7 +288,7 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
                         Container(
                           width: 7,
                           height: 7,
-                          decoration: const BoxDecoration(
+                          decoration: BoxDecoration(
                               color: RiseColors.primary,
                               shape: BoxShape.circle),
                         ),
@@ -309,7 +309,7 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
                 key: Key('voice-setalarm-${clip.id}'),
                 behavior: HitTestBehavior.opaque,
                 onTap: deleting ? null : () => _setAsAlarm(clip),
-                child: const Padding(
+                child: Padding(
                   padding: EdgeInsets.all(6),
                   child: Icon(Icons.alarm_add,
                       color: RiseColors.textFaint, size: 20),
@@ -322,7 +322,7 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
                 key: Key('voice-delete-${clip.id}'),
                 behavior: HitTestBehavior.opaque,
                 onTap: deleting ? null : () => _delete(clip),
-                child: const Padding(
+                child: Padding(
                   padding: EdgeInsets.all(6),
                   child: Icon(Icons.delete_outline,
                       color: RiseColors.textFaint, size: 20),

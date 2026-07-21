@@ -76,7 +76,7 @@ class _SlideToWakeState extends State<SlideToWake> {
                       shape: BoxShape.circle,
                       boxShadow: RiseShadows.primary,
                     ),
-                    child: const Icon(Icons.arrow_forward, color: RiseColors.primaryText, size: 24),
+                    child: Icon(Icons.arrow_forward, color: RiseColors.primaryText, size: 24),
                   ),
                 ),
               ],

@@ -48,14 +48,14 @@ class ProfileScreen extends ConsumerWidget {
             child: RiseCard(
               child: Row(
                 children: [
-                  const Icon(Icons.tune, color: RiseColors.textDim, size: 22),
+                  Icon(Icons.tune, color: RiseColors.textDim, size: 22),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text('Settings',
                         style:
                             RiseText.body.copyWith(fontWeight: FontWeight.w600)),
                   ),
-                  const Icon(Icons.chevron_right,
+                  Icon(Icons.chevron_right,
                       color: RiseColors.textFaint, size: 20),
                 ],
               ),
@@ -70,7 +70,7 @@ class ProfileScreen extends ConsumerWidget {
             child: RiseCard(
               child: Row(
                 children: [
-                  const Icon(Icons.favorite_outline,
+                  Icon(Icons.favorite_outline,
                       color: RiseColors.textDim, size: 22),
                   const SizedBox(width: 12),
                   Expanded(
@@ -86,7 +86,7 @@ class ProfileScreen extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  const Icon(Icons.chevron_right,
+                  Icon(Icons.chevron_right,
                       color: RiseColors.textFaint, size: 20),
                 ],
               ),
@@ -106,7 +106,7 @@ class ProfileScreen extends ConsumerWidget {
             child: RiseCard(
               child: Row(
                 children: [
-                  const Icon(Icons.shield_outlined,
+                  Icon(Icons.shield_outlined,
                       color: RiseColors.textDim, size: 22),
                   const SizedBox(width: 12),
                   Expanded(
@@ -122,7 +122,7 @@ class ProfileScreen extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  const Icon(Icons.chevron_right,
+                  Icon(Icons.chevron_right,
                       color: RiseColors.textFaint, size: 20),
                 ],
               ),
@@ -137,7 +137,7 @@ class ProfileScreen extends ConsumerWidget {
             child: Column(
               children: [
                 _aboutRow('Version', '1.0.0'),
-                const Divider(height: 20, color: RiseColors.divider),
+                Divider(height: 20, color: RiseColors.divider),
                 _aboutRow('Made for', 'waking up, 100%'),
               ],
             ),
@@ -194,7 +194,7 @@ class _PremiumEntry extends ConsumerWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right,
+            Icon(Icons.chevron_right,
                 color: RiseColors.textFaint, size: 20),
           ],
         ),
@@ -387,9 +387,9 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
           Container(
             width: 52,
             height: 52,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
                 color: RiseColors.accentSoft, shape: BoxShape.circle),
-            child: const Icon(Icons.person_outline,
+            child: Icon(Icons.person_outline,
                 color: RiseColors.accent, size: 26),
           ),
           const SizedBox(width: 14),
@@ -421,9 +421,9 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
               Container(
                 width: 52,
                 height: 52,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                     color: RiseColors.accentSoft, shape: BoxShape.circle),
-                child: const Icon(Icons.cloud_sync,
+                child: Icon(Icons.cloud_sync,
                     color: RiseColors.accent, size: 26),
               ),
               const SizedBox(width: 14),
@@ -456,7 +456,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
                   onPressed: _busy ? null : _signIn,
                 ),
                 if (_busy)
-                  const SizedBox(
+                  SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
@@ -537,7 +537,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
                     .copyWith(color: color, fontWeight: FontWeight.w600)),
             if (busy) ...[
               const Spacer(),
-              const SizedBox(
+              SizedBox(
                 width: 16,
                 height: 16,
                 child: CircularProgressIndicator(

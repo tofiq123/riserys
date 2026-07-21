@@ -407,7 +407,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.flag_outlined,
+            Icon(Icons.flag_outlined,
                 size: 16, color: RiseColors.accent),
             const SizedBox(width: 8),
             Flexible(
@@ -434,7 +434,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.wb_sunny_outlined,
+            Icon(Icons.wb_sunny_outlined,
                 size: 16, color: RiseColors.waking),
             const SizedBox(width: 8),
             Flexible(
@@ -449,7 +449,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
               key: const Key('light-prompt-dismiss'),
               behavior: HitTestBehavior.opaque,
               onTap: () => setState(() => _lightPromptDismissed = true),
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.all(4),
                 child: Icon(Icons.close, size: 15, color: RiseColors.textDim),
               ),
@@ -496,7 +496,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
         color: RiseColors.accentSoft,
         borderRadius: BorderRadius.circular(28),
       ),
-      child: const Icon(Icons.notifications_active,
+      child: Icon(Icons.notifications_active,
           color: RiseColors.accent, size: 44),
     );
     if (!reduce) bell = ScaleTransition(scale: _pulse, child: bell);

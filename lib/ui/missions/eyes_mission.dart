@@ -259,8 +259,7 @@ class _EyesMissionState extends State<EyesMission> {
               value: progress,
               minHeight: 8,
               backgroundColor: RiseColors.surface2,
-              valueColor:
-                  const AlwaysStoppedAnimation<Color>(RiseColors.primary),
+              valueColor: AlwaysStoppedAnimation<Color>(RiseColors.primary),
             ),
           ),
           const SizedBox(height: 8),

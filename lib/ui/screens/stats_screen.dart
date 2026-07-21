@@ -46,7 +46,7 @@ Widget premiumLockCard(BuildContext context, String label) => GestureDetector(
       child: RiseCard(
         child: Row(
           children: [
-            const Icon(Icons.lock_outline, size: 20, color: RiseColors.textDim),
+            Icon(Icons.lock_outline, size: 20, color: RiseColors.textDim),
             const SizedBox(width: 12),
             Expanded(
                 child: Text(label,
@@ -212,7 +212,7 @@ class StatsScreen extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
           child: Column(
             children: [
-              const Icon(Icons.local_fire_department,
+              Icon(Icons.local_fire_department,
                   size: 40, color: RiseColors.textFaint),
               const SizedBox(height: 12),
               Text('No wake data yet',
@@ -234,7 +234,7 @@ class StatsScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: [
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(bottom: 6),
                   child: Icon(Icons.local_fire_department,
                       color: RiseColors.waking, size: 30),
@@ -398,7 +398,7 @@ class StatsScreen extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 8),
           child: Column(
             children: [
-              const Icon(Icons.bolt_outlined,
+              Icon(Icons.bolt_outlined,
                   size: 34, color: RiseColors.textFaint),
               const SizedBox(height: 10),
               Text('No alertness scores yet',
@@ -471,7 +471,7 @@ class StatsScreen extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
           child: Column(
             children: [
-              const Icon(Icons.insights_outlined,
+              Icon(Icons.insights_outlined,
                   size: 32, color: RiseColors.textFaint),
               const SizedBox(height: 10),
               Text('Building your consistency score',
@@ -706,7 +706,7 @@ class _RoughNightCard extends ConsumerWidget {
       child: RiseCard(
         child: Row(
           children: [
-            const Icon(Icons.bedtime_outlined,
+            Icon(Icons.bedtime_outlined,
                 color: RiseColors.asleep, size: 20),
             const SizedBox(width: 12),
             Expanded(
@@ -722,7 +722,7 @@ class _RoughNightCard extends ConsumerWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right,
+            Icon(Icons.chevron_right,
                 color: RiseColors.textFaint, size: 20),
           ],
         ),
@@ -781,7 +781,7 @@ class _RoughNightCard extends ConsumerWidget {
             if (alreadyMarked)
               Row(
                 children: [
-                  const Icon(Icons.check_circle,
+                  Icon(Icons.check_circle,
                       color: RiseColors.positive, size: 18),
                   const SizedBox(width: 6),
                   Text('marked', style: RiseText.caption),
@@ -835,7 +835,7 @@ class _OverviewSectionState extends ConsumerState<_OverviewSection> {
             const SectionLabel('Overview'),
             if (periodsLocked) ...[
               const SizedBox(width: 8),
-              const Icon(Icons.lock_outline, size: 13, color: RiseColors.textDim),
+              Icon(Icons.lock_outline, size: 13, color: RiseColors.textDim),
             ],
           ],
         ),
@@ -980,7 +980,7 @@ class _ShareCardState extends ConsumerState<_ShareCard> {
           child: RiseCard(
             child: Row(
               children: [
-                const Icon(Icons.ios_share,
+                Icon(Icons.ios_share,
                     color: RiseColors.textDim, size: 20),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1003,10 +1003,10 @@ class _ShareCardState extends ConsumerState<_ShareCard> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 else if (locked)
-                  const Icon(Icons.lock_outline,
+                  Icon(Icons.lock_outline,
                       color: RiseColors.textDim, size: 18)
                 else
-                  const Icon(Icons.chevron_right,
+                  Icon(Icons.chevron_right,
                       color: RiseColors.textFaint, size: 20),
               ],
             ),
@@ -1109,7 +1109,7 @@ class _AchievementsSection extends ConsumerWidget {
               ),
               const Spacer(),
               if (earned)
-                const Icon(Icons.check_circle,
+                Icon(Icons.check_circle,
                     size: 18, color: RiseColors.positive),
             ],
           ),
@@ -1189,7 +1189,7 @@ class _LeaderboardSection extends ConsumerWidget {
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => ref.invalidate(leaderboardProvider),
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.all(4),
                 child:
                     Icon(Icons.refresh, size: 18, color: RiseColors.textDim),
@@ -1443,7 +1443,7 @@ class _AccountabilityPingCardState
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               else
-                const Icon(Icons.chevron_right,
+                Icon(Icons.chevron_right,
                     color: RiseColors.textFaint, size: 20),
             ],
           ),
