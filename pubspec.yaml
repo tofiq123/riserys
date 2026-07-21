@@ -90,6 +90,12 @@ dependencies:
   # dev-only by tool/gen_icon.dart to draw the source launcher icon.
   image: ^4.3.0
 
+  # Deep links (rise://invite/<CODE> group invites): delivers the launching
+  # link and links tapped while the app runs to Dart — see
+  # lib/data/invite_links.dart. (6.x is the newest compatible with this
+  # Flutter/Dart pin; 7.x needs Dart >=3.12.)
+  app_links: ^6.4.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

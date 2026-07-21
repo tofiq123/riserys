@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app_links/app_links.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,13 +14,17 @@ import 'l10n/app_localizations.dart';
 import 'data/alarm_sync_service.dart';
 import 'data/app_settings.dart';
 import 'data/iap/revenuecat_entitlement_service.dart';
+import 'data/invite_links.dart';
 import 'data/local/alarm_repository.dart';
 import 'data/native/alarm_api.g.dart';
 import 'domain/rise_settings.dart';
+import 'ui/components/toast.dart';
 import 'ui/missions/mission_host.dart';
 import 'ui/screens/app_shell.dart';
 import 'ui/screens/onboarding_screen.dart';
 import 'ui/screens/ring_screen.dart';
+import 'ui/state/auth_providers.dart';
+import 'ui/state/group_providers.dart';
 import 'ui/state/settings_providers.dart';
 import 'ui/theme/tokens.dart';
 
@@ -156,17 +161,31 @@ class _RiseAppState extends ConsumerState<RiseApp> with WidgetsBindingObserver {
 
   late bool _showOnboarding;
 
+  /// Handles `rise://invite/<CODE>` deep links (see invite_links.dart). Null
+  /// until [_startInviteLinks] runs — after the cold-start ring question is
+  /// answered and the first frame is up.
+  InviteLinkHandler? _inviteLinks;
+
+  /// Anchors invite toasts: the home route's subtree is always mounted (pushed
+  /// routes sit above it in the same root overlay), so its context can reach
+  /// the root overlay from anywhere — shell tabs and pushed routes alike.
+  final _homeKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _showOnboarding =
         widget.settings != null && !widget.settings!.onboardingComplete;
     WidgetsBinding.instance.addObserver(this);
-    _checkColdStartRing();
+    // Ring first, invite links second: if the app was launched BY a link while
+    // an alarm rings (or vice versa), the handler's ring guard must already
+    // know about the ring before the initial link is processed.
+    unawaited(_checkColdStartRing().then((_) => _startInviteLinks()));
   }
 
   @override
   void dispose() {
+    _inviteLinks?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -214,6 +233,7 @@ class _RiseAppState extends ConsumerState<RiseApp> with WidgetsBindingObserver {
     if (id == null) {
       _shownRingId = null;
       navigator.maybePop();
+      _inviteLinks?.onRingGone();
       return;
     }
     if (_shownRingId == null) {
@@ -237,8 +257,63 @@ class _RiseAppState extends ConsumerState<RiseApp> with WidgetsBindingObserver {
     final future =
         replace ? navigator.pushReplacement(route) : navigator.push(route);
     future.then((_) {
-      if (_shownRingId == alarmId) _shownRingId = null;
+      if (_shownRingId == alarmId) {
+        _shownRingId = null;
+        // The alarm is dealt with — process an invite link that arrived
+        // while it rang.
+        _inviteLinks?.onRingGone();
+      }
     });
+  }
+
+  // ── Invite deep links (rise://invite/<CODE>) ──────────────────────────────
+
+  /// Thin production wrapper around [InviteLinkHandler]: hooks it to
+  /// `app_links` (whose `uriLinkStream` delivers the launching link AND every
+  /// link tapped while the app is alive), the auth/group services, and global
+  /// toasts. Waits for the first frame so the toast anchor exists; stream
+  /// errors (e.g. no plugin in widget tests) are logged, never thrown.
+  Future<void> _startInviteLinks() async {
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || _inviteLinks != null) return;
+    final handler = InviteLinkHandler(
+      isRingShowing: () => _shownRingId != null,
+      isSignedIn: _inviteSignedIn,
+      joinByCode: (code) => ref.read(groupServiceProvider).joinByCode(code),
+      onSignInNeeded: () => _inviteToast(
+          'Sign in to join a group with an invite link.', RiseToastKind.info),
+      onJoined: (_) {
+        ref.invalidate(myGroupsProvider);
+        _inviteToast('Joined! Find it in Crew → Groups.', RiseToastKind.success);
+      },
+      onJoinFailed: (message) => _inviteToast(message, RiseToastKind.error),
+    );
+    _inviteLinks = handler;
+    handler.listen(
+      AppLinks().uriLinkStream,
+      onError: (e) => debugPrint('Rise: invite link stream error: $e'),
+    );
+  }
+
+  /// Signed-in gate for invite links. The auth service's last-known account is
+  /// authoritative, but on a cold start via a link tap its auth listener may
+  /// not have primed yet — fall back to the locally restored Supabase session,
+  /// which is available synchronously right after startup. Unconfigured (or a
+  /// failed Supabase init) reads as signed out.
+  bool _inviteSignedIn() {
+    if (ref.read(authServiceProvider).current != null) return true;
+    if (!SupabaseConfig.isConfigured) return false;
+    try {
+      return Supabase.instance.client.auth.currentSession != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _inviteToast(String message, RiseToastKind kind) {
+    final context = _homeKey.currentContext;
+    if (context == null || !context.mounted) return;
+    RiseToast.show(context, message, kind: kind);
   }
 
   /// Resolve the user's theme choice to a concrete brightness. `system` reads
@@ -322,11 +397,16 @@ class _RiseAppState extends ConsumerState<RiseApp> with WidgetsBindingObserver {
       // docs/l10n.md.
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: repository == null
-          ? const _StartupFailedPage()
-          : (_showOnboarding
-              ? OnboardingScreen(onDone: _completeOnboarding)
-              : const AppShell()),
+      // KeyedSubtree gives the always-mounted home subtree a stable handle
+      // (_homeKey) that invite toasts use to reach the root overlay.
+      home: KeyedSubtree(
+        key: _homeKey,
+        child: repository == null
+            ? const _StartupFailedPage()
+            : (_showOnboarding
+                ? OnboardingScreen(onDone: _completeOnboarding)
+                : const AppShell()),
+      ),
     );
   }
 }

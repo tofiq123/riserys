@@ -43,6 +43,15 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Group-invite deep links: rise://invite/<CODE>. BROWSABLE so a
+                 link tapped in a browser/messenger opens the app; app_links
+                 delivers the URI to Dart (see lib/data/invite_links.dart). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="rise" android:host="invite" />
+            </intent-filter>
         </activity>
 
         <!-- Shows over the lock screen and turns the screen on. -->
