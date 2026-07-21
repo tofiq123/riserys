@@ -53,6 +53,8 @@
 	<string>Rise counts your steps to confirm you're up and moving.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Rise uses the microphone to record short voice clips you send to wake up your crew.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Rise checks how far you are from home around wake-up to confirm you're really up. Your home location never leaves this device.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

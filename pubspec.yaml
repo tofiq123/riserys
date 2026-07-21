@@ -89,6 +89,7 @@ dependencies:
   # perceptual (average) hash — see lib/domain/photo_match.dart. Also used
   # dev-only by tool/gen_icon.dart to draw the source launcher icon.
   image: ^4.3.0
+  geolocator: ^14.0.2
 
 dev_dependencies:
   flutter_test:
