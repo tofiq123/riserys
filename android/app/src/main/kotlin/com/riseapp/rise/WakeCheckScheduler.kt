@@ -28,10 +28,15 @@ object WakeCheckScheduler {
 
     const val EXTRA_ALARM_ID = "wc_alarmId"
 
+    /** Set on the notification's content (body-tap) intent: opening the app this
+     *  way counts as "I'm up" — [MainActivity] cancels the pending re-ring. */
+    const val EXTRA_ACK = "wc_ack"
+
     private const val NOTIF_TRIGGER_BASE = 500_000_000
     private const val REFIRE_BASE = 600_000_000
     private const val NOTIFICATION_ID_BASE = 700_000_000
     private const val ACTION_BASE = 800_000_000
+    private const val CONTENT_BASE = 900_000_000
 
     private fun am(c: Context): AlarmManager =
         c.getSystemService(AlarmManager::class.java)
@@ -130,12 +135,22 @@ object WakeCheckScheduler {
                 .putExtra(EXTRA_ALARM_ID, alarmId),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        // Tapping the notification body opens the app and counts as "I'm up".
+        val openApp = PendingIntent.getActivity(
+            context, CONTENT_BASE + alarmId,
+            Intent(context, MainActivity::class.java)
+                .putExtra(EXTRA_ALARM_ID, alarmId)
+                .putExtra(EXTRA_ACK, true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("Still up?")
             .setContentText("Tap \"I'm up\", or $label rings again.")
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setContentIntent(openApp)
             .addAction(0, "I'm up", imUp)
             .setAutoCancel(true)
             .build()

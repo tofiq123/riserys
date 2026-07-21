@@ -1,5 +1,7 @@
 package com.riseapp.rise
 
+import android.content.Intent
+import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 
@@ -10,5 +12,24 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             AlarmHostApiImpl(applicationContext)
         )
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        handleWakeCheckAck(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleWakeCheckAck(intent)
+    }
+
+    /** Opening the app from the "Still up?" notification body counts as "I'm up":
+     *  cancel the pending re-ring. The notification auto-cancels on tap. */
+    private fun handleWakeCheckAck(intent: Intent?) {
+        if (intent?.getBooleanExtra(WakeCheckScheduler.EXTRA_ACK, false) != true) return
+        val id = intent.getIntExtra(WakeCheckScheduler.EXTRA_ALARM_ID, -1)
+        if (id >= 0) WakeCheckScheduler.cancel(applicationContext, id)
     }
 }
