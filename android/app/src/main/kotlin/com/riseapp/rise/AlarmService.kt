@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -18,6 +19,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import java.io.File
 
 /**
  * Owns the ringing lifetime: audio on the alarm stream, vibration, wake lock,
@@ -59,6 +61,7 @@ class AlarmService : Service() {
 
         val id = intent?.getIntExtra(AlarmScheduler.EXTRA_ALARM_ID, -1) ?: -1
         val label = intent?.getStringExtra(AlarmScheduler.EXTRA_LABEL) ?: "Alarm"
+        val sound = intent?.getStringExtra(AlarmScheduler.EXTRA_SOUND) ?: ""
         val vibrate = intent?.getBooleanExtra(AlarmScheduler.EXTRA_VIBRATE, true) ?: true
         Log.i(TAG, "ringing alarm $id")
 
@@ -67,7 +70,7 @@ class AlarmService : Service() {
         startForeground(NOTIF_ID, buildNotification(id, label))
 
         acquireWakeLock()
-        startAudio()
+        startAudio(sound)
         if (vibrate) startVibration()
 
         // START_REDELIVER_INTENT: if the system kills us under memory
@@ -127,7 +130,7 @@ class AlarmService : Service() {
         ).apply { acquire(10 * 60 * 1000L) }
     }
 
-    private fun startAudio() {
+    private fun startAudio(soundAsset: String) {
         // USAGE_ALARM routes to the dedicated alarm volume stream, which is
         // immune to media mute and to the ringer being silenced.
         val attrs = AudioAttributes.Builder()
@@ -140,8 +143,17 @@ class AlarmService : Service() {
         // the alarm would silently play on the media stream and be muted.
         player = MediaPlayer().apply {
             setAudioAttributes(attrs)
-            resources.openRawResourceFd(R.raw.default_alarm).use { afd ->
-                setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            // Play the alarm's SELECTED sound; on ANY failure to resolve or set
+            // it, fall back to the bundled default so the alarm always rings.
+            // reset() drops the audio attributes, so re-apply them before the
+            // fallback source.
+            try {
+                if (!setSelectedSource(this, soundAsset)) setDefaultSource(this)
+            } catch (e: Exception) {
+                Log.w(TAG, "sound '$soundAsset' failed; using default", e)
+                reset()
+                setAudioAttributes(attrs)
+                setDefaultSource(this)
             }
             isLooping = true
             // Gentle start: ramp from low to full over 60 s. Abrupt waking
@@ -152,6 +164,45 @@ class AlarmService : Service() {
         }
         rampStep = 0
         scheduleRamp()
+    }
+
+    /** The guaranteed-present bundled fallback tone. */
+    private fun setDefaultSource(mp: MediaPlayer) {
+        resources.openRawResourceFd(R.raw.default_alarm).use { afd ->
+            mp.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+        }
+    }
+
+    /**
+     * Points [mp] at the alarm's chosen sound. Returns true when a source was
+     * set; false means "not resolvable — caller must use the default" so the
+     * alarm never goes silent. Two source kinds, in priority order:
+     *  - an absolute local file (a downloaded voice clip): `/...` or `file://...`
+     *  - a bundled tone asset (`sounds/rise_sunrise.wav`) -> `R.raw.rise_sunrise`
+     *    via getIdentifier; an unknown name (id 0) returns false.
+     * A missing/empty file returns false; a corrupt file lets setDataSource
+     * throw, which startAudio catches and recovers from with the default.
+     */
+    private fun setSelectedSource(mp: MediaPlayer, soundAsset: String): Boolean {
+        if (soundAsset.isBlank()) return false
+        // Voice-as-alarm: a downloaded clip stored as an absolute file path.
+        if (soundAsset.startsWith("/") || soundAsset.startsWith("file://")) {
+            val path =
+                if (soundAsset.startsWith("file://")) Uri.parse(soundAsset).path
+                else soundAsset
+            if (path.isNullOrEmpty() || !File(path).exists()) return false
+            mp.setDataSource(path)
+            return true
+        }
+        // Bundled raw resource: "sounds/rise_sunrise.wav" -> "rise_sunrise".
+        val name = soundAsset.substringAfterLast('/').substringBeforeLast('.')
+        if (name.isEmpty()) return false
+        val resId = resources.getIdentifier(name, "raw", packageName)
+        if (resId == 0) return false
+        resources.openRawResourceFd(resId).use { afd ->
+            mp.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+        }
+        return true
     }
 
     /** VibratorManager is API 31+; minSdk is 26. */

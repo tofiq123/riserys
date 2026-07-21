@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:math';
 
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/crew_member.dart';
@@ -148,6 +150,28 @@ class SupabaseVoiceClipService implements VoiceClipService {
   @override
   Future<String> urlFor(VoiceClip clip) =>
       _client.storage.from(_bucket).createSignedUrl(clip.storagePath, 3600);
+
+  @override
+  Future<String> downloadForAlarm(VoiceClip clip) async {
+    try {
+      // Persistent app storage (not the temp dir): the file must survive until
+      // the alarm rings, possibly days later. Keyed by clip id so re-downloading
+      // the same clip overwrites rather than piling up copies.
+      final dir = await getApplicationDocumentsDirectory();
+      final soundsDir = Directory(p.join(dir.path, 'voice_alarms'));
+      if (!await soundsDir.exists()) {
+        await soundsDir.create(recursive: true);
+      }
+      final dest = p.join(soundsDir.path, '${clip.id}.m4a');
+      final bytes = await _client.storage.from(_bucket).download(clip.storagePath);
+      await File(dest).writeAsBytes(bytes);
+      return dest;
+    } on StorageException {
+      throw const VoiceClipException("Couldn't download that clip. Try again.");
+    } on FileSystemException {
+      throw const VoiceClipException("Couldn't save that clip to your phone.");
+    }
+  }
 
   @override
   Future<void> markPlayed(String clipId) async {

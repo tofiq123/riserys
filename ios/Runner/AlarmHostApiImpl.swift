@@ -61,8 +61,18 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
 
   // MARK: - Notification content
 
-  /// Maps the app's Flutter sound asset (e.g. "sounds/default_alarm.mp3") to a
-  /// bundled iOS notification sound. v1 ships one sound: default_alarm.wav.
+  /// Maps the app's Flutter sound asset (e.g. "sounds/rise_sunrise.wav") to a
+  /// bundled iOS notification sound of the same base name (rise_sunrise.wav).
+  /// The ringtone library is: default_alarm, rise_sunrise, rise_aurora,
+  /// rise_tide, rise_ascend, rise_kalimba, rise_pulse.
+  ///
+  /// MAC PASS TODO: these .wav files must be added to the iOS app bundle
+  /// (Runner target, "Copy Bundle Resources") for a non-default tone to sound;
+  /// until then any selection rings the system default, which is acceptable.
+  /// A voice-clip sound is an absolute file path (starts with "/"); notification
+  /// sounds must be app-bundled, so a voice path can't resolve here and falls
+  /// back to the default — the iOS voice-as-alarm path is deferred to the
+  /// in-app ring flow (see report / compile checklist).
   private func sound(for asset: String) -> UNNotificationSound {
     let base = (asset as NSString).lastPathComponent
     let name = ((base as NSString).deletingPathExtension) + ".wav"
