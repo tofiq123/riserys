@@ -12,6 +12,7 @@ import '../components/section_label.dart';
 import '../components/segmented.dart';
 import '../components/sound_chips.dart';
 import '../components/time_dial.dart';
+import '../components/toast.dart';
 import '../state/alarm_providers.dart';
 import '../state/entitlement_providers.dart';
 import '../theme/tokens.dart';
@@ -73,7 +74,8 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
       return;
     }
     if (!mounted) return;
-    ref.read(toastProvider.notifier).state = 'Alarm saved';
+    ref.read(toastProvider.notifier).state =
+        (message: 'Alarm saved', kind: RiseToastKind.success);
     ref.read(draftProvider.notifier).clear();
     widget.onDone();
   }
@@ -88,7 +90,8 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
       return;
     }
     if (!mounted) return;
-    ref.read(toastProvider.notifier).state = 'Alarm deleted';
+    ref.read(toastProvider.notifier).state =
+        (message: 'Alarm deleted', kind: RiseToastKind.info);
     ref.read(draftProvider.notifier).clear();
     widget.onDone();
   }
@@ -106,7 +109,8 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
     final draft = ref.read(draftProvider);
     if (draft == null) return;
     _update(draft.copyWith(missionData: code));
-    ref.read(toastProvider.notifier).state = 'QR code registered';
+    ref.read(toastProvider.notifier).state =
+        (message: 'QR code registered', kind: RiseToastKind.success);
   }
 
   /// The "Register QR code" control shown for the 'qr' mission. When no code is

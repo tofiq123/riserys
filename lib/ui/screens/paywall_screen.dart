@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/iap/entitlement_service.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
+import '../components/toast.dart';
 import '../state/entitlement_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
@@ -100,10 +101,9 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   PremiumPlan _selected = PremiumPlan.annual;
   bool _busy = false;
 
-  void _snack(String message) {
+  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    RiseToast.show(context, message, kind: kind);
   }
 
   /// The real offer for [plan], if the store returned one.
@@ -118,7 +118,8 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
     if (_busy) return;
     final offer = _offerFor(offers, _selected);
     if (offer == null) {
-      _snack('That plan isn\'t available right now. Please try again later.');
+      _snack('That plan isn\'t available right now. Please try again later.',
+          kind: RiseToastKind.error);
       return;
     }
     setState(() => _busy = true);
@@ -126,13 +127,16 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
       final ok = await ref.read(entitlementServiceProvider).purchase(offer);
       if (!mounted) return;
       if (ok) {
-        _snack('Welcome to Rise Premium. Everything\'s unlocked.');
+        _snack('Welcome to Rise Premium. Everything\'s unlocked.',
+            kind: RiseToastKind.success);
         Navigator.of(context).maybePop();
       } else {
-        _snack('Purchase didn\'t complete. Nothing was charged.');
+        _snack('Purchase didn\'t complete. Nothing was charged.',
+            kind: RiseToastKind.info);
       }
     } catch (_) {
-      _snack('Couldn\'t complete the purchase. Nothing was charged.');
+      _snack('Couldn\'t complete the purchase. Nothing was charged.',
+          kind: RiseToastKind.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -145,13 +149,15 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
       final ok = await ref.read(entitlementServiceProvider).restorePurchases();
       if (!mounted) return;
       if (ok) {
-        _snack('Restored — welcome back to Premium.');
+        _snack('Restored — welcome back to Premium.', kind: RiseToastKind.success);
         Navigator.of(context).maybePop();
       } else {
-        _snack('No previous purchase found for this account.');
+        _snack('No previous purchase found for this account.',
+            kind: RiseToastKind.info);
       }
     } catch (_) {
-      _snack('Couldn\'t restore right now. Try again in a moment.');
+      _snack('Couldn\'t restore right now. Try again in a moment.',
+          kind: RiseToastKind.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -93,7 +93,8 @@ class _AppShellState extends ConsumerState<AppShell> {
             child: Scaffold(
               backgroundColor: RiseColors.appBg,
               body: ToastHost(
-                message: toast,
+                message: toast?.message,
+                kind: toast?.kind ?? RiseToastKind.info,
                 onHide: () => ref.read(toastProvider.notifier).state = null,
                 child: Stack(
                   children: [

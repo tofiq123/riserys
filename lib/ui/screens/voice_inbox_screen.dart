@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/voice/voice_clip_service.dart';
 import '../../domain/voice_clip.dart';
 import '../components/rise_card.dart';
+import '../components/toast.dart';
 import '../state/voice_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
@@ -23,10 +24,9 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
   String? _playingId;
   final Set<String> _busy = {};
 
-  void _snack(String message) {
+  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    RiseToast.show(context, message, kind: kind);
   }
 
   Future<void> _play(VoiceClip clip) async {
@@ -43,7 +43,7 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
       await service.markPlayed(clip.id);
       await player.play(url);
     } catch (_) {
-      _snack("Couldn't play that clip. Try again.");
+      _snack("Couldn't play that clip. Try again.", kind: RiseToastKind.error);
     } finally {
       if (mounted) {
         setState(() => _playingId = null);
@@ -58,9 +58,9 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
     try {
       await ref.read(voiceClipServiceProvider).delete(clip);
     } on VoiceClipException catch (e) {
-      _snack(e.message);
+      _snack(e.message, kind: RiseToastKind.error);
     } catch (_) {
-      _snack('Something went wrong. Try again.');
+      _snack('Something went wrong. Try again.', kind: RiseToastKind.error);
     } finally {
       if (mounted) {
         setState(() => _busy.remove(clip.id));

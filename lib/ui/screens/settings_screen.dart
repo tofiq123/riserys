@@ -14,6 +14,7 @@ import '../components/rise_switch.dart';
 import '../components/section_label.dart';
 import '../components/segmented.dart';
 import '../components/time_dial.dart';
+import '../components/toast.dart';
 import '../state/alarm_providers.dart';
 import '../state/auth_providers.dart';
 import '../state/backup_providers.dart';
@@ -590,19 +591,25 @@ class _AccountBackupSectionState extends ConsumerState<_AccountBackupSection> {
     }
     if (!mounted) return;
     setState(() => _restoring = false);
-    _snack(switch (outcome) {
-      RestoreOutcome.restored =>
-        'Restored your alarms and wake history from your account.',
-      RestoreOutcome.localNotEmpty =>
-        'You already have alarms on this device.',
-      RestoreOutcome.nothingToRestore =>
-        'No backup found for your account yet.',
-    });
+    final (message, kind) = switch (outcome) {
+      RestoreOutcome.restored => (
+          'Restored your alarms and wake history from your account.',
+          RiseToastKind.success
+        ),
+      RestoreOutcome.localNotEmpty => (
+          'You already have alarms on this device.',
+          RiseToastKind.info
+        ),
+      RestoreOutcome.nothingToRestore => (
+          'No backup found for your account yet.',
+          RiseToastKind.info
+        ),
+    };
+    _snack(message, kind: kind);
   }
 
-  void _snack(String message) {
+  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    RiseToast.show(context, message, kind: kind);
   }
 }

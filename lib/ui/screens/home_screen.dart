@@ -12,6 +12,7 @@ import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/rise_switch.dart';
 import '../components/section_label.dart';
+import '../components/toast.dart';
 import '../state/alarm_providers.dart';
 import '../state/settings_providers.dart';
 import '../state/wake_providers.dart';
@@ -418,6 +419,6 @@ class _ShiftSuggestion extends ConsumerWidget {
           clearLastDismissedAt: true,
         ));
     ref.read(toastProvider.notifier).state =
-        'Moved to ${formatShift(shifted)}';
+        (message: 'Moved to ${formatShift(shifted)}', kind: RiseToastKind.info);
   }
 }
