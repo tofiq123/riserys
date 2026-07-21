@@ -5,7 +5,6 @@ import 'package:rise/domain/alarm.dart';
 import 'package:rise/domain/rise_settings.dart';
 import 'package:rise/domain/wake_event.dart';
 import 'package:rise/ui/components/slide_to_wake.dart';
-import 'package:rise/ui/missions/hold_mission.dart';
 import 'package:rise/ui/missions/math_mission.dart';
 import 'package:rise/ui/missions/memory_mission.dart';
 import 'package:rise/ui/missions/mission_host.dart';
@@ -75,56 +74,6 @@ void main() {
       final expected = parts[1] == '×' ? a * b : a + b;
       expect(p.answer, expected, reason: 'diff $d: ${p.prompt}');
     }
-  });
-
-  group('HoldMission', () {
-    testWidgets('holding until the timer completes solves', (t) async {
-      var solved = false;
-      await t.pumpWidget(_wrap(HoldMission(
-        diff: 'easy',
-        onSolved: () => solved = true,
-        holdDuration: const Duration(milliseconds: 100),
-      )));
-      final g = await t.startGesture(t.getCenter(find.text('HOLD')));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 130));
-      expect(solved, isTrue);
-      await g.up();
-    });
-
-    testWidgets('releasing early does not solve', (t) async {
-      var solved = false;
-      await t.pumpWidget(_wrap(HoldMission(
-        diff: 'easy',
-        onSolved: () => solved = true,
-        holdDuration: const Duration(milliseconds: 100),
-      )));
-      final g = await t.startGesture(t.getCenter(find.text('HOLD')));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 40));
-      await g.up();
-      await t.pump(const Duration(milliseconds: 200));
-      expect(solved, isFalse);
-    });
-
-    testWidgets('holding again after completion does not re-fire onSolved', (t) async {
-      var solves = 0;
-      await t.pumpWidget(_wrap(HoldMission(
-        diff: 'easy',
-        onSolved: () => solves++,
-        holdDuration: const Duration(milliseconds: 100),
-      )));
-      final g = await t.startGesture(t.getCenter(find.text('HOLD')));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 130));
-      await g.up();
-      expect(solves, 1);
-      final g2 = await t.startGesture(t.getCenter(find.text('HOLD')));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 130));
-      await g2.up();
-      expect(solves, 1);
-    });
   });
 
   testWidgets('TapMission: reaching the target solves', (t) async {
@@ -264,7 +213,6 @@ void main() {
     testWidgets('dispatches to the right mission widget', (t) async {
       final cases = <String, Type>{
         'math': MathMission,
-        'hold': HoldMission,
         'tap': TapMission,
         'memory': MemoryMission,
         'pvt': PvtMission,
@@ -320,6 +268,21 @@ void main() {
         builder: (context) => buildMission(
           context,
           const Alarm(id: 1, hour: 6, minute: 0, mission: 'bogus'), // not a known key
+          () {},
+        ),
+      )));
+      await t.pump();
+      expect(find.byType(SlideToWake), findsOneWidget);
+    });
+
+    testWidgets('a legacy "hold" alarm degrades to slide-to-wake (mission removed)',
+        (t) async {
+      // The Hold mission was removed; alarms still stored as 'hold' must not
+      // trap the user — they fall through to the safe slide-to-wake gate.
+      await t.pumpWidget(_wrap(Builder(
+        builder: (context) => buildMission(
+          context,
+          const Alarm(id: 1, hour: 6, minute: 0, mission: 'hold'),
           () {},
         ),
       )));

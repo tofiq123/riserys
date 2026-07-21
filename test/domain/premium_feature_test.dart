@@ -66,7 +66,6 @@ void main() {
     for (final free in const [
       'none',
       'math',
-      'hold',
       'tap',
       'memory',
       'shake',
