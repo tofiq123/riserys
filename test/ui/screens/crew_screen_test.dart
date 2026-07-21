@@ -98,9 +98,12 @@ void main() {
     expect(find.textContaining('No one with the handle'), findsOneWidget);
   });
 
-  testWidgets('removing a friend', (t) async {
+  testWidgets('removing a friend asks to confirm first', (t) async {
     final crew = await _pumpSignedIn(t, initial: CrewState(friends: [_m('u1', 'ada')]));
     await t.tap(find.text('Remove'));
+    await t.pumpAndSettle();
+    expect(crew.current.friends, isNotEmpty, reason: 'not removed until confirmed');
+    await t.tap(find.byKey(const Key('confirm-dialog-confirm')));
     await t.pumpAndSettle();
     expect(crew.current.friends, isEmpty);
   });

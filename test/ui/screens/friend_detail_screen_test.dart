@@ -108,9 +108,12 @@ void main() {
     expect(nudge.lastNudged, 'u1');
   });
 
-  testWidgets('Remove action removes the friend', (t) async {
+  testWidgets('Remove action confirms first, then removes the friend', (t) async {
     final (crew, _) = await _pump(t);
     await t.tap(find.text('Remove'));
+    await t.pumpAndSettle();
+    expect(crew.current.friends, isNotEmpty, reason: 'not removed until confirmed');
+    await t.tap(find.byKey(const Key('confirm-dialog-confirm')));
     await t.pumpAndSettle();
     expect(crew.current.friends, isEmpty);
   });
