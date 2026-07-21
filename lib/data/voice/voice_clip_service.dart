@@ -20,6 +20,12 @@ abstract interface class VoiceClipService {
   /// A short-lived URL to stream/download [clip]'s audio for playback.
   Future<String> urlFor(VoiceClip clip);
 
+  /// Downloads [clip]'s audio to a PERSISTENT local file (surviving app
+  /// restarts) and returns its absolute path, so it can be used as an alarm's
+  /// wake sound. Overwrites any prior download of the same clip. Throws
+  /// [VoiceClipException] on failure.
+  Future<String> downloadForAlarm(VoiceClip clip);
+
   /// Marks a received clip as played (best-effort, one-way).
   Future<void> markPlayed(String clipId);
 
@@ -54,6 +60,13 @@ class FakeVoiceClipService implements VoiceClipService {
   final List<String> markedPlayed = [];
   final List<String> deleted = [];
 
+  /// Clip ids passed to [downloadForAlarm], in call order.
+  final List<String> downloadedForAlarm = [];
+
+  /// When set, [downloadForAlarm] throws a [VoiceClipException] with this
+  /// message (to exercise the inbox's download-failure path).
+  String? failDownloadWith;
+
   @override
   Future<void> send({
     required String targetId,
@@ -68,6 +81,13 @@ class FakeVoiceClipService implements VoiceClipService {
 
   @override
   Future<String> urlFor(VoiceClip clip) async => signedUrl;
+
+  @override
+  Future<String> downloadForAlarm(VoiceClip clip) async {
+    if (failDownloadWith != null) throw VoiceClipException(failDownloadWith!);
+    downloadedForAlarm.add(clip.id);
+    return '/local/voice_alarms/${clip.id}.m4a';
+  }
 
   @override
   Future<void> markPlayed(String clipId) async {
@@ -101,6 +121,10 @@ class DisabledVoiceClipService implements VoiceClipService {
 
   @override
   Future<String> urlFor(VoiceClip clip) async =>
+      throw StateError('voice clips not configured');
+
+  @override
+  Future<String> downloadForAlarm(VoiceClip clip) async =>
       throw StateError('voice clips not configured');
 
   @override

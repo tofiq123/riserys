@@ -64,6 +64,24 @@ void main() {
       final svc = FakeVoiceClipService(signedUrl: 'https://x/y.m4a');
       expect(await svc.urlFor(_clip('a')), 'https://x/y.m4a');
     });
+
+    test('downloadForAlarm records the id and returns a local file path',
+        () async {
+      final svc = FakeVoiceClipService();
+      final path = await svc.downloadForAlarm(_clip('a'));
+      expect(svc.downloadedForAlarm, ['a']);
+      expect(path, '/local/voice_alarms/a.m4a');
+      expect(path.startsWith('/'), isTrue); // a file-path sound source
+    });
+
+    test('downloadForAlarm throws when configured to fail', () async {
+      final svc = FakeVoiceClipService()..failDownloadWith = 'nope';
+      await expectLater(
+        svc.downloadForAlarm(_clip('a')),
+        throwsA(isA<VoiceClipException>()),
+      );
+      expect(svc.downloadedForAlarm, isEmpty);
+    });
   });
 
   group('DisabledVoiceClipService', () {

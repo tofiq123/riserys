@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -18,6 +19,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import java.io.File
 
 /**
  * Owns the ringing lifetime: audio on the alarm stream, vibration, wake lock,
@@ -174,13 +176,24 @@ class AlarmService : Service() {
     /**
      * Points [mp] at the alarm's chosen sound. Returns true when a source was
      * set; false means "not resolvable — caller must use the default" so the
-     * alarm never goes silent. A bundled tone asset such as
-     * `sounds/rise_sunrise.wav` maps to `R.raw.rise_sunrise` via getIdentifier;
-     * an unknown name (id 0) returns false. (The absolute-file-path branch for
-     * voice-clip sounds is added in the voice-as-alarm change.)
+     * alarm never goes silent. Two source kinds, in priority order:
+     *  - an absolute local file (a downloaded voice clip): `/...` or `file://...`
+     *  - a bundled tone asset (`sounds/rise_sunrise.wav`) -> `R.raw.rise_sunrise`
+     *    via getIdentifier; an unknown name (id 0) returns false.
+     * A missing/empty file returns false; a corrupt file lets setDataSource
+     * throw, which startAudio catches and recovers from with the default.
      */
     private fun setSelectedSource(mp: MediaPlayer, soundAsset: String): Boolean {
         if (soundAsset.isBlank()) return false
+        // Voice-as-alarm: a downloaded clip stored as an absolute file path.
+        if (soundAsset.startsWith("/") || soundAsset.startsWith("file://")) {
+            val path =
+                if (soundAsset.startsWith("file://")) Uri.parse(soundAsset).path
+                else soundAsset
+            if (path.isNullOrEmpty() || !File(path).exists()) return false
+            mp.setDataSource(path)
+            return true
+        }
         // Bundled raw resource: "sounds/rise_sunrise.wav" -> "rise_sunrise".
         val name = soundAsset.substringAfterLast('/').substringBeforeLast('.')
         if (name.isEmpty()) return false

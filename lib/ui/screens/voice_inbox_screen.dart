@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/voice/voice_clip_service.dart';
+import '../../domain/alarm.dart';
 import '../../domain/voice_clip.dart';
 import '../components/rise_card.dart';
 import '../components/toast.dart';
+import '../state/alarm_providers.dart';
+import '../state/settings_providers.dart';
 import '../state/voice_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
@@ -67,6 +70,110 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
         ref.invalidate(voiceInboxProvider);
       }
     }
+  }
+
+  /// Makes [clip] the wake sound of one of the user's alarms: pick an alarm,
+  /// download the clip to a persistent local file, and point that alarm's
+  /// soundAsset at the file. The native ring plays the file directly and falls
+  /// back to the default tone if it's ever missing, so this can never silence
+  /// an alarm.
+  Future<void> _setAsAlarm(VoiceClip clip) async {
+    if (_busy.contains(clip.id)) return;
+    // `.future` resolves to the current alarm list (immediately, since Home
+    // already watches this provider) rather than a still-loading snapshot.
+    List<Alarm> alarms;
+    try {
+      alarms = await ref.read(alarmsProvider.future);
+    } catch (_) {
+      alarms = const [];
+    }
+    if (!mounted) return;
+    if (alarms.isEmpty) {
+      _snack('Create an alarm first, then set this clip as its sound.');
+      return;
+    }
+    final chosen = await _pickAlarm(alarms);
+    if (chosen == null || !mounted) return;
+
+    setState(() => _busy.add(clip.id));
+    try {
+      final path = await ref.read(voiceClipServiceProvider).downloadForAlarm(clip);
+      await ref
+          .read(alarmMutationsProvider)
+          .save(chosen.copyWith(soundAsset: path));
+      _snack('Set as the sound for ${_alarmTime(chosen)}.',
+          kind: RiseToastKind.success);
+    } on VoiceClipException catch (e) {
+      _snack(e.message, kind: RiseToastKind.error);
+    } catch (_) {
+      _snack("Couldn't set that as your alarm sound. Try again.",
+          kind: RiseToastKind.error);
+    } finally {
+      if (mounted) setState(() => _busy.remove(clip.id));
+    }
+  }
+
+  /// A bottom-sheet picker of the user's alarms; resolves to the chosen alarm
+  /// or null if dismissed.
+  Future<Alarm?> _pickAlarm(List<Alarm> alarms) {
+    return showModalBottomSheet<Alarm>(
+      context: context,
+      backgroundColor: RiseColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(RiseRadii.base)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  RiseSpacing.screen, 18, RiseSpacing.screen, 6),
+              child: Text('Set as sound for…', style: RiseText.title),
+            ),
+            for (final a in alarms)
+              GestureDetector(
+                key: Key('alarm-pick-${a.id}'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(ctx).pop(a),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: RiseSpacing.screen, vertical: 14),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.alarm,
+                          size: 20, color: RiseColors.textDim),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _alarmLabel(a),
+                          style:
+                              RiseText.body.copyWith(fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _alarmLabel(Alarm a) {
+    final hasName = a.label.isNotEmpty && a.label != 'Alarm';
+    return hasName ? '${_alarmTime(a)} · ${a.label}' : _alarmTime(a);
+  }
+
+  String _alarmTime(Alarm a) {
+    final mm = a.minute.toString().padLeft(2, '0');
+    final use24h = ref.read(currentSettingsProvider).use24HourTime;
+    if (use24h) return '${a.hour.toString().padLeft(2, '0')}:$mm';
+    return '${a.hour12}:$mm ${a.isAm ? 'AM' : 'PM'}';
   }
 
   @override
@@ -195,7 +302,20 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
+            Opacity(
+              opacity: deleting ? 0.4 : 1,
+              child: GestureDetector(
+                key: Key('voice-setalarm-${clip.id}'),
+                behavior: HitTestBehavior.opaque,
+                onTap: deleting ? null : () => _setAsAlarm(clip),
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(Icons.alarm_add,
+                      color: RiseColors.textFaint, size: 20),
+                ),
+              ),
+            ),
             Opacity(
               opacity: deleting ? 0.4 : 1,
               child: GestureDetector(
