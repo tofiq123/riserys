@@ -1,18 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/auth/auth_service.dart';
+import '../../data/backup/backup_coordinator.dart';
 import '../../domain/alarm.dart';
 import '../../domain/clock_format.dart';
 import '../../domain/premium_feature.dart';
 import '../../domain/rise_settings.dart';
+import '../backup_sync_host.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/rise_switch.dart';
 import '../components/section_label.dart';
 import '../components/segmented.dart';
 import '../components/time_dial.dart';
+import '../state/alarm_providers.dart';
+import '../state/auth_providers.dart';
+import '../state/backup_providers.dart';
 import '../state/entitlement_providers.dart';
 import '../state/settings_providers.dart';
+import '../state/wake_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'paywall_screen.dart';
@@ -239,6 +246,7 @@ class SettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            const _AccountBackupSection(),
           ],
         ),
       ),
@@ -458,5 +466,143 @@ class _SleepGoalCard extends ConsumerWidget {
         },
       ),
     );
+  }
+}
+
+/// Account backup / restore. Rendered only when auth is configured AND the user
+/// is signed in — otherwise it collapses to nothing, so the local-only app is
+/// unchanged. v1 offers a manual "Restore from account", which (matching the
+/// auto-restore) only applies when this device has no alarms yet.
+class _AccountBackupSection extends ConsumerStatefulWidget {
+  const _AccountBackupSection();
+
+  @override
+  ConsumerState<_AccountBackupSection> createState() =>
+      _AccountBackupSectionState();
+}
+
+class _AccountBackupSectionState extends ConsumerState<_AccountBackupSection> {
+  bool _restoring = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = ref.watch(authServiceProvider) is! DisabledAuthService;
+    final signedIn = ref.watch(accountProvider).value != null;
+    if (!enabled || !signedIn) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 24),
+        const SectionLabel('Account backup'),
+        const SizedBox(height: 6),
+        Text(
+            'Your alarms and wake history back up to your account automatically. '
+            'On a new phone, sign in and they restore.',
+            style: RiseText.caption),
+        const SizedBox(height: 12),
+        GestureDetector(
+          key: const Key('restore-from-account'),
+          behavior: HitTestBehavior.opaque,
+          onTap: _restoring ? null : _restore,
+          child: RiseCard(
+            child: Row(
+              children: [
+                const Icon(Icons.cloud_download_outlined,
+                    color: RiseColors.primary, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Restore from account',
+                          style: RiseText.body
+                              .copyWith(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text('Only when this device has no alarms yet',
+                          style: RiseText.caption
+                              .copyWith(color: RiseColors.textDim)),
+                    ],
+                  ),
+                ),
+                if (_restoring)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: RiseColors.primary),
+                  )
+                else
+                  const Icon(Icons.chevron_right,
+                      color: RiseColors.textFaint, size: 20),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _restore() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: RiseColors.card,
+        title: Text('Restore from account?', style: RiseText.title),
+        content: Text(
+            'This pulls your backed-up alarms and wake history from your '
+            'account. It only restores when this device has no alarms yet.',
+            style: RiseText.body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text('Cancel',
+                style: RiseText.body.copyWith(color: RiseColors.textDim)),
+          ),
+          TextButton(
+            key: const Key('restore-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('Restore',
+                style: RiseText.body.copyWith(
+                    color: RiseColors.primary, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _restoring = true);
+    RestoreOutcome outcome;
+    try {
+      final localEmpty =
+          (await ref.read(alarmRepositoryProvider).all()).isEmpty;
+      outcome = await ref.read(backupCoordinatorProvider).restore(
+            localAlarmsEmpty: localEmpty,
+            apply: (r) => writeRestoreToLocal(
+              alarmRepo: ref.read(alarmRepositoryProvider),
+              wakeRepo: ref.read(wakeEventRepositoryProvider),
+              sync: ref.read(alarmSyncServiceProvider),
+              result: r,
+            ),
+          );
+    } catch (_) {
+      outcome = RestoreOutcome.nothingToRestore;
+    }
+    if (!mounted) return;
+    setState(() => _restoring = false);
+    _snack(switch (outcome) {
+      RestoreOutcome.restored =>
+        'Restored your alarms and wake history from your account.',
+      RestoreOutcome.localNotEmpty =>
+        'You already have alarms on this device.',
+      RestoreOutcome.nothingToRestore =>
+        'No backup found for your account yet.',
+    });
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 }
