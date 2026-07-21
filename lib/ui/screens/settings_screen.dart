@@ -248,6 +248,15 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 24),
+            const SectionLabel('Bedtime reminder'),
+            const SizedBox(height: 6),
+            Text(
+                'A nudge to start winding down so tomorrow\'s wake-up is '
+                'easier.',
+                style: RiseText.caption),
+            const SizedBox(height: 12),
+            const _BedtimeReminderCard(),
+            const SizedBox(height: 24),
             const SectionLabel('Appearance'),
             const SizedBox(height: 12),
             RiseCard(
@@ -518,6 +527,119 @@ class _SleepGoalCard extends ConsumerWidget {
                       ),
                     ),
                   ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// The nightly wind-down reminder: an enable toggle plus the reminder time,
+/// which opens a dial sheet (honoring the 24-hour setting, like the sleep-goal
+/// row). Warm and optional — a nudge, never a demand. The controller pushes
+/// changes to the native scheduler.
+class _BedtimeReminderCard extends ConsumerWidget {
+  const _BedtimeReminderCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(settingsProvider);
+    final ctrl = ref.read(settingsProvider.notifier);
+
+    return RiseCard(
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Remind me', style: RiseText.body),
+              RiseSwitch(
+                  key: const Key('bedtime-reminder-switch'),
+                  value: s.bedtimeReminderEnabled,
+                  onChanged: ctrl.setBedtimeReminderEnabled),
+            ],
+          ),
+          if (s.bedtimeReminderEnabled) ...[
+            Divider(height: 20, color: RiseColors.divider),
+            GestureDetector(
+              key: const Key('bedtime-time-row'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _showSheet(context, ref, s),
+              child: Row(
+                children: [
+                  Icon(Icons.bedtime_outlined,
+                      color: RiseColors.primary, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text('Wind-down time', style: RiseText.body),
+                  ),
+                  Text(
+                      formatClock(s.bedtimeHour, s.bedtimeMinute,
+                          use24h: s.use24HourTime),
+                      style:
+                          RiseText.mono(size: 15, weight: FontWeight.w600)),
+                  const SizedBox(width: 6),
+                  Icon(Icons.chevron_right,
+                      color: RiseColors.textFaint, size: 20),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showSheet(BuildContext context, WidgetRef ref, RiseSettings s) {
+    var hour24 = s.bedtimeHour;
+    var minute = s.bedtimeMinute;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: RiseColors.card,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setLocal) {
+          final dial = (
+            hour12: hour24 % 12 == 0 ? 12 : hour24 % 12,
+            minute: minute,
+            isAm: hour24 < 12,
+          );
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(RiseSpacing.screen),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Wind-down time', style: RiseText.title),
+                  const SizedBox(height: 6),
+                  Text(
+                      'When should Rise gently remind you to start winding '
+                      'down?',
+                      style: RiseText.caption),
+                  const SizedBox(height: 12),
+                  TimeDial(
+                    use24h: s.use24HourTime,
+                    value: dial,
+                    onChanged: (t) => setLocal(() {
+                      hour24 = Alarm.to24Hour(t.hour12, t.isAm);
+                      minute = t.minute;
+                    }),
+                  ),
+                  const SizedBox(height: 16),
+                  PrimaryButton(
+                    key: const Key('bedtime-time-save'),
+                    label: 'Save time',
+                    onPressed: () {
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setBedtimeTime(hour24, minute);
+                      Navigator.of(sheetContext).pop();
+                    },
+                  ),
                 ],
               ),
             ),

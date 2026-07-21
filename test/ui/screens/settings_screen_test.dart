@@ -105,6 +105,48 @@ void main() {
     expect(store.sunriseWake, isTrue);
   });
 
+  testWidgets(
+      'bedtime reminder: toggling persists it and reveals the time row '
+      '(default 22:30)', (t) async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    await _pump(
+        t,
+        ProviderScope(
+          overrides: [appSettingsProvider.overrideWithValue(store)],
+          child: const MaterialApp(home: SettingsScreen()),
+        ));
+    await t.pump();
+    expect(store.bedtimeReminderEnabled, isFalse); // default off
+    expect(find.byKey(const Key('bedtime-time-row')), findsNothing);
+
+    await t.tap(find.byKey(const Key('bedtime-reminder-switch')));
+    await t.pump();
+    expect(store.bedtimeReminderEnabled, isTrue);
+    expect(find.byKey(const Key('bedtime-time-row')), findsOneWidget);
+    expect(find.text('10:30 PM'), findsOneWidget); // 22:30 in 12h form
+  });
+
+  testWidgets('bedtime time sheet opens and Save persists the time', (t) async {
+    SharedPreferences.setMockInitialValues({'bedtimeReminderEnabled': true});
+    final store = await AppSettings.load();
+    await _pump(
+        t,
+        ProviderScope(
+          overrides: [appSettingsProvider.overrideWithValue(store)],
+          child: const MaterialApp(home: SettingsScreen()),
+        ));
+    await t.pump();
+    await t.tap(find.byKey(const Key('bedtime-time-row')));
+    await t.pumpAndSettle();
+    expect(find.byKey(const Key('bedtime-time-save')), findsOneWidget);
+    await t.tap(find.byKey(const Key('bedtime-time-save')));
+    await t.pumpAndSettle();
+    // Saving without touching the dial persists the current (default) time.
+    expect(store.bedtimeHour, 22);
+    expect(store.bedtimeMinute, 30);
+  });
+
   testWidgets('toggling the real-light prompt persists it (default off)',
       (t) async {
     SharedPreferences.setMockInitialValues({});

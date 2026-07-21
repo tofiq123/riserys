@@ -500,6 +500,14 @@ protocol AlarmHostApi {
   func scheduleWakeCheck(alarm: NativeAlarm, checkAtEpochMs: Int64) throws
   /// Cancels any pending wake-check (notification + re-fire) for [alarmId].
   func cancelWakeCheck(alarmId: Int64) throws
+  /// Arms the nightly wind-down reminder: a plain notification (its own
+  /// low-stakes channel/category — never the alarm channel) every day at
+  /// [hour]:[minute] local time with the given [title]/[body]. Replaces any
+  /// previously scheduled bedtime reminder. Purely a reminder: missing it has
+  /// no effect on alarms.
+  func scheduleBedtimeReminder(hour: Int64, minute: Int64, title: String, body: String) throws
+  /// Cancels the nightly wind-down reminder. Safe to call when none is armed.
+  func cancelBedtimeReminder() throws
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -744,6 +752,43 @@ class AlarmHostApiSetup {
       }
     } else {
       cancelWakeCheckChannel.setMessageHandler(nil)
+    }
+    /// Arms the nightly wind-down reminder: a plain notification (its own
+    /// low-stakes channel/category — never the alarm channel) every day at
+    /// [hour]:[minute] local time with the given [title]/[body]. Replaces any
+    /// previously scheduled bedtime reminder. Purely a reminder: missing it has
+    /// no effect on alarms.
+    let scheduleBedtimeReminderChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.scheduleBedtimeReminder\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      scheduleBedtimeReminderChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let hourArg = args[0] as! Int64
+        let minuteArg = args[1] as! Int64
+        let titleArg = args[2] as! String
+        let bodyArg = args[3] as! String
+        do {
+          try api.scheduleBedtimeReminder(hour: hourArg, minute: minuteArg, title: titleArg, body: bodyArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      scheduleBedtimeReminderChannel.setMessageHandler(nil)
+    }
+    /// Cancels the nightly wind-down reminder. Safe to call when none is armed.
+    let cancelBedtimeReminderChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.cancelBedtimeReminder\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      cancelBedtimeReminderChannel.setMessageHandler { _, reply in
+        do {
+          try api.cancelBedtimeReminder()
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      cancelBedtimeReminderChannel.setMessageHandler(nil)
     }
   }
 }

@@ -537,6 +537,16 @@ interface AlarmHostApi {
   fun scheduleWakeCheck(alarm: NativeAlarm, checkAtEpochMs: Long)
   /** Cancels any pending wake-check (notification + re-fire) for [alarmId]. */
   fun cancelWakeCheck(alarmId: Long)
+  /**
+   * Arms the nightly wind-down reminder: a plain notification (its own
+   * low-stakes channel/category — never the alarm channel) every day at
+   * [hour]:[minute] local time with the given [title]/[body]. Replaces any
+   * previously scheduled bedtime reminder. Purely a reminder: missing it has
+   * no effect on alarms.
+   */
+  fun scheduleBedtimeReminder(hour: Long, minute: Long, title: String, body: String)
+  /** Cancels the nightly wind-down reminder. Safe to call when none is armed. */
+  fun cancelBedtimeReminder()
 
   companion object {
     /** The codec used by AlarmHostApi. */
@@ -787,6 +797,43 @@ interface AlarmHostApi {
             val alarmIdArg = args[0] as Long
             val wrapped: List<Any?> = try {
               api.cancelWakeCheck(alarmIdArg)
+              listOf(null)
+            } catch (exception: Throwable) {
+              AlarmApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.scheduleBedtimeReminder$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val hourArg = args[0] as Long
+            val minuteArg = args[1] as Long
+            val titleArg = args[2] as String
+            val bodyArg = args[3] as String
+            val wrapped: List<Any?> = try {
+              api.scheduleBedtimeReminder(hourArg, minuteArg, titleArg, bodyArg)
+              listOf(null)
+            } catch (exception: Throwable) {
+              AlarmApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.cancelBedtimeReminder$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              api.cancelBedtimeReminder()
               listOf(null)
             } catch (exception: Throwable) {
               AlarmApiPigeonUtils.wrapError(exception)

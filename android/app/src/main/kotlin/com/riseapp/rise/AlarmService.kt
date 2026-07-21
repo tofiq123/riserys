@@ -114,7 +114,7 @@ class AlarmService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(label)
             .setContentText("Tap to wake up")
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.drawable.ic_stat_rise)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setOngoing(true)

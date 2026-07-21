@@ -25,7 +25,13 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED,
             Intent.ACTION_TIME_CHANGED,
-            Intent.ACTION_TIMEZONE_CHANGED -> startReconcileEngine(context)
+            Intent.ACTION_TIMEZONE_CHANGED -> {
+                // The bedtime reminder is pure native state: re-arm it directly
+                // from its own prefs, no Dart engine involved. A no-op while
+                // the reminder is disabled; never touches the alarm path.
+                BedtimeReminderScheduler.rearmFromPrefs(context)
+                startReconcileEngine(context)
+            }
             else -> return
         }
     }

@@ -714,4 +714,46 @@ class AlarmHostApi {
     )
     ;
   }
+
+  /// Arms the nightly wind-down reminder: a plain notification (its own
+  /// low-stakes channel/category — never the alarm channel) every day at
+  /// [hour]:[minute] local time with the given [title]/[body]. Replaces any
+  /// previously scheduled bedtime reminder. Purely a reminder: missing it has
+  /// no effect on alarms.
+  Future<void> scheduleBedtimeReminder(int hour, int minute, String title, String body) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.scheduleBedtimeReminder$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[hour, minute, title, body]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  /// Cancels the nightly wind-down reminder. Safe to call when none is armed.
+  Future<void> cancelBedtimeReminder() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.cancelBedtimeReminder$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
 }

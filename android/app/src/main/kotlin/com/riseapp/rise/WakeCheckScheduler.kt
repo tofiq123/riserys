@@ -148,7 +148,7 @@ object WakeCheckScheduler {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("Still up?")
             .setContentText("Tap \"I'm up\", or $label rings again.")
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.drawable.ic_stat_rise)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(openApp)

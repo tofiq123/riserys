@@ -17,6 +17,9 @@ class RiseSettings {
     this.smartWakeCheck = false,
     this.sunriseWake = false,
     this.realLightPrompt = false,
+    this.bedtimeReminderEnabled = false,
+    this.bedtimeHour = 22,
+    this.bedtimeMinute = 30,
     this.use24HourTime = false,
     this.themeMode = RiseThemeMode.system,
   });
@@ -78,6 +81,19 @@ class RiseSettings {
   /// alertness. Default on: it's a gentle, non-nagging one-liner, not a gate.
   final bool realLightPrompt;
 
+  /// Opt-in nightly wind-down reminder (Phase 8.5). When on, a gentle
+  /// notification fires every night at [bedtimeHour]:[bedtimeMinute] — a nudge
+  /// to start winding down so tomorrow's wake-up is easier. Purely a reminder
+  /// on its own low-importance channel; it never touches the alarm path.
+  /// Default off.
+  final bool bedtimeReminderEnabled;
+
+  /// The wind-down reminder's local wall-clock time (24-hour form). Defaults
+  /// to 22:30. Always meaningful (never null) so toggling the reminder on
+  /// needs no extra setup; only used while [bedtimeReminderEnabled] is on.
+  final int bedtimeHour;
+  final int bedtimeMinute;
+
   /// Whether times are shown in 24-hour ("digital", e.g. 07:05 / 19:30) form
   /// rather than 12-hour AM/PM. Default off (AM/PM) to preserve existing
   /// behaviour; on for the many locales that don't use AM/PM. Purely a display
@@ -110,6 +126,9 @@ class RiseSettings {
     bool? smartWakeCheck,
     bool? sunriseWake,
     bool? realLightPrompt,
+    bool? bedtimeReminderEnabled,
+    int? bedtimeHour,
+    int? bedtimeMinute,
     bool? use24HourTime,
     RiseThemeMode? themeMode,
     // The `field ?? this.field` idiom cannot express "clear this nullable field
@@ -134,6 +153,10 @@ class RiseSettings {
         smartWakeCheck: smartWakeCheck ?? this.smartWakeCheck,
         sunriseWake: sunriseWake ?? this.sunriseWake,
         realLightPrompt: realLightPrompt ?? this.realLightPrompt,
+        bedtimeReminderEnabled:
+            bedtimeReminderEnabled ?? this.bedtimeReminderEnabled,
+        bedtimeHour: bedtimeHour ?? this.bedtimeHour,
+        bedtimeMinute: bedtimeMinute ?? this.bedtimeMinute,
         use24HourTime: use24HourTime ?? this.use24HourTime,
         themeMode: themeMode ?? this.themeMode,
       );
@@ -152,6 +175,9 @@ class RiseSettings {
       other.smartWakeCheck == smartWakeCheck &&
       other.sunriseWake == sunriseWake &&
       other.realLightPrompt == realLightPrompt &&
+      other.bedtimeReminderEnabled == bedtimeReminderEnabled &&
+      other.bedtimeHour == bedtimeHour &&
+      other.bedtimeMinute == bedtimeMinute &&
       other.use24HourTime == use24HourTime &&
       other.themeMode == themeMode;
 
@@ -168,6 +194,9 @@ class RiseSettings {
       smartWakeCheck,
       sunriseWake,
       realLightPrompt,
+      bedtimeReminderEnabled,
+      bedtimeHour,
+      bedtimeMinute,
       use24HourTime,
       themeMode);
 }

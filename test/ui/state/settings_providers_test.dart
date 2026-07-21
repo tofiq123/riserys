@@ -5,6 +5,25 @@ import 'package:rise/domain/rise_settings.dart';
 import 'package:rise/ui/state/settings_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Records the native bedtime-reminder calls the controller makes, optionally
+/// failing them to prove a platform hiccup never breaks the settings write.
+class _FakeBedtimeHost implements BedtimeReminderHost {
+  final calls = <String>[];
+  bool throwOnCall = false;
+
+  @override
+  Future<void> schedule(int hour, int minute) async {
+    if (throwOnCall) throw StateError('channel down');
+    calls.add('schedule $hour:$minute');
+  }
+
+  @override
+  Future<void> cancel() async {
+    if (throwOnCall) throw StateError('channel down');
+    calls.add('cancel');
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -96,6 +115,74 @@ void main() {
     await c.read(settingsProvider.notifier).clearTargetWakeTime();
     expect(c.read(settingsProvider).hasTargetWake, isFalse);
     expect((await AppSettings.load()).targetWakeHour, isNull);
+  });
+
+  test('enabling the bedtime reminder persists it and arms the native side',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    final host = _FakeBedtimeHost();
+    final c = ProviderContainer(overrides: [
+      appSettingsProvider.overrideWithValue(store),
+      bedtimeReminderHostProvider.overrideWithValue(host),
+    ]);
+    addTearDown(c.dispose);
+
+    expect(c.read(settingsProvider).bedtimeReminderEnabled, isFalse);
+    await c.read(settingsProvider.notifier).setBedtimeReminderEnabled(true);
+    expect(c.read(settingsProvider).bedtimeReminderEnabled, isTrue);
+    expect((await AppSettings.load()).bedtimeReminderEnabled, isTrue);
+    expect(host.calls, ['schedule 22:30'],
+        reason: 'armed at the default 22:30 on enable');
+  });
+
+  test('changing the bedtime while enabled re-arms at the new time', () async {
+    SharedPreferences.setMockInitialValues({'bedtimeReminderEnabled': true});
+    final store = await AppSettings.load();
+    final host = _FakeBedtimeHost();
+    final c = ProviderContainer(overrides: [
+      appSettingsProvider.overrideWithValue(store),
+      bedtimeReminderHostProvider.overrideWithValue(host),
+    ]);
+    addTearDown(c.dispose);
+
+    await c.read(settingsProvider.notifier).setBedtimeTime(23, 15);
+    expect(c.read(settingsProvider).bedtimeHour, 23);
+    expect(c.read(settingsProvider).bedtimeMinute, 15);
+    expect((await AppSettings.load()).bedtimeHour, 23);
+    expect(host.calls, ['schedule 23:15']);
+  });
+
+  test('disabling the bedtime reminder cancels the native side', () async {
+    SharedPreferences.setMockInitialValues({'bedtimeReminderEnabled': true});
+    final store = await AppSettings.load();
+    final host = _FakeBedtimeHost();
+    final c = ProviderContainer(overrides: [
+      appSettingsProvider.overrideWithValue(store),
+      bedtimeReminderHostProvider.overrideWithValue(host),
+    ]);
+    addTearDown(c.dispose);
+
+    await c.read(settingsProvider.notifier).setBedtimeReminderEnabled(false);
+    expect(c.read(settingsProvider).bedtimeReminderEnabled, isFalse);
+    expect((await AppSettings.load()).bedtimeReminderEnabled, isFalse);
+    expect(host.calls, ['cancel']);
+  });
+
+  test('a failing bedtime host never breaks the settings write', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    final host = _FakeBedtimeHost()..throwOnCall = true;
+    final c = ProviderContainer(overrides: [
+      appSettingsProvider.overrideWithValue(store),
+      bedtimeReminderHostProvider.overrideWithValue(host),
+    ]);
+    addTearDown(c.dispose);
+
+    // Must not throw, and the setting must still persist + update state.
+    await c.read(settingsProvider.notifier).setBedtimeReminderEnabled(true);
+    expect(c.read(settingsProvider).bedtimeReminderEnabled, isTrue);
+    expect((await AppSettings.load()).bedtimeReminderEnabled, isTrue);
   });
 
   test(

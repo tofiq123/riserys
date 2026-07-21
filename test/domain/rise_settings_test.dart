@@ -17,6 +17,35 @@ void main() {
     expect(s.sunriseWake, isFalse);
     expect(s.realLightPrompt, isFalse);
     expect(s.use24HourTime, isFalse);
+    expect(s.bedtimeReminderEnabled, isFalse);
+    expect(s.bedtimeHour, 22);
+    expect(s.bedtimeMinute, 30);
+  });
+
+  test('bedtime reminder: copyWith, equality, and unrelated preservation', () {
+    const s = RiseSettings();
+    expect(s.copyWith(bedtimeReminderEnabled: true).bedtimeReminderEnabled,
+        isTrue);
+    final moved = s.copyWith(bedtimeHour: 23, bedtimeMinute: 15);
+    expect(moved.bedtimeHour, 23);
+    expect(moved.bedtimeMinute, 15);
+    expect(
+        const RiseSettings(bedtimeReminderEnabled: true) ==
+            const RiseSettings(),
+        isFalse);
+    expect(const RiseSettings(bedtimeHour: 21) == const RiseSettings(),
+        isFalse);
+    expect(
+        const RiseSettings(bedtimeMinute: 0).hashCode ==
+            const RiseSettings().hashCode,
+        isFalse);
+    // Unrelated copyWith preserves all three.
+    final kept = const RiseSettings(
+            bedtimeReminderEnabled: true, bedtimeHour: 21, bedtimeMinute: 45)
+        .copyWith(snoozeMaxCount: 2);
+    expect(kept.bedtimeReminderEnabled, isTrue);
+    expect(kept.bedtimeHour, 21);
+    expect(kept.bedtimeMinute, 45);
   });
 
   test('use24HourTime defaults off; copyWith and equality', () {

@@ -150,4 +150,14 @@ abstract class AlarmHostApi {
 
   /// Cancels any pending wake-check (notification + re-fire) for [alarmId].
   void cancelWakeCheck(int alarmId);
+
+  /// Arms the nightly wind-down reminder: a plain notification (its own
+  /// low-stakes channel/category — never the alarm channel) every day at
+  /// [hour]:[minute] local time with the given [title]/[body]. Replaces any
+  /// previously scheduled bedtime reminder. Purely a reminder: missing it has
+  /// no effect on alarms.
+  void scheduleBedtimeReminder(int hour, int minute, String title, String body);
+
+  /// Cancels the nightly wind-down reminder. Safe to call when none is armed.
+  void cancelBedtimeReminder();
 }
