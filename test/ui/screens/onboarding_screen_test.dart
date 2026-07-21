@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/app_settings.dart';
+import 'package:rise/data/auth/auth_service.dart';
 import 'package:rise/data/native/alarm_api.g.dart';
 import 'package:rise/data/permission_gateway.dart';
 import 'package:rise/domain/alarm.dart';
 import 'package:rise/ui/screens/onboarding_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
+import 'package:rise/ui/state/auth_providers.dart';
 import 'package:rise/ui/state/settings_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -59,12 +61,13 @@ Future<AppSettings> _newStore() async {
 }
 
 Widget _host(_FakeGateway gw, AppSettings store,
-        {VoidCallback? onDone, AlarmMutations? mutations}) =>
+        {VoidCallback? onDone, AlarmMutations? mutations, AuthService? auth}) =>
     ProviderScope(
       overrides: [
         appSettingsProvider.overrideWithValue(store),
         if (mutations != null)
           alarmMutationsProvider.overrideWithValue(mutations),
+        if (auth != null) authServiceProvider.overrideWithValue(auth),
       ],
       child: MaterialApp(
         home: OnboardingScreen(onDone: onDone ?? () {}, permissions: gw),
@@ -286,5 +289,57 @@ void main() {
     await t.tap(find.text('Start using Rise'));
     await t.pumpAndSettle();
     expect(m.saved, isEmpty);
+  });
+
+  testWidgets('unconfigured auth: no sign-in step (permissions is the finish)',
+      (t) async {
+    final store = await _newStore();
+    await t.pumpWidget(_host(_FakeGateway(_perms()), store));
+    await t.pumpAndSettle();
+    await _toPermissions(t);
+    // Six-page flow: the permissions page is the last one and finishes.
+    expect(find.text('Start using Rise'), findsOneWidget);
+    expect(find.text('Continue as guest'), findsNothing);
+  });
+
+  testWidgets('configured auth: appends a sign-in step; guest finishes',
+      (t) async {
+    var done = false;
+    final fake = FakeAuthService();
+    addTearDown(fake.dispose);
+    final store = await _newStore();
+    await t.pumpWidget(_host(_FakeGateway(_perms()), store,
+        auth: fake, onDone: () => done = true));
+    await t.pumpAndSettle();
+    // Seven pages now: the permissions page still says Next, not finish.
+    await _toPermissions(t);
+    expect(find.text('Start using Rise'), findsNothing);
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
+    // On the appended sign-in page.
+    expect(find.text('Save your progress'), findsOneWidget);
+    expect(find.text('Sign in with Google'), findsOneWidget);
+    await t.tap(find.text('Continue as guest'));
+    await t.pumpAndSettle();
+    expect(done, isTrue);
+    expect(fake.current, isNull, reason: 'guest never signs in');
+  });
+
+  testWidgets('configured auth: Sign in with Google signs in and finishes',
+      (t) async {
+    var done = false;
+    final fake = FakeAuthService();
+    addTearDown(fake.dispose);
+    final store = await _newStore();
+    await t.pumpWidget(_host(_FakeGateway(_perms()), store,
+        auth: fake, onDone: () => done = true));
+    await t.pumpAndSettle();
+    await _toPermissions(t);
+    await t.tap(find.text('Next'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Sign in with Google'));
+    await t.pumpAndSettle();
+    expect(fake.current, isNotNull, reason: 'signed in');
+    expect(done, isTrue);
   });
 }

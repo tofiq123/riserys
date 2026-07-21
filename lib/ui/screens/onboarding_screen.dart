@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/auth/auth_service.dart';
 import '../../data/permission_gateway.dart';
 import '../../domain/alarm.dart';
 import '../components/permissions_section.dart';
@@ -9,6 +10,7 @@ import '../components/rise_card.dart';
 import '../components/sound_chips.dart';
 import '../components/time_dial.dart';
 import '../state/alarm_providers.dart';
+import '../state/auth_providers.dart';
 import '../state/settings_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
@@ -33,6 +35,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _intention = TextEditingController();
   int _page = 0;
 
+  /// Sign-in step (final page, configured-auth only) UI state.
+  bool _signingIn = false;
+  String? _signInError;
+
   /// The optional steady wake time (24-hour), or null until the user opts in.
   int? _goalHour;
   int? _goalMinute;
@@ -44,7 +50,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   int _alarmMinute = 0;
   String _alarmMission = 'none';
 
-  static const _lastPage = 5;
+  /// Whether the built-in sign-in step is appended as the final page. Only when
+  /// auth is configured; with the default [DisabledAuthService] the flow is
+  /// unchanged (six pages), so existing onboarding tests stay valid.
+  bool get _signInStep => ref.read(authServiceProvider) is! DisabledAuthService;
+
+  /// The last page index — the optional sign-in step appends one page.
+  int get _lastPage => _signInStep ? 6 : 5;
 
   /// A friendly subset of dismiss missions for the first alarm. The full set
   /// lives in Create/Edit; here we keep the choice small and welcoming.
@@ -152,6 +164,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   _sleepGoalPage(),
                   _firstAlarmPage(),
                   _permissionsPage(),
+                  if (_signInStep) _signInPage(),
                 ],
               ),
             ),
@@ -159,10 +172,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(
                   RiseSpacing.screen, 12, RiseSpacing.screen, 16),
-              child: PrimaryButton(
-                label: _page < _lastPage ? 'Next' : 'Start using Rise',
-                onPressed: _next,
-              ),
+              // The sign-in page owns its own actions, so the persistent button
+              // steps aside there (kept as spacing to avoid a layout jump).
+              child: _signInStep && _page == _lastPage
+                  ? const SizedBox(height: 44)
+                  : PrimaryButton(
+                      label: _page < _lastPage ? 'Next' : 'Start using Rise',
+                      onPressed: _next,
+                    ),
             ),
           ],
         ),
@@ -444,6 +461,95 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ),
       ],
     );
+  }
+
+  /// The final, sign-in step — appended only when auth is configured (see
+  /// [_signInStep]). A standard close to onboarding: one clear primary action
+  /// (Google) and a quiet way to keep going solo. Either path finishes; a
+  /// failed sign-in never traps the user, since "Continue as guest" always
+  /// completes onboarding.
+  Widget _signInPage() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              color: RiseColors.accentSoft,
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: const Icon(Icons.cloud_sync,
+                size: 44, color: RiseColors.accent),
+          ),
+          const SizedBox(height: 28),
+          Text('Save your progress',
+              textAlign: TextAlign.center, style: RiseText.display),
+          const SizedBox(height: 12),
+          Text(
+              'Sign in to save your streak and wake up with your crew — or keep '
+              'going solo.',
+              textAlign: TextAlign.center,
+              style: RiseText.body.copyWith(color: RiseColors.textDim)),
+          const SizedBox(height: 28),
+          SizedBox(
+            width: double.infinity,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                PrimaryButton(
+                  label: 'Sign in with Google',
+                  icon: Icons.login,
+                  onPressed: _signingIn ? null : _signInAndFinish,
+                ),
+                if (_signingIn)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: RiseColors.primaryText),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          GhostButton(
+            label: 'Continue as guest',
+            onPressed: _signingIn ? null : _finish,
+          ),
+          if (_signInError != null) ...[
+            const SizedBox(height: 10),
+            Text(_signInError!,
+                textAlign: TextAlign.center,
+                style: RiseText.caption.copyWith(color: RiseColors.danger)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Signs in with Google, then finishes onboarding. A cancel/error keeps the
+  /// user on this page with a gentle note — "Continue as guest" still works, so
+  /// finishing is never blocked.
+  Future<void> _signInAndFinish() async {
+    if (_signingIn) return;
+    setState(() {
+      _signingIn = true;
+      _signInError = null;
+    });
+    try {
+      await ref.read(authServiceProvider).signInWithGoogle();
+      _finish();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _signInError =
+            'Sign-in didn\'t complete. Try again, or continue as guest.');
+      }
+    } finally {
+      if (mounted) setState(() => _signingIn = false);
+    }
   }
 
   Widget _dots() {
