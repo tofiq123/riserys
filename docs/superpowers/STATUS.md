@@ -13,9 +13,16 @@ Single source of truth for "what's done vs. what's left." Supersedes rough count
 ## ✅ Done, build-verified (analyze-clean + tests), NOT yet fully device / 2-account tested
 - Phase 7 Compassion, 8 Rhythm & Care (PHQ-2), 9 Missions (PVT device-tested; **QR/shake/steps not yet**), 10 Sensory (sunrise/light), 11 Wake-confidence (opt-in), 13 Stats/achievements, 14 Crew depth, 15 Groups, 16 Voice, 17 Monetization (unlocked till RevenueCat wired), 18 icon + l10n scaffolding.
 
-## 🔧 In progress NOW (from 2026-07-21 device testing feedback)
-- **UX cluster** (`fix-ux-onboarding-signout`): sign-out confirm+loader+feedback · branded in-app toast system · onboarding built-in sign-in step + polished login.
-- **NEXT — Account sync/backup**: alarms + streak/wake-history sync to the account so a reinstall/new device restores them (offline-first kept). New migration you'll apply.
+## ✅ Done 2026-07-21 (from device-testing feedback) — on `main`, 807 tests
+- **Sign-out fix** (`fc68ae9`) — confirmation dialog + loading spinner + "Signed out." feedback (no more silent multi-tap).
+- **Onboarding sign-in step** (`c116482`) — a final "Sign in with Google / Continue as guest" page (only when auth configured); + **polished login card** (`52c84f2`).
+- **Account sync/backup** (merge `2c1a793`) — per-account cloud backup of alarms + wake-history; auto-push (debounced) while signed in, auto-restore on sign-in to an **empty** device, manual "Restore from account" in Settings. Offline-first kept. **Migration `0008_account_backups.sql` — you apply.** RLS reviewed (single-owner row, airtight).
+  - **Device-validate:** apply 0008 → sign in → add alarm → backup upserts; reinstall/clear → sign in → alarms+streak restore; signed-out/unconfigured does nothing.
+- **In-app toasts:** existing `toast.dart` (dark pill) kept; sign-out/success use it. A broader "make every toast beautiful" polish pass is still open (minor).
+
+## 🔧 Still open from the 2026-07-21 feedback
+- **Voice-as-alarm** — a received friend's clip plays as the wake sound (native ring-audio; do next).
+- **In-app toast polish** — unify all snackbars onto the branded toast with success/error/info variants (minor).
 
 ## ⏳ Deferred — need device / Mac / your accounts / assets (build WITH you, not blind)
 - **Voice-as-alarm** — a received friend's clip plays as your wake sound (native ring-audio; user requested — do next after sync).
