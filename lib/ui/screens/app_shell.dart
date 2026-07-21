@@ -5,6 +5,7 @@ import '../../data/permission_gateway.dart';
 import '../../domain/alarm.dart';
 import '../backup_sync_host.dart';
 import '../components/toast.dart';
+import '../feed_publisher.dart';
 import '../missions/mission_host.dart';
 import '../push_registrar_host.dart';
 import '../state/alarm_providers.dart';
@@ -85,6 +86,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       child: BackupSyncHost(
         child: StatusPublisherHost(
           child: StatsSyncHost(
+            child: FeedPublisherHost(
             child: PopScope(
             canPop: !editing && !needsClaim,
             onPopInvokedWithResult: (didPop, _) {
@@ -121,6 +123,7 @@ class _AppShellState extends ConsumerState<AppShell> {
               bottomNavigationBar: (editing || needsClaim) ? null : _tabBar(),
             ),
           ),
+        ),
         ),
       ),
     ),
