@@ -96,10 +96,13 @@ class SupabaseVoiceClipService implements VoiceClipService {
       throw const VoiceClipException("Couldn't send the clip. Try again.");
     }
 
-    // 3. Notify via the existing nudge/push path. Best-effort: a rate-limit or
-    // offline device must not fail an already-stored clip.
+    // 3. Notify via the existing nudge/push path, typed as a voice-clip push
+    // ("new voice clip" copy; and the server lets it through the nudge
+    // cooldown because the clip row we just inserted proves a real send).
+    // Best-effort: a rate-limit or offline device must not fail an
+    // already-stored clip.
     try {
-      await _nudge.nudge(targetId);
+      await _nudge.nudge(targetId, kind: NudgeKind.voice);
     } catch (_) {}
   }
 
