@@ -67,22 +67,44 @@ class SupabaseAuthService implements AuthService {
   Future<RiseAccount> _accountForUser(User user) async {
     // Best-effort throughout: this runs inside the onAuthStateChange listener,
     // so it must never throw (an uncaught error there escapes an unawaited
-    // callback). A profile fetch failure or unexpected metadata shape just
-    // degrades to a not-yet-claimed account with sensible defaults.
+    // callback). It also runs on EVERY auth event — sign-in, token refresh,
+    // resume — so a transient profile-fetch failure must never be mistaken for
+    // "no profile row": doing so would wrongly route an already-claimed user
+    // to the username-claim gate whenever a refetch blips.
+    final googleName = (user.userMetadata?['full_name'] ??
+        user.userMetadata?['name']) as String?;
+
     Map<String, dynamic>? profile;
-    String? googleName;
-    try {
-      profile = await _client
-          .from('profiles')
-          .select()
-          .eq('id', user.id)
-          .maybeSingle();
-      googleName = (user.userMetadata?['full_name'] ??
-          user.userMetadata?['name']) as String?;
-    } catch (_) {
-      profile = null; // best-effort; treat as not-yet-claimed
-      googleName = null;
+    var fetchFailed = false;
+    // A couple of quick retries absorb a network blip on a just-woken phone or
+    // a token that's still settling right after sign-in.
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        profile = await _client
+            .from('profiles')
+            .select()
+            .eq('id', user.id)
+            .maybeSingle();
+        fetchFailed = false;
+        break;
+      } catch (_) {
+        fetchFailed = true;
+        if (attempt < 2) {
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+        }
+      }
     }
+
+    // If every attempt failed we do NOT know whether a profile exists. Never
+    // downgrade a known account to needs-username on a failed fetch: keep the
+    // last-known account for this user (which carries the claimed username) so
+    // the claim gate can't flash on a transient refetch. A confirmed empty
+    // result (fetch succeeded, no row) still correctly routes to the gate.
+    if (fetchFailed) {
+      final prior = _current;
+      if (prior != null && prior.id == user.id) return prior;
+    }
+
     return RiseAccount(
       id: user.id,
       username: profile?['username'] as String?,
