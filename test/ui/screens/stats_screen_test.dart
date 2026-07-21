@@ -15,6 +15,7 @@ import 'package:rise/domain/streak.dart';
 import 'package:rise/domain/wake_event.dart';
 import 'package:rise/domain/wake_stats.dart';
 import 'package:rise/ui/components/sparkline.dart';
+import 'package:rise/ui/screens/friend_detail_screen.dart';
 import 'package:rise/ui/screens/stats_screen.dart';
 import 'package:rise/ui/state/auth_providers.dart';
 import 'package:rise/ui/state/crew_providers.dart';
@@ -178,8 +179,7 @@ void main() {
     ]);
     await t.tap(find.text('bo')); // bo's row (display name)
     await t.pumpAndSettle();
-    // The friend detail screen's own section label — only present there.
-    expect(find.text('THEIR WAKE-UPS'), findsOneWidget);
+    expect(find.byType(FriendDetailScreen), findsOneWidget);
   });
 
   testWidgets('shows an empty state when there are no wake events', (t) async {

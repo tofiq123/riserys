@@ -71,11 +71,34 @@ void main() {
       (t) async {
     await _pumpSignedIn(t, items: [_item('f1')]);
     expect(find.textContaining('woke on time'), findsOneWidget);
-    expect(find.textContaining('6-day streak'), findsOneWidget);
+    // The streak flame carries the run as a mono numeral.
+    expect(
+        find.descendant(
+            of: find.byKey(const Key('feed-streak-f1')),
+            matching: find.text('6')),
+        findsOneWidget);
     // The four palette chips are present.
     for (final e in kFeedReactionEmojis) {
       expect(find.byKey(Key('reaction-f1-$e')), findsOneWidget);
     }
+  });
+
+  testWidgets('a late wake still celebrates — "woke up", never shame',
+      (t) async {
+    await _pumpSignedIn(t, items: [
+      FeedItem(
+        id: 'f2',
+        userId: 'u_f2',
+        username: 'ada',
+        displayName: 'ada',
+        avatarColor: '#7C9CF4',
+        wokeAt: DateTime.utc(2026, 7, 20, 9, 40),
+        onTime: false,
+        streak: 0,
+      ),
+    ]);
+    expect(find.textContaining('woke up'), findsOneWidget);
+    expect(find.textContaining('woke on time'), findsNothing);
   });
 
   testWidgets('own wake reads "You woke on time"', (t) async {

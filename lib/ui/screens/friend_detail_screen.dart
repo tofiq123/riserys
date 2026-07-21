@@ -8,6 +8,11 @@ import '../../domain/crew_member.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/crew_status.dart';
 import '../components/confirm_dialog.dart';
+import '../components/crew_avatar.dart';
+import '../components/crew_entrance.dart';
+import '../components/crew_sheet.dart';
+import '../components/crew_status_style.dart';
+import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
 import '../components/toast.dart';
@@ -15,17 +20,18 @@ import '../state/crew_providers.dart';
 import '../state/leaderboard_providers.dart';
 import '../state/nudge_providers.dart';
 import '../state/status_providers.dart';
-import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'voice_composer_screen.dart';
 
-/// A single crew member's page: their live status, streak, on-time %, and how
-/// you two stack up, plus the same nudge / remove actions as the Crew list.
+/// One crew member's page: a large avatar wrapped in their live status ring,
+/// stat tiles (streak / on-time / best) in mono numerals, a you-two
+/// comparison, and the actions — Nudge (primary) and a voice clip
+/// (secondary). Removing them hides behind the "…" overflow, still guarded by
+/// the shared confirm dialog.
 ///
-/// Reads only from the existing crew/status/leaderboard providers — no new
-/// fetching. Any field the backend doesn't expose (stats before the leaderboard
-/// has loaded, an unknown status) simply degrades to a gentle placeholder.
+/// Reads only the existing crew/status/leaderboard providers — no new
+/// fetching. Missing stats degrade to a gentle placeholder.
 class FriendDetailScreen extends ConsumerStatefulWidget {
   const FriendDetailScreen({super.key, required this.member});
 
@@ -51,18 +57,61 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
     setState(() => _nudging = true);
     try {
       await ref.read(nudgeServiceProvider).nudge(_member.id);
-      if (mounted) _snack('Nudged @${_member.username} 👋', kind: RiseToastKind.success);
+      if (mounted) {
+        _snack('Nudged @${_member.username} 👋', kind: RiseToastKind.success);
+      }
     } on NudgeException catch (e) {
       if (mounted) _snack(e.message, kind: RiseToastKind.error);
     } catch (_) {
-      if (mounted) _snack('Could not send the nudge.', kind: RiseToastKind.error);
+      if (mounted) {
+        _snack('Could not send the nudge.', kind: RiseToastKind.error);
+      }
     } finally {
       if (mounted) setState(() => _nudging = false);
     }
   }
 
+  Future<void> _openOverflow() async {
+    final remove = await showCrewSheet<bool>(
+      context,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(
+            RiseSpacing.screen, 6, RiseSpacing.screen, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('@${_member.username}', style: RiseText.title),
+            const SizedBox(height: 10),
+            GestureDetector(
+              key: const Key('friend-remove-action'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(sheetContext).pop(true),
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 52),
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  children: [
+                    Icon(Icons.person_remove_outlined,
+                        size: 20, color: RiseColors.danger),
+                    const SizedBox(width: 12),
+                    Text('Remove from crew',
+                        style: RiseText.body.copyWith(
+                            color: RiseColors.danger,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (remove == true) await _remove();
+  }
+
   Future<void> _remove() async {
-    if (_removing) return;
+    if (_removing || !mounted) return;
     final ok = await showConfirmDialog(
       context,
       title: 'Remove @${_member.username}?',
@@ -89,6 +138,11 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
     }
   }
 
+  void _openVoiceComposer() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => VoiceComposerScreen(member: _member)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = (ref.watch(crewStatusesProvider).value ??
@@ -103,135 +157,185 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
           padding: const EdgeInsets.fromLTRB(
               RiseSpacing.screen, 8, RiseSpacing.screen, 40),
           children: [
-            _header(),
-            const SizedBox(height: 20),
-            _identityCard(status),
-            const SizedBox(height: 24),
-            const SectionLabel('Their wake-ups'),
-            const SizedBox(height: 12),
-            board.when(
-              data: (standings) {
-                final theirs =
-                    standings.firstWhereOrNull((s) => s.id == _member.id);
-                final mine = standings.firstWhereOrNull((s) => s.isMe);
-                if (theirs == null) return _statsUnavailable();
-                return Column(
-                  children: [
-                    _statsCard(theirs),
-                    if (mine != null) ...[
-                      const SizedBox(height: 24),
-                      const SectionLabel('You two'),
+            CrewEntrance(index: 0, child: _navBar()),
+            const SizedBox(height: 10),
+            CrewEntrance(index: 1, child: _identity(status)),
+            const SizedBox(height: 26),
+            CrewEntrance(
+              index: 2,
+              child: board.when(
+                data: (standings) {
+                  final theirs =
+                      standings.firstWhereOrNull((s) => s.id == _member.id);
+                  final mine = standings.firstWhereOrNull((s) => s.isMe);
+                  if (theirs == null) return _statsUnavailable();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SectionLabel('Their mornings'),
                       const SizedBox(height: 12),
-                      _mutualCard(mine, theirs),
+                      _statTiles(theirs),
+                      if (mine != null) ...[
+                        const SizedBox(height: 26),
+                        const SectionLabel('You two'),
+                        const SizedBox(height: 12),
+                        _mutualCard(mine, theirs),
+                      ],
                     ],
-                  ],
-                );
-              },
-              loading: () => const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Center(
-                  child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2)),
+                  );
+                },
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(
+                    child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                  ),
                 ),
+                error: (_, __) => _statsUnavailable(),
               ),
-              error: (_, __) => _statsUnavailable(),
             ),
-            const SizedBox(height: 28),
-            _actions(),
+            const SizedBox(height: 30),
+            CrewEntrance(index: 3, child: _actions()),
           ],
         ),
       ),
     );
   }
 
-  Widget _header() => Row(
+  Widget _navBar() => Row(
         children: [
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => Navigator.of(context).maybePop(),
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.centerLeft,
               child: Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-                _member.displayName.isNotEmpty
-                    ? _member.displayName
-                    : '@${_member.username}',
-                style: RiseText.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis),
+          const Spacer(),
+          GestureDetector(
+            key: const Key('friend-overflow'),
+            behavior: HitTestBehavior.opaque,
+            onTap: _removing ? null : _openOverflow,
+            child: Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.centerRight,
+              child:
+                  Icon(Icons.more_horiz, color: RiseColors.textDim, size: 22),
+            ),
           ),
         ],
       );
 
-  Widget _identityCard(CrewStatus status) => RiseCard(
-        padding: const EdgeInsets.all(RiseSpacing.screen),
-        child: Row(
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                  color: avatarColorFromHex(_member.avatarColor),
-                  shape: BoxShape.circle),
-              child: Text(
-                (_member.username.isNotEmpty ? _member.username : '?')
-                    .characters
-                    .first
-                    .toUpperCase(),
-                style: RiseText.title.copyWith(
-                    color: RiseColors.primaryText, fontWeight: FontWeight.w700),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('@${_member.username}',
-                      style: RiseText.mono(size: 13, color: RiseColors.textDim),
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Container(
-                        width: 9,
-                        height: 9,
-                        decoration: BoxDecoration(
-                            color: _statusColor(status),
-                            shape: BoxShape.circle),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(_statusLine(status),
-                          style: RiseText.body
-                              .copyWith(color: _statusColor(status))),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
+  Widget _identity(CrewStatus status) {
+    final style = crewStatusStyle(status);
+    return Column(
+      children: [
+        CrewAvatar(
+          username: _member.username,
+          colorHex: _member.avatarColor,
+          size: 76,
+          ring: status,
         ),
-      );
+        const SizedBox(height: 14),
+        Text(
+          _member.displayName.isNotEmpty
+              ? _member.displayName
+              : '@${_member.username}',
+          style: RiseText.title.copyWith(fontSize: 21),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 4),
+        Text('@${_member.username}',
+            style: RiseText.mono(size: 13, color: RiseColors.textDim),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: RiseColors.card,
+            borderRadius: BorderRadius.circular(RiseRadii.pill),
+            border: Border.all(color: RiseColors.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                    color: style.color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 7),
+              Text(style.line,
+                  style: RiseText.caption.copyWith(
+                      color: style.color, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
-  Widget _statsCard(CrewStanding s) {
+  Widget _statTiles(CrewStanding s) {
     final onTimePct = (s.stats.onTimeRate * 100).round();
+    return Row(
+      children: [
+        Expanded(
+          child: _statTile(
+            value: '${s.stats.currentStreak}',
+            label: 'day streak',
+            flame: s.stats.currentStreak >= 1,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _statTile(
+            value: s.stats.totalWakes == 0 ? '—' : '$onTimePct%',
+            label: 'on time',
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _statTile(value: '${s.stats.bestStreak}', label: 'best'),
+        ),
+      ],
+    );
+  }
+
+  Widget _statTile(
+      {required String value, required String label, bool flame = false}) {
     return RiseCard(
-      padding: const EdgeInsets.all(RiseSpacing.screen),
-      child: Row(
+      radius: RiseRadii.base,
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      child: Column(
         children: [
-          _stat('${s.stats.currentStreak}',
-              s.stats.currentStreak == 1 ? 'day streak' : 'day streak'),
-          _divider(),
-          _stat('${s.stats.bestStreak}', 'best'),
-          _divider(),
-          _stat(s.stats.totalWakes == 0 ? '—' : '$onTimePct%', 'on time'),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (flame) ...[
+                const Text('🔥', style: TextStyle(fontSize: 14)),
+                const SizedBox(width: 4),
+              ],
+              Text(value,
+                  style: RiseText.mono(size: 22, weight: FontWeight.w600),
+                  maxLines: 1),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(label,
+              style: RiseText.caption.copyWith(fontSize: 11.5),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
         ],
       ),
     );
@@ -240,16 +344,13 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
   Widget _mutualCard(CrewStanding mine, CrewStanding theirs) {
     final ahead = theirs.stats.currentStreak > mine.stats.currentStreak;
     final tied = theirs.stats.currentStreak == mine.stats.currentStreak;
+    final gap = (theirs.stats.currentStreak - mine.stats.currentStreak).abs();
     final line = tied
-        ? 'You\'re neck and neck — ${mine.stats.currentStreak}-day streaks each.'
+        ? "You're neck and neck — ${mine.stats.currentStreak}-day streaks each."
         : ahead
-            ? '@${_member.username} is ahead by '
-                '${theirs.stats.currentStreak - mine.stats.currentStreak} '
-                '${theirs.stats.currentStreak - mine.stats.currentStreak == 1 ? 'day' : 'days'}. '
-                'Catch up together.'
-            : 'You\'re ahead by '
-                '${mine.stats.currentStreak - theirs.stats.currentStreak} '
-                '${mine.stats.currentStreak - theirs.stats.currentStreak == 1 ? 'day' : 'days'}. '
+            ? '@${_member.username} is ahead by $gap '
+                '${gap == 1 ? 'day' : 'days'}. Catch up together.'
+            : "You're ahead by $gap ${gap == 1 ? 'day' : 'days'}. "
                 'Keep it going.';
     return RiseCard(
       padding: const EdgeInsets.all(RiseSpacing.screen),
@@ -258,9 +359,10 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
         children: [
           Row(
             children: [
-              _stat('${mine.stats.currentStreak}', 'you'),
-              _divider(),
-              _stat('${theirs.stats.currentStreak}', '@${_member.username}'),
+              _mutualStat('${mine.stats.currentStreak}', 'you'),
+              Container(width: 1, height: 36, color: RiseColors.divider),
+              _mutualStat(
+                  '${theirs.stats.currentStreak}', '@${_member.username}'),
             ],
           ),
           const SizedBox(height: 14),
@@ -270,51 +372,7 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
     );
   }
 
-  Widget _statsUnavailable() => RiseCard(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
-          child: Column(
-            children: [
-              Icon(Icons.insights_outlined,
-                  size: 30, color: RiseColors.textFaint),
-              const SizedBox(height: 10),
-              Text('No stats to show yet',
-                  style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              Text('Their streak and on-time rate appear here once they start '
-                  'logging wake-ups.',
-                  textAlign: TextAlign.center, style: RiseText.caption),
-            ],
-          ),
-        ),
-      );
-
-  void _openVoiceComposer() {
-    Navigator.of(context).push(MaterialPageRoute<void>(
-        builder: (_) => VoiceComposerScreen(member: _member)));
-  }
-
-  Widget _actions() => Column(
-        children: [
-          _button('Send a voice clip 🎙️', _openVoiceComposer),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child:
-                    _button('Nudge', _nudging ? null : _nudge, filled: true),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _button('Remove', _removing ? null : _remove,
-                    danger: true),
-              ),
-            ],
-          ),
-        ],
-      );
-
-  Widget _stat(String value, String label) => Expanded(
+  Widget _mutualStat(String value, String label) => Expanded(
         child: Column(
           children: [
             Text(value,
@@ -329,51 +387,46 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
         ),
       );
 
-  Widget _divider() =>
-      Container(width: 1, height: 36, color: RiseColors.divider);
-
-  Widget _button(String label, VoidCallback? onTap,
-      {bool filled = false, bool danger = false}) {
-    final bg = filled ? RiseColors.primary : RiseColors.card;
-    final fg = danger
-        ? RiseColors.danger
-        : filled
-            ? RiseColors.primaryText
-            : RiseColors.text;
-    return Opacity(
-      opacity: onTap == null ? 0.4 : 1,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(vertical: 13),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(RiseRadii.sm),
-            border: filled ? null : Border.all(color: RiseColors.border),
+  Widget _statsUnavailable() => RiseCard(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
+          child: Column(
+            children: [
+              Icon(Icons.insights_outlined,
+                  size: 30, color: RiseColors.textFaint),
+              const SizedBox(height: 10),
+              Text('No stats to show yet',
+                  style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(
+                  'Their streak and on-time rate appear here once they start '
+                  'logging wake-ups.',
+                  textAlign: TextAlign.center,
+                  style: RiseText.caption),
+            ],
           ),
-          child: Text(label,
-              style: RiseText.body.copyWith(
-                  color: fg, fontWeight: FontWeight.w600, fontSize: 14)),
         ),
-      ),
-    );
-  }
+      );
 
-  static Color _statusColor(CrewStatus s) => switch (s) {
-        CrewStatus.waking => RiseColors.waking,
-        CrewStatus.awake => RiseColors.positive,
-        CrewStatus.out => RiseColors.positive, // awake-and-out — same family
-        CrewStatus.asleep => RiseColors.asleep,
-        CrewStatus.unknown => RiseColors.textFaint,
-      };
-
-  static String _statusLine(CrewStatus s) => switch (s) {
-        CrewStatus.waking => 'Waking up now',
-        CrewStatus.awake => 'Up and about',
-        CrewStatus.out => 'Up and out the door',
-        CrewStatus.asleep => 'Probably asleep',
-        CrewStatus.unknown => 'Status unavailable',
-      };
+  Widget _actions() => Column(
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: PrimaryButton(
+              label: 'Nudge',
+              icon: Icons.notifications_active_outlined,
+              onPressed: _nudging ? null : _nudge,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: SecondaryButton(
+              label: 'Send a voice clip',
+              icon: Icons.mic_none,
+              onPressed: _openVoiceComposer,
+            ),
+          ),
+        ],
+      );
 }

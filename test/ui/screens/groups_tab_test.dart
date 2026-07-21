@@ -38,20 +38,32 @@ Future<FakeGroupService> _pump(
 }
 
 void main() {
-  testWidgets('lists my groups', (t) async {
+  testWidgets('lists my groups as cards', (t) async {
     await _pump(t, groups: [_g('1', 'Early Risers'), _g('2', 'Night Owls')]);
     expect(find.text('Early Risers'), findsOneWidget);
     expect(find.text('Night Owls'), findsOneWidget);
+    expect(find.byKey(const Key('new-group-card')), findsOneWidget);
   });
 
-  testWidgets('empty state prompts to start or join', (t) async {
+  testWidgets('empty strip prompts to start or join', (t) async {
     await _pump(t);
-    expect(find.textContaining('No groups yet'), findsOneWidget);
+    expect(find.byKey(const Key('new-group-card')), findsOneWidget);
+    expect(find.byKey(const Key('join-group-card')), findsOneWidget);
   });
 
-  testWidgets('creating a group opens its detail page', (t) async {
+  testWidgets('tapping a group card opens its page', (t) async {
+    await _pump(t, groups: [_g('1', 'Early Risers')]);
+    await t.tap(find.byKey(const Key('group-card-1')));
+    await t.pumpAndSettle();
+    expect(find.byType(GroupDetailScreen), findsOneWidget);
+  });
+
+  testWidgets('creating a group via the sheet opens its page', (t) async {
     final svc = await _pump(t);
-    await t.enterText(find.byKey(const Key('group-name-field')), 'Early Risers');
+    await t.tap(find.byKey(const Key('new-group-card')));
+    await t.pumpAndSettle();
+    await t.enterText(
+        find.byKey(const Key('group-name-field')), 'Early Risers');
     await t.tap(find.text('Create'));
     await t.pumpAndSettle();
     expect((await svc.myGroups()).map((g) => g.name), ['Early Risers']);
@@ -59,9 +71,9 @@ void main() {
   });
 
   testWidgets('joining with the right code opens the joined group', (t) async {
-    await _pump(t,
-        joinCode: 'RISE42',
-        joinTarget: _g('j', 'Joined Crew'));
+    await _pump(t, joinCode: 'RISE42', joinTarget: _g('j', 'Joined Crew'));
+    await t.tap(find.byKey(const Key('join-group-card')));
+    await t.pumpAndSettle();
     await t.enterText(find.byKey(const Key('group-code-field')), 'rise42');
     await t.tap(find.text('Join'));
     await t.pumpAndSettle();
@@ -71,6 +83,8 @@ void main() {
   testWidgets('joining with a bad code shows an error, no navigation',
       (t) async {
     await _pump(t, joinCode: 'RISE42');
+    await t.tap(find.byKey(const Key('join-group-card')));
+    await t.pumpAndSettle();
     await t.enterText(find.byKey(const Key('group-code-field')), 'wrong1');
     await t.tap(find.text('Join'));
     await t.pump();
