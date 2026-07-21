@@ -62,12 +62,93 @@ void main() {
       for (final m in [true, false]) {
         for (final i in [true, false]) {
           for (final a in [null, -10, 0, 50, 100, 999]) {
-            final c = wakeConfidence(
-                sustainedMotion: m, appInteracted: i, alertnessScore: a);
-            expect(c, inInclusiveRange(0, 100));
+            for (final l in [null, true, false]) {
+              final c = wakeConfidence(
+                  sustainedMotion: m,
+                  appInteracted: i,
+                  alertnessScore: a,
+                  leftHome: l);
+              expect(c, inInclusiveRange(0, 100));
+            }
           }
         }
       }
+    });
+
+    group('leftHome', () {
+      test('is strong (+50) but alone sits just under the confident bar', () {
+        final c = wakeConfidence(
+            sustainedMotion: false,
+            appInteracted: false,
+            alertnessScore: null,
+            leftHome: true);
+        expect(c, 50);
+        expect(c, lessThan(kConfidentThreshold));
+      });
+
+      test('with motion it saturates at 100 (both together cap)', () {
+        expect(
+            wakeConfidence(
+                sustainedMotion: true,
+                appInteracted: false,
+                alertnessScore: null,
+                leftHome: true),
+            100);
+      });
+
+      test('with any corroborating soft signal it clears the bar', () {
+        expect(
+            wakeConfidence(
+                sustainedMotion: false,
+                appInteracted: true,
+                alertnessScore: null,
+                leftHome: true),
+            greaterThanOrEqualTo(kConfidentThreshold));
+      });
+
+      test(
+          'false (at home) contributes exactly like null (unknown) — being '
+          'home is not evidence of sleep', () {
+        for (final m in [true, false]) {
+          for (final i in [true, false]) {
+            final atHome = wakeConfidence(
+                sustainedMotion: m,
+                appInteracted: i,
+                alertnessScore: 40,
+                leftHome: false);
+            final unknown = wakeConfidence(
+                sustainedMotion: m,
+                appInteracted: i,
+                alertnessScore: 40,
+                leftHome: null);
+            expect(atHome, unknown);
+          }
+        }
+      });
+
+      test('omitting the parameter defaults to unknown — existing call sites '
+          'behave exactly as before', () {
+        expect(
+            wakeConfidence(
+                sustainedMotion: true, appInteracted: true, alertnessScore: 80),
+            wakeConfidence(
+                sustainedMotion: true,
+                appInteracted: true,
+                alertnessScore: 80,
+                leftHome: null));
+      });
+
+      test('motion still outweighs it (left-home never becomes the top signal)',
+          () {
+        final motionOnly = wakeConfidence(
+            sustainedMotion: true, appInteracted: false, alertnessScore: null);
+        final leftHomeOnly = wakeConfidence(
+            sustainedMotion: false,
+            appInteracted: false,
+            alertnessScore: null,
+            leftHome: true);
+        expect(motionOnly, greaterThan(leftHomeOnly));
+      });
     });
   });
 
@@ -106,19 +187,47 @@ void main() {
           WakeChallengeDecision.reCheck);
     });
 
+    test('left home + a soft signal satisfies the check without motion', () {
+      expect(
+          wakeChallengeDecision(
+              sustainedMotion: false,
+              appInteracted: true,
+              alertnessScore: null,
+              leftHome: true),
+          WakeChallengeDecision.confident);
+    });
+
+    test('left home alone still re-checks (needs corroboration)', () {
+      expect(
+          wakeChallengeDecision(
+              sustainedMotion: false,
+              appInteracted: false,
+              alertnessScore: null,
+              leftHome: true),
+          WakeChallengeDecision.reCheck);
+    });
+
     test('decision agrees with the threshold applied to the score', () {
       for (final m in [true, false]) {
         for (final i in [true, false]) {
           for (final a in [null, 0, 60, 100]) {
-            final score = wakeConfidence(
-                sustainedMotion: m, appInteracted: i, alertnessScore: a);
-            final decision = wakeChallengeDecision(
-                sustainedMotion: m, appInteracted: i, alertnessScore: a);
-            expect(
-                decision,
-                score >= kConfidentThreshold
-                    ? WakeChallengeDecision.confident
-                    : WakeChallengeDecision.reCheck);
+            for (final l in [null, true, false]) {
+              final score = wakeConfidence(
+                  sustainedMotion: m,
+                  appInteracted: i,
+                  alertnessScore: a,
+                  leftHome: l);
+              final decision = wakeChallengeDecision(
+                  sustainedMotion: m,
+                  appInteracted: i,
+                  alertnessScore: a,
+                  leftHome: l);
+              expect(
+                  decision,
+                  score >= kConfidentThreshold
+                      ? WakeChallengeDecision.confident
+                      : WakeChallengeDecision.reCheck);
+            }
           }
         }
       }

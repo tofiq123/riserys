@@ -68,4 +68,17 @@ void main() {
     expect(e.label, 'Alarm');
     expect(e.alarmId, 999);
   });
+
+  test('the onRingOpened hook fires on every openRing (day-scope reset point)',
+      () async {
+    var calls = 0;
+    final hooked = WakeRecorder(events, alarms, onRingOpened: () => calls++);
+    await hooked.openRing(1);
+    expect(calls, 1);
+    await hooked.openRing(2);
+    expect(calls, 2);
+    // Dismissal is not a new wake day — the hook must not fire there.
+    await hooked.finalizeDismiss(1);
+    expect(calls, 2);
+  });
 }
