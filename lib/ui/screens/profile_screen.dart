@@ -416,16 +416,54 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Sign in to Rise',
-              style: RiseText.body.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 2),
-          Text('Sync your streaks, wake up with your crew, and climb the '
-              'leaderboard.', style: RiseText.caption),
-          const SizedBox(height: 14),
-          PrimaryButton(
-            label: 'Sign in with Google',
-            icon: Icons.login,
-            onPressed: _busy ? null : _signIn,
+          Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: const BoxDecoration(
+                    color: RiseColors.accentSoft, shape: BoxShape.circle),
+                child: const Icon(Icons.cloud_sync,
+                    color: RiseColors.accent, size: 26),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Sign in to Rise',
+                        style: RiseText.body
+                            .copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(
+                        'Sync your streaks, wake up with your crew, and climb '
+                        'the leaderboard.',
+                        style: RiseText.caption),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                PrimaryButton(
+                  label: 'Sign in with Google',
+                  icon: Icons.login,
+                  onPressed: _busy ? null : _signIn,
+                ),
+                if (_busy)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: RiseColors.primaryText),
+                  ),
+              ],
+            ),
           ),
         ],
       ),
