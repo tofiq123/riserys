@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/domain/alarm.dart';
+import 'package:rise/domain/rise_settings.dart';
 import 'package:rise/ui/components/segmented.dart';
 import 'package:rise/ui/screens/create_edit_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
+import 'package:rise/ui/state/settings_providers.dart';
 
 class _RecordingMutations implements AlarmMutations {
   final List<Alarm> saved = [];
@@ -60,6 +62,31 @@ void main() {
     expect(find.text('30'), findsOneWidget);       // minute dial
     expect(find.widgetWithText(TextField, 'Run'), findsOneWidget);
     expect(find.text('Delete alarm'), findsOneWidget);
+  });
+
+  testWidgets(
+      '24-hour setting: the picker shows a 0–23 hour with no AM/PM, and Save '
+      'keeps Alarm.hour in 24h form', (t) async {
+    final m = _RecordingMutations();
+    final c = ProviderContainer(overrides: [
+      alarmMutationsProvider.overrideWithValue(m),
+      currentSettingsProvider
+          .overrideWithValue(const RiseSettings(use24HourTime: true)),
+    ]);
+    addTearDown(c.dispose);
+    c.read(draftProvider.notifier).startEdit(
+        const Alarm(id: 7, hour: 18, minute: 30, label: 'Gym'));
+    await _pump(t, _host(c));
+    await t.pump();
+    expect(find.text('18'), findsOneWidget); // 24h hour spinner, not "6"
+    expect(find.text('6'), findsNothing);
+    expect(find.text('AM'), findsNothing); // AM/PM toggle hidden in 24h mode
+    expect(find.text('PM'), findsNothing);
+
+    await t.tap(find.text('Save alarm'));
+    await t.pumpAndSettle();
+    expect(m.saved.single.hour, 18); // stored 24-hour form is untouched
+    expect(m.saved.single.minute, 30);
   });
 
   testWidgets('new mode shows "New alarm" and no delete button', (t) async {

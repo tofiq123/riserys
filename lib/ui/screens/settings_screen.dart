@@ -382,7 +382,8 @@ class _SleepGoalCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(settingsProvider);
     final subtitle = s.hasTargetWake
-        ? formatClock(s.targetWakeHour!, s.targetWakeMinute!)
+        ? formatClock(s.targetWakeHour!, s.targetWakeMinute!,
+            use24h: s.use24HourTime)
         : 'Not set';
 
     return GestureDetector(
@@ -449,6 +450,7 @@ class _SleepGoalCard extends ConsumerWidget {
                       style: RiseText.caption),
                   const SizedBox(height: 12),
                   TimeDial(
+                    use24h: s.use24HourTime,
                     value: dial,
                     onChanged: (t) => setLocal(() {
                       hour24 = Alarm.to24Hour(t.hour12, t.isAm);

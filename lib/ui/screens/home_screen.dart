@@ -33,13 +33,6 @@ String _countdown(Duration d) {
   return 'in ${m}m ${s.toString().padLeft(2, '0')}s';
 }
 
-/// (hour12, isAm) for a 0–23 hour. 0→12am, 12→12pm.
-({int hour12, bool isAm}) _to12h(int hour24) {
-  final isAm = hour24 < 12;
-  final h = hour24 % 12;
-  return (hour12: h == 0 ? 12 : h, isAm: isAm);
-}
-
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({
     super.key,
@@ -83,6 +76,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final alarmsAsync = ref.watch(alarmsProvider);
     final alarms = alarmsAsync.value ?? const <Alarm>[];
     final next = ref.watch(nextOccurrenceProvider).value;
+    final use24h = ref.watch(currentSettingsProvider).use24HourTime;
 
     return SafeArea(
       child: ListView(
@@ -108,6 +102,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             for (final a in alarms) ...[
               _AlarmRow(
                 alarm: a,
+                use24h: use24h,
                 onEdit: () => widget.onEdit(a),
                 onToggle: (v) =>
                     ref.read(alarmMutationsProvider).setEnabled(a.id, v),
@@ -196,10 +191,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    final t = _to12h(next.hour);
-    final hour12 = t.hour12;
-    final minute = next.minute;
-    final ampm = t.isAm ? 'AM' : 'PM';
+    final use24h = ref.watch(currentSettingsProvider).use24HourTime;
+    final parts = formatClockParts(next.hour, next.minute, use24h: use24h);
     final remaining = next.fireAt.toLocal().difference(DateTime.now());
 
     return RiseCard(
@@ -220,10 +213,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.baseline,
                     textBaseline: TextBaseline.alphabetic,
                     children: [
-                      Text('$hour12:${minute.toString().padLeft(2, '0')}',
+                      Text('${parts.hour}:${parts.minute}',
                           style: RiseText.mono(size: 46, weight: FontWeight.w500)),
-                      const SizedBox(width: 8),
-                      Text(ampm, style: RiseText.mono(size: 16, color: RiseColors.textDim)),
+                      if (parts.period.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Text(parts.period,
+                            style: RiseText.mono(size: 16, color: RiseColors.textDim)),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -272,14 +268,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 }
 
 class _AlarmRow extends StatelessWidget {
-  const _AlarmRow({required this.alarm, required this.onEdit, required this.onToggle});
+  const _AlarmRow({
+    required this.alarm,
+    required this.use24h,
+    required this.onEdit,
+    required this.onToggle,
+  });
 
   final Alarm alarm;
+  final bool use24h;
   final VoidCallback onEdit;
   final ValueChanged<bool> onToggle;
 
   @override
   Widget build(BuildContext context) {
+    final parts = formatClockParts(alarm.hour, alarm.minute, use24h: use24h);
     return Opacity(
       opacity: alarm.enabled ? 1 : 0.62,
       child: RiseCard(
@@ -297,13 +300,15 @@ class _AlarmRow extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.baseline,
                       textBaseline: TextBaseline.alphabetic,
                       children: [
-                        Text('${alarm.hour12}:${alarm.minute.toString().padLeft(2, '0')}',
+                        Text('${parts.hour}:${parts.minute}',
                             style: RiseText.mono(
                                 size: 27,
                                 color: alarm.enabled ? RiseColors.text : RiseColors.textFaint)),
-                        const SizedBox(width: 6),
-                        Text(alarm.isAm ? 'AM' : 'PM',
-                            style: RiseText.mono(size: 13, color: RiseColors.textDim)),
+                        if (parts.period.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Text(parts.period,
+                              style: RiseText.mono(size: 13, color: RiseColors.textDim)),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 3),
@@ -394,13 +399,16 @@ class _ShiftSuggestion extends ConsumerWidget {
             ),
             const SizedBox(height: 6),
             Text(
-                'Your steady wake time is ${formatClock(goalH, goalM)}. Move '
-                '"$label" from ${formatClock(targetAlarm.hour, targetAlarm.minute)} '
-                'to ${formatShift(shifted)}?',
+                'Your steady wake time is '
+                '${formatClock(goalH, goalM, use24h: settings.use24HourTime)}. '
+                'Move "$label" from '
+                '${formatClock(targetAlarm.hour, targetAlarm.minute, use24h: settings.use24HourTime)} '
+                'to ${formatShift(shifted, use24h: settings.use24HourTime)}?',
                 style: RiseText.caption),
             const SizedBox(height: 12),
             PrimaryButton(
-              label: 'Shift to ${formatShift(shifted)}',
+              label:
+                  'Shift to ${formatShift(shifted, use24h: settings.use24HourTime)}',
               icon: Icons.arrow_forward,
               onPressed: () => _apply(ref, targetAlarm, shifted),
             ),
@@ -412,13 +420,16 @@ class _ShiftSuggestion extends ConsumerWidget {
 
   void _apply(
       WidgetRef ref, Alarm alarm, ({int hour, int minute}) shifted) {
+    final use24h = ref.read(currentSettingsProvider).use24HourTime;
     // Editing the time clears any stale dismissal so the new occurrence rings.
     ref.read(alarmMutationsProvider).save(alarm.copyWith(
           hour: shifted.hour,
           minute: shifted.minute,
           clearLastDismissedAt: true,
         ));
-    ref.read(toastProvider.notifier).state =
-        (message: 'Moved to ${formatShift(shifted)}', kind: RiseToastKind.info);
+    ref.read(toastProvider.notifier).state = (
+      message: 'Moved to ${formatShift(shifted, use24h: use24h)}',
+      kind: RiseToastKind.info
+    );
   }
 }

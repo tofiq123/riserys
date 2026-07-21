@@ -11,6 +11,7 @@ import '../../data/screen_brightness_controller.dart';
 import '../../data/snooze.dart';
 import '../../domain/adaptive_difficulty.dart';
 import '../../domain/alarm.dart';
+import '../../domain/clock_format.dart';
 import '../../domain/wake_confidence.dart';
 import '../../domain/wake_event.dart';
 import '../components/slide_to_wake.dart';
@@ -484,8 +485,8 @@ class _RingScreenState extends ConsumerState<RingScreen>
     final snoozeMinutes = settings.snoozeDurationMinutes(snoozeCount);
     final label = alarm?.label ?? 'Alarm';
     final now = DateTime.now();
-    final hour12 = now.hour % 12 == 0 ? 12 : now.hour % 12;
-    final ampm = now.hour < 12 ? 'AM' : 'PM';
+    final clock =
+        formatClockParts(now.hour, now.minute, use24h: settings.use24HourTime);
     final reduce = MediaQuery.of(context).disableAnimations;
 
     Widget bell = Container(
@@ -537,11 +538,13 @@ class _RingScreenState extends ConsumerState<RingScreen>
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: [
-                Text('$hour12:${now.minute.toString().padLeft(2, '0')}',
+                Text('${clock.hour}:${clock.minute}',
                     style: RiseText.mono(size: 72, weight: FontWeight.w500)),
-                const SizedBox(width: 10),
-                Text(ampm,
-                    style: RiseText.mono(size: 20, color: RiseColors.textDim)),
+                if (clock.period.isNotEmpty) ...[
+                  const SizedBox(width: 10),
+                  Text(clock.period,
+                      style: RiseText.mono(size: 20, color: RiseColors.textDim)),
+                ],
               ],
             ),
             const SizedBox(height: 10),

@@ -15,6 +15,7 @@ import '../components/time_dial.dart';
 import '../components/toast.dart';
 import '../state/alarm_providers.dart';
 import '../state/entitlement_providers.dart';
+import '../state/settings_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'paywall_screen.dart';
@@ -202,6 +203,7 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
     final draft = ref.watch(draftProvider);
     if (draft == null) return const SizedBox.shrink();
     final isEdit = draft.id != 0;
+    final use24h = ref.watch(currentSettingsProvider).use24HourTime;
 
     // Gating: advanced missions (typing/QR/walk) and mission chains (2–3) are
     // premium. Locked → the picker routes to the paywall instead of selecting.
@@ -230,6 +232,7 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
           RiseCard(
             padding: const EdgeInsets.symmetric(vertical: 18),
             child: TimeDial(
+              use24h: use24h,
               value: (hour12: draft.hour12, minute: draft.minute, isAm: draft.isAm),
               onChanged: (t) => _update(draft.copyWith(
                 hour: Alarm.to24Hour(t.hour12, t.isAm),
