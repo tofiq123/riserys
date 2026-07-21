@@ -190,7 +190,8 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
     final draft = ref.watch(draftProvider);
     if (draft == null) return const SizedBox.shrink();
     final isEdit = draft.id != 0;
-    final use24h = ref.watch(currentSettingsProvider).use24HourTime;
+    final use24h =
+        ref.watch(currentSettingsProvider.select((s) => s.use24HourTime));
 
     // Gating: advanced missions (typing/QR/walk/photo/eyes) and mission chains
     // (2–3) are premium. Watching the gate here keeps the entitlement stream

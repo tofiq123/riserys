@@ -27,6 +27,7 @@ import 'ui/state/auth_providers.dart';
 import 'ui/state/group_providers.dart';
 import 'ui/state/settings_providers.dart';
 import 'ui/theme/tokens.dart';
+import 'ui/theme/typography.dart';
 
 /// Headless entrypoint invoked by Android's BootReceiver after boot, app
 /// replacement, or a clock change. Re-arms the scheduler from the local
@@ -421,19 +422,21 @@ class _StartupFailedPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: RiseColors.appBg,
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              Icon(Icons.error_outline, size: 48),
-              SizedBox(height: 16),
+            children: [
+              Icon(Icons.error_outline, size: 48, color: RiseColors.textFaint),
+              const SizedBox(height: 16),
               Text(
                 'Rise failed to start and could not reach the database.\n'
                 'Already-armed alarms will still ring. Restart the app to '
                 'try again.',
                 textAlign: TextAlign.center,
+                style: RiseText.body.copyWith(color: RiseColors.textDim),
               ),
             ],
           ),

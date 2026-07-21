@@ -33,33 +33,26 @@ String _countdown(Duration d) {
   return 'in ${m}m ${s.toString().padLeft(2, '0')}s';
 }
 
-class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({
-    super.key,
-    required this.onNew,
-    required this.onEdit,
-    required this.onPreview,
-    this.onStreak,
-  });
+/// The hero's live "rings in …" label. Owns its OWN one-second ticker so only
+/// this text repaints each second — the rest of Home (header, streak pill, the
+/// whole alarm list) rebuilds only on real data changes, and nothing ticks while
+/// Home is occluded by the editor overlay.
+class _HeroCountdown extends StatefulWidget {
+  const _HeroCountdown({required this.fireAt});
 
-  final VoidCallback onNew;
-  final void Function(Alarm) onEdit;
-  final VoidCallback onPreview;
-
-  /// Opens Stats (the app shell switches tab). Null leaves the pill inert.
-  final VoidCallback? onStreak;
+  /// The next fire instant; the countdown runs to its local time.
+  final DateTime fireAt;
 
   @override
-  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+  State<_HeroCountdown> createState() => _HeroCountdownState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HeroCountdownState extends State<_HeroCountdown> {
   Timer? _ticker;
 
   @override
   void initState() {
     super.initState();
-    // Drives the hero's live countdown.
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -73,10 +66,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final remaining = widget.fireAt.toLocal().difference(DateTime.now());
+    return Text(_countdown(remaining),
+        style: RiseText.caption
+            .copyWith(color: RiseColors.accent, fontWeight: FontWeight.w600));
+  }
+}
+
+class HomeScreen extends ConsumerStatefulWidget {
+  const HomeScreen({
+    super.key,
+    required this.onNew,
+    required this.onEdit,
+    required this.onPreview,
+    this.onStreak,
+    this.onProfile,
+  });
+
+  final VoidCallback onNew;
+  final void Function(Alarm) onEdit;
+  final VoidCallback onPreview;
+
+  /// Opens Stats (the app shell switches tab). Null leaves the pill inert.
+  final VoidCallback? onStreak;
+
+  /// Opens Profile (the app shell switches tab). Null leaves the avatar inert.
+  final VoidCallback? onProfile;
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  // No screen-level ticker: only the hero countdown changes each second, and it
+  // owns its own timer (see _HeroCountdown). This screen rebuilds only on real
+  // data/settings changes — not 60×/min, and not while occluded by the editor.
+
+  @override
+  Widget build(BuildContext context) {
     final alarmsAsync = ref.watch(alarmsProvider);
     final alarms = alarmsAsync.value ?? const <Alarm>[];
     final next = ref.watch(nextOccurrenceProvider).value;
-    final use24h = ref.watch(currentSettingsProvider).use24HourTime;
+    final use24h =
+        ref.watch(currentSettingsProvider.select((s) => s.use24HourTime));
 
     return SafeArea(
       child: ListView(
@@ -128,13 +160,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           children: [
             _streakPill(),
             const SizedBox(width: 10),
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                  color: RiseColors.primary, shape: BoxShape.circle),
-              child: Icon(Icons.person,
-                  color: RiseColors.primaryText, size: 20),
+            Semantics(
+              button: true,
+              label: 'Profile',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.onProfile,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                      color: RiseColors.primary, shape: BoxShape.circle),
+                  child: Icon(Icons.person,
+                      color: RiseColors.primaryText, size: 20),
+                ),
+              ),
             ),
           ],
         ),
@@ -191,9 +231,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    final use24h = ref.watch(currentSettingsProvider).use24HourTime;
+    final use24h =
+        ref.watch(currentSettingsProvider.select((s) => s.use24HourTime));
     final parts = formatClockParts(next.hour, next.minute, use24h: use24h);
-    final remaining = next.fireAt.toLocal().difference(DateTime.now());
 
     return RiseCard(
       padding: const EdgeInsets.all(RiseSpacing.screen),
@@ -227,9 +267,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     children: [
                       Text('${next.label} · rings ',
                           style: RiseText.caption),
-                      Text(_countdown(remaining),
-                          style: RiseText.caption.copyWith(
-                              color: RiseColors.accent, fontWeight: FontWeight.w600)),
+                      _HeroCountdown(fireAt: next.fireAt),
                     ],
                   ),
                 ],

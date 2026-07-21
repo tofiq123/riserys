@@ -71,6 +71,7 @@ class _AppShellState extends ConsumerState<AppShell> {
           onEdit: _openEdit,
           onPreview: _preview,
           onStreak: () => setState(() => _tab = 2),
+          onProfile: () => setState(() => _tab = 3),
         );
     }
   }
