@@ -125,10 +125,11 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # Bundled ringtone library (Sound & Ring). Each `assets/sounds/rise_<n>.wav`
-  # is previewed in the Create/Edit picker via just_audio; the native ring
-  # players map the same tone to a platform resource (Android R.raw.rise_<n>,
-  # iOS bundled UNNotificationSound) and fall back to the default on any miss.
+  # Bundled ringtone library (58 categorized tones). The whole directory is
+  # declared so every `assets/sounds/rise_<n>.ogg` ships. Each tone is previewed
+  # in the Create/Edit sound picker via just_audio; the native ring players map
+  # the same tone to a platform resource (Android R.raw.rise_<n>, iOS bundled
+  # UNNotificationSound) and fall back to the default on any miss.
   assets:
     - assets/sounds/
 
