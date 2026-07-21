@@ -18,6 +18,7 @@ class NativeAlarm {
     required this.label,
     required this.soundAsset,
     required this.vibrate,
+    required this.vibrationPattern,
     required this.hour,
     required this.minute,
     required this.weekdays,
@@ -28,6 +29,12 @@ class NativeAlarm {
   String label;
   String soundAsset;
   bool vibrate;
+
+  /// Vibration pattern key: 'gentle' | 'standard' | 'intense'. Only meaningful
+  /// while [vibrate] is true. Unknown values fall back to 'standard' on the
+  /// platform side, so a newer Dart never breaks an older native build.
+  /// iOS ignores this — notification vibration is not customizable there.
+  String vibrationPattern;
 
   /// Recurrence pattern, for platforms that own recurrence natively (iOS
   /// AlarmKit / UNCalendar). [weekdays] uses 0=Sun…6=Sat; empty = one-shot.
@@ -143,4 +150,14 @@ abstract class AlarmHostApi {
 
   /// Cancels any pending wake-check (notification + re-fire) for [alarmId].
   void cancelWakeCheck(int alarmId);
+
+  /// Arms the nightly wind-down reminder: a plain notification (its own
+  /// low-stakes channel/category — never the alarm channel) every day at
+  /// [hour]:[minute] local time with the given [title]/[body]. Replaces any
+  /// previously scheduled bedtime reminder. Purely a reminder: missing it has
+  /// no effect on alarms.
+  void scheduleBedtimeReminder(int hour, int minute, String title, String body);
+
+  /// Cancels the nightly wind-down reminder. Safe to call when none is armed.
+  void cancelBedtimeReminder();
 }

@@ -10,6 +10,7 @@ import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/rise_switch.dart';
 import '../components/section_label.dart';
+import '../components/segmented.dart';
 import '../components/sound_picker_sheet.dart';
 import '../components/time_dial.dart';
 import '../components/toast.dart';
@@ -259,14 +260,37 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
           const SizedBox(height: 20),
           RiseCard(
             radius: RiseRadii.base,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
               children: [
-                Text('Vibrate', style: RiseText.body),
-                RiseSwitch(
-                  value: draft.vibrate,
-                  onChanged: (v) => _update(draft.copyWith(vibrate: v)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Vibrate', style: RiseText.body),
+                    RiseSwitch(
+                      value: draft.vibrate,
+                      onChanged: (v) => _update(draft.copyWith(vibrate: v)),
+                    ),
+                  ],
                 ),
+                if (draft.vibrate) ...[
+                  Divider(height: 20, color: RiseColors.divider),
+                  SegmentedControl<String>(
+                    key: const Key('vibration-pattern-segmented'),
+                    segments: const [
+                      (value: 'gentle', label: 'Gentle'),
+                      (value: 'standard', label: 'Standard'),
+                      (value: 'intense', label: 'Intense'),
+                    ],
+                    // An unknown/legacy stored key renders as Standard — the
+                    // same fallback the ringer applies natively.
+                    selected: const ['gentle', 'standard', 'intense']
+                            .contains(draft.vibrationPattern)
+                        ? draft.vibrationPattern
+                        : 'standard',
+                    onChanged: (v) =>
+                        _update(draft.copyWith(vibrationPattern: v)),
+                  ),
+                ],
               ],
             ),
           ),

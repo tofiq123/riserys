@@ -13,6 +13,7 @@ class Alarm {
     this.label = 'Alarm',
     this.soundAsset = 'sounds/default_alarm.mp3',
     this.vibrate = true,
+    this.vibrationPattern = 'standard',
     this.mission = 'none',
     this.missionDiff = 'easy',
     this.missionCount = 1,
@@ -31,6 +32,12 @@ class Alarm {
   final String label;
   final String soundAsset;
   final bool vibrate;
+
+  /// Vibration pattern while ringing: 'gentle' | 'standard' | 'intense'.
+  /// Only meaningful when [vibrate] is true. 'standard' is today's pattern;
+  /// an unknown/legacy key degrades to 'standard' at the platform side, so it
+  /// can never silence the alarm's vibration.
+  final String vibrationPattern;
 
   /// Dismiss mission:
   /// 'none' | 'math' | 'tap' | 'hold' | 'memory' | 'pvt' | 'typing' |
@@ -88,6 +95,7 @@ class Alarm {
     String? label,
     String? soundAsset,
     bool? vibrate,
+    String? vibrationPattern,
     String? mission,
     String? missionDiff,
     int? missionCount,
@@ -120,6 +128,7 @@ class Alarm {
       label: label ?? this.label,
       soundAsset: soundAsset ?? this.soundAsset,
       vibrate: vibrate ?? this.vibrate,
+      vibrationPattern: vibrationPattern ?? this.vibrationPattern,
       mission: mission ?? this.mission,
       missionDiff: missionDiff ?? this.missionDiff,
       missionCount: missionCount ?? this.missionCount,
@@ -145,6 +154,7 @@ class Alarm {
       other.label == label &&
       other.soundAsset == soundAsset &&
       other.vibrate == vibrate &&
+      other.vibrationPattern == vibrationPattern &&
       other.mission == mission &&
       other.missionDiff == missionDiff &&
       other.missionCount == missionCount &&
@@ -162,6 +172,7 @@ class Alarm {
       label,
       soundAsset,
       vibrate,
+      vibrationPattern,
       mission,
       missionDiff,
       missionCount,

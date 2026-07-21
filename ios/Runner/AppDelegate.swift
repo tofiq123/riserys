@@ -64,6 +64,15 @@ import UserNotifications
       options: []
     )
 
-    UNUserNotificationCenter.current().setNotificationCategories([alarm, wakeCheck])
+    // Bedtime reminder: a plain tap opens the app; no inline actions. Its own
+    // category keeps it visually and behaviorally distinct from alarms.
+    let bedtime = UNNotificationCategory(
+      identifier: AlarmHostApiImpl.bedtimeCategoryId,
+      actions: [],
+      intentIdentifiers: [],
+      options: []
+    )
+
+    UNUserNotificationCenter.current().setNotificationCategories([alarm, wakeCheck, bedtime])
   }
 }

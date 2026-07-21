@@ -56,6 +56,7 @@ object WakeCheckScheduler {
             putExtra(AlarmScheduler.EXTRA_LABEL, alarm.label)
             putExtra(AlarmScheduler.EXTRA_SOUND, alarm.soundAsset)
             putExtra(AlarmScheduler.EXTRA_VIBRATE, alarm.vibrate)
+            putExtra(AlarmScheduler.EXTRA_VIBRATION_PATTERN, alarm.vibrationPattern)
         }
         val firePi = PendingIntent.getBroadcast(
             context, REFIRE_BASE + id, fireIntent,
@@ -147,7 +148,7 @@ object WakeCheckScheduler {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("Still up?")
             .setContentText("Tap \"I'm up\", or $label rings again.")
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.drawable.ic_stat_rise)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(openApp)

@@ -73,6 +73,7 @@
         <receiver android:name=".AlarmReceiver" android:exported="false" />
         <receiver android:name=".WakeCheckReceiver" android:exported="false" />
         <receiver android:name=".WakeCheckActionReceiver" android:exported="false" />
+        <receiver android:name=".BedtimeReminderReceiver" android:exported="false" />
 
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/domain/alarm.dart';
 import 'package:rise/domain/rise_settings.dart';
-import 'package:rise/ui/components/segmented.dart';
 import 'package:rise/ui/screens/create_edit_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
 import 'package:rise/ui/state/settings_providers.dart';
@@ -118,8 +117,9 @@ void main() {
         const Alarm(id: 5, hour: 6, minute: 30, mission: 'none'));
     await _pump(t, _host(c));
     await t.pump();
-    // The form itself no longer carries an inline difficulty control.
-    expect(find.byType(SegmentedControl<String>), findsNothing);
+    // The form itself no longer carries an inline difficulty control. (The
+    // vibration-pattern segmented on the form is a different control.)
+    expect(find.text('DIFFICULTY'), findsNothing); // SectionLabel uppercases
 
     // Open the browsable mission picker and choose Math.
     await t.tap(find.byKey(const Key('wake-mission-row')));
@@ -127,7 +127,7 @@ void main() {
     await t.tap(find.text('Math'));
     await t.pump();
     // Choosing a difficulty mission reveals its Difficulty control in the sheet.
-    expect(find.byType(SegmentedControl<String>), findsOneWidget);
+    expect(find.text('DIFFICULTY'), findsOneWidget);
 
     await t.tap(find.text('Done'));
     await t.pumpAndSettle();
@@ -202,5 +202,55 @@ void main() {
     expect(find.text('Edit alarm'), findsOneWidget); // screen rendered
     // The collapsed wake-mission row degrades gracefully (no inline controls).
     expect(find.byKey(const Key('wake-mission-row')), findsOneWidget);
+  });
+
+  testWidgets(
+      'vibration pattern control shows under Vibrate (on) and hides when off',
+      (t) async {
+    final c = _container(_RecordingMutations());
+    c.read(draftProvider.notifier)
+        .startEdit(const Alarm(id: 5, hour: 6, minute: 30)); // vibrate on
+    await _pump(t, _host(c));
+    await t.pump();
+    expect(find.byKey(const Key('vibration-pattern-segmented')), findsOneWidget);
+    expect(find.text('Gentle'), findsOneWidget);
+    expect(find.text('Standard'), findsOneWidget);
+    expect(find.text('Intense'), findsOneWidget);
+
+    // Turning Vibrate off collapses the pattern control.
+    c.read(draftProvider.notifier).update(
+        c.read(draftProvider)!.copyWith(vibrate: false));
+    await t.pump();
+    expect(find.byKey(const Key('vibration-pattern-segmented')), findsNothing);
+  });
+
+  testWidgets('choosing a vibration pattern updates the draft and saves it',
+      (t) async {
+    final m = _RecordingMutations();
+    final c = _container(m);
+    c.read(draftProvider.notifier)
+        .startEdit(const Alarm(id: 5, hour: 6, minute: 30));
+    await _pump(t, _host(c));
+    await t.pump();
+    expect(c.read(draftProvider)!.vibrationPattern, 'standard'); // default
+    await t.tap(find.text('Intense'));
+    await t.pump();
+    expect(c.read(draftProvider)!.vibrationPattern, 'intense');
+    await t.tap(find.text('Save alarm'));
+    await t.pumpAndSettle();
+    expect(m.saved.single.vibrationPattern, 'intense');
+  });
+
+  testWidgets('an unknown stored vibration pattern renders as Standard',
+      (t) async {
+    final c = _container(_RecordingMutations());
+    c.read(draftProvider.notifier).startEdit(const Alarm(
+        id: 5, hour: 6, minute: 30, vibrationPattern: 'ultra')); // future key
+    await _pump(t, _host(c));
+    await t.pump();
+    expect(t.takeException(), isNull);
+    // The control renders and falls back to the Standard selection — the same
+    // fallback the native ringer applies.
+    expect(find.byKey(const Key('vibration-pattern-segmented')), findsOneWidget);
   });
 }

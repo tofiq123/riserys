@@ -185,6 +185,11 @@ struct NativeAlarm: Hashable {
   var label: String
   var soundAsset: String
   var vibrate: Bool
+  /// Vibration pattern key: 'gentle' | 'standard' | 'intense'. Only meaningful
+  /// while [vibrate] is true. Unknown values fall back to 'standard' on the
+  /// platform side, so a newer Dart never breaks an older native build.
+  /// iOS ignores this — notification vibration is not customizable there.
+  var vibrationPattern: String
   /// Recurrence pattern, for platforms that own recurrence natively (iOS
   /// AlarmKit / UNCalendar). [weekdays] uses 0=Sun…6=Sat; empty = one-shot.
   /// Android ignores these and schedules the single [fireAtEpochMs] instant.
@@ -200,9 +205,10 @@ struct NativeAlarm: Hashable {
     let label = pigeonVar_list[2] as! String
     let soundAsset = pigeonVar_list[3] as! String
     let vibrate = pigeonVar_list[4] as! Bool
-    let hour = pigeonVar_list[5] as! Int64
-    let minute = pigeonVar_list[6] as! Int64
-    let weekdays = pigeonVar_list[7] as! [Int64]
+    let vibrationPattern = pigeonVar_list[5] as! String
+    let hour = pigeonVar_list[6] as! Int64
+    let minute = pigeonVar_list[7] as! Int64
+    let weekdays = pigeonVar_list[8] as! [Int64]
 
     return NativeAlarm(
       id: id,
@@ -210,6 +216,7 @@ struct NativeAlarm: Hashable {
       label: label,
       soundAsset: soundAsset,
       vibrate: vibrate,
+      vibrationPattern: vibrationPattern,
       hour: hour,
       minute: minute,
       weekdays: weekdays
@@ -222,6 +229,7 @@ struct NativeAlarm: Hashable {
       label,
       soundAsset,
       vibrate,
+      vibrationPattern,
       hour,
       minute,
       weekdays,
@@ -231,7 +239,7 @@ struct NativeAlarm: Hashable {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return deepEqualsAlarmApi(lhs.id, rhs.id) && deepEqualsAlarmApi(lhs.fireAtEpochMs, rhs.fireAtEpochMs) && deepEqualsAlarmApi(lhs.label, rhs.label) && deepEqualsAlarmApi(lhs.soundAsset, rhs.soundAsset) && deepEqualsAlarmApi(lhs.vibrate, rhs.vibrate) && deepEqualsAlarmApi(lhs.hour, rhs.hour) && deepEqualsAlarmApi(lhs.minute, rhs.minute) && deepEqualsAlarmApi(lhs.weekdays, rhs.weekdays)
+    return deepEqualsAlarmApi(lhs.id, rhs.id) && deepEqualsAlarmApi(lhs.fireAtEpochMs, rhs.fireAtEpochMs) && deepEqualsAlarmApi(lhs.label, rhs.label) && deepEqualsAlarmApi(lhs.soundAsset, rhs.soundAsset) && deepEqualsAlarmApi(lhs.vibrate, rhs.vibrate) && deepEqualsAlarmApi(lhs.vibrationPattern, rhs.vibrationPattern) && deepEqualsAlarmApi(lhs.hour, rhs.hour) && deepEqualsAlarmApi(lhs.minute, rhs.minute) && deepEqualsAlarmApi(lhs.weekdays, rhs.weekdays)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -241,6 +249,7 @@ struct NativeAlarm: Hashable {
     deepHashAlarmApi(value: label, hasher: &hasher)
     deepHashAlarmApi(value: soundAsset, hasher: &hasher)
     deepHashAlarmApi(value: vibrate, hasher: &hasher)
+    deepHashAlarmApi(value: vibrationPattern, hasher: &hasher)
     deepHashAlarmApi(value: hour, hasher: &hasher)
     deepHashAlarmApi(value: minute, hasher: &hasher)
     deepHashAlarmApi(value: weekdays, hasher: &hasher)
@@ -491,6 +500,14 @@ protocol AlarmHostApi {
   func scheduleWakeCheck(alarm: NativeAlarm, checkAtEpochMs: Int64) throws
   /// Cancels any pending wake-check (notification + re-fire) for [alarmId].
   func cancelWakeCheck(alarmId: Int64) throws
+  /// Arms the nightly wind-down reminder: a plain notification (its own
+  /// low-stakes channel/category — never the alarm channel) every day at
+  /// [hour]:[minute] local time with the given [title]/[body]. Replaces any
+  /// previously scheduled bedtime reminder. Purely a reminder: missing it has
+  /// no effect on alarms.
+  func scheduleBedtimeReminder(hour: Int64, minute: Int64, title: String, body: String) throws
+  /// Cancels the nightly wind-down reminder. Safe to call when none is armed.
+  func cancelBedtimeReminder() throws
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -735,6 +752,43 @@ class AlarmHostApiSetup {
       }
     } else {
       cancelWakeCheckChannel.setMessageHandler(nil)
+    }
+    /// Arms the nightly wind-down reminder: a plain notification (its own
+    /// low-stakes channel/category — never the alarm channel) every day at
+    /// [hour]:[minute] local time with the given [title]/[body]. Replaces any
+    /// previously scheduled bedtime reminder. Purely a reminder: missing it has
+    /// no effect on alarms.
+    let scheduleBedtimeReminderChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.scheduleBedtimeReminder\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      scheduleBedtimeReminderChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let hourArg = args[0] as! Int64
+        let minuteArg = args[1] as! Int64
+        let titleArg = args[2] as! String
+        let bodyArg = args[3] as! String
+        do {
+          try api.scheduleBedtimeReminder(hour: hourArg, minute: minuteArg, title: titleArg, body: bodyArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      scheduleBedtimeReminderChannel.setMessageHandler(nil)
+    }
+    /// Cancels the nightly wind-down reminder. Safe to call when none is armed.
+    let cancelBedtimeReminderChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.cancelBedtimeReminder\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      cancelBedtimeReminderChannel.setMessageHandler { _, reply in
+        do {
+          try api.cancelBedtimeReminder()
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      cancelBedtimeReminderChannel.setMessageHandler(nil)
     }
   }
 }

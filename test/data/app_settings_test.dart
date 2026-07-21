@@ -185,4 +185,27 @@ void main() {
     expect(s2.use24HourTime, isTrue);
     expect(s2.settings.use24HourTime, isTrue);
   });
+
+  test('bedtime reminder defaults off at 22:30, round-trips, and reaches the '
+      'snapshot', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.bedtimeReminderEnabled, isFalse);
+    expect(s.bedtimeHour, 22);
+    expect(s.bedtimeMinute, 30);
+    expect(s.settings.bedtimeReminderEnabled, isFalse);
+    expect(s.settings.bedtimeHour, 22);
+    expect(s.settings.bedtimeMinute, 30);
+
+    await s.setBedtimeReminderEnabled(true);
+    await s.setBedtimeTime(23, 15);
+
+    final s2 = await AppSettings.load();
+    expect(s2.bedtimeReminderEnabled, isTrue);
+    expect(s2.bedtimeHour, 23);
+    expect(s2.bedtimeMinute, 15);
+    expect(s2.settings.bedtimeReminderEnabled, isTrue);
+    expect(s2.settings.bedtimeHour, 23);
+    expect(s2.settings.bedtimeMinute, 15);
+  });
 }

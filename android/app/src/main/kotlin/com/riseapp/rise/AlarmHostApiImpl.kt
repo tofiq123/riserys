@@ -137,6 +137,21 @@ class AlarmHostApiImpl(
         WakeCheckScheduler.cancel(context, alarmId.toInt())
     }
 
+    override fun scheduleBedtimeReminder(
+        hour: Long,
+        minute: Long,
+        title: String,
+        body: String
+    ) {
+        BedtimeReminderScheduler.schedule(
+            context, hour.toInt(), minute.toInt(), title, body
+        )
+    }
+
+    override fun cancelBedtimeReminder() {
+        BedtimeReminderScheduler.cancel(context)
+    }
+
     /**
      * Pigeon alarm ids are Long, but the Intent extra AlarmService reads
      * (EXTRA_ALARM_ID) is an Int. A bare `.toInt()` truncates silently on

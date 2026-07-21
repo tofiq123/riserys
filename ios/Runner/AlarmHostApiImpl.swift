@@ -33,12 +33,15 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
   //   alarm.<alarmId>.<burstIndex>   — a ring-burst notification
   //   wakecheck.<alarmId>            — the "still up?" prompt
   //   wakecheckrefire.<alarmId>      — the re-ring if the prompt is ignored
+  //   bedtime.reminder               — the single nightly wind-down reminder
   private static let alarmPrefix = "alarm."
   private static let wakeCheckPrefix = "wakecheck."
   private static let wakeCheckRefirePrefix = "wakecheckrefire."
+  private static let bedtimeIdentifier = "bedtime.reminder"
 
   static let alarmCategoryId = "RISE_ALARM"
   static let wakeCheckCategoryId = "RISE_WAKECHECK"
+  static let bedtimeCategoryId = "RISE_BEDTIME"
   static let imUpActionId = "RISE_IM_UP"
 
   override init() {
@@ -80,6 +83,13 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
     return UNNotificationSound(named: UNNotificationSoundName(rawValue: name))
   }
 
+  // NOTE (per-alarm vibration patterns): `NativeAlarm.vibrationPattern`
+  // ('gentle' | 'standard' | 'intense') is intentionally IGNORED on iOS.
+  // Local notifications cannot carry a custom vibration pattern — iOS plays
+  // the system's notification haptic alongside the sound and exposes no API
+  // to change it (CoreHaptics only works with the app foregrounded, which an
+  // alarm firing from a killed app is not). Android honors the pattern in
+  // AlarmService.startVibration; here every alarm keeps today's behavior.
   private func alarmContent(label: String, soundAsset: String) -> UNMutableNotificationContent {
     let content = UNMutableNotificationContent()
     content.title = label.isEmpty ? "Rise" : label
@@ -252,6 +262,38 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
     center.removeDeliveredNotifications(withIdentifiers: ids)
   }
 
+  /// The nightly wind-down reminder: a repeating calendar-triggered local
+  /// notification at hour:minute, on its own category with the default sound.
+  /// Deliberately NOT time-sensitive and NOT the alarm category — it is a
+  /// gentle, zero-stakes nudge. `center.add` with the same identifier replaces
+  /// any previously scheduled reminder, so a time change is a plain re-add.
+  func scheduleBedtimeReminder(hour: Int64, minute: Int64, title: String, body: String) throws {
+    let content = UNMutableNotificationContent()
+    content.title = title
+    content.body = body
+    content.sound = .default
+    content.categoryIdentifier = AlarmHostApiImpl.bedtimeCategoryId
+
+    var components = DateComponents()
+    components.hour = Int(hour)
+    components.minute = Int(minute)
+    // repeats: true → iOS re-fires it daily on its own; unlike Android there
+    // is no re-arm loop to maintain, and it survives app restarts (though not
+    // device restarts until the app next runs — acceptable for a reminder).
+    let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+
+    center.add(UNNotificationRequest(
+      identifier: AlarmHostApiImpl.bedtimeIdentifier,
+      content: content,
+      trigger: trigger))
+  }
+
+  func cancelBedtimeReminder() throws {
+    let ids = [AlarmHostApiImpl.bedtimeIdentifier]
+    center.removePendingNotificationRequests(withIdentifiers: ids)
+    center.removeDeliveredNotifications(withIdentifiers: ids)
+  }
+
   // MARK: - UNUserNotificationCenterDelegate
 
   /// Foreground: still show the banner + play the sound (default behaviour would
@@ -284,6 +326,11 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
       if response.actionIdentifier == AlarmHostApiImpl.imUpActionId, let id = alarmId {
         try? cancelWakeCheck(alarmId: id)
       }
+    case AlarmHostApiImpl.bedtimeCategoryId:
+      // A plain reminder tap just opens the app — it must never be mistaken
+      // for a ringing alarm. (Its userInfo carries no alarmId either, so the
+      // default branch would already no-op; this case makes that explicit.)
+      break
     default: // RISE_ALARM (and any default tap)
       if let id = alarmId {
         ringingAlarmId = id

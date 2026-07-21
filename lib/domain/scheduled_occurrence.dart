@@ -11,6 +11,7 @@ class ScheduledOccurrence {
     required this.label,
     required this.soundAsset,
     required this.vibrate,
+    this.vibrationPattern = 'standard',
     this.hour = 0,
     this.minute = 0,
     this.weekdays = const {},
@@ -21,6 +22,10 @@ class ScheduledOccurrence {
   final String label;
   final String soundAsset;
   final bool vibrate;
+
+  /// Vibration pattern key ('gentle' | 'standard' | 'intense'); only
+  /// meaningful while [vibrate] is true. Unknown → 'standard' natively.
+  final String vibrationPattern;
 
   /// Recurrence pattern for platforms that own recurrence (iOS). 0=Sun…6=Sat;
   /// empty = one-shot. Android ignores these and uses [fireAt].
@@ -36,13 +41,15 @@ class ScheduledOccurrence {
       other.label == label &&
       other.soundAsset == soundAsset &&
       other.vibrate == vibrate &&
+      other.vibrationPattern == vibrationPattern &&
       other.hour == hour &&
       other.minute == minute &&
       const SetEquality<int>().equals(other.weekdays, weekdays);
 
   @override
   int get hashCode => Object.hash(alarmId, fireAt.toUtc(), label, soundAsset,
-      vibrate, hour, minute, const SetEquality<int>().hash(weekdays));
+      vibrate, vibrationPattern, hour, minute,
+      const SetEquality<int>().hash(weekdays));
 
   @override
   String toString() =>

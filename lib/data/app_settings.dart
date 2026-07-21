@@ -38,6 +38,9 @@ class AppSettings {
   static const _kHomeLat = 'homeLat';
   static const _kHomeLng = 'homeLng';
   static const _kHomeShare = 'homeShare';
+  static const _kBedtimeReminderEnabled = 'bedtimeReminderEnabled';
+  static const _kBedtimeHour = 'bedtimeHour';
+  static const _kBedtimeMinute = 'bedtimeMinute';
 
   int get snoozeMaxCount => _prefs.getInt(_kSnoozeMaxCount) ?? 3;
   Future<void> setSnoozeMaxCount(int v) => _prefs.setInt(_kSnoozeMaxCount, v);
@@ -142,6 +145,23 @@ class AppSettings {
   Future<void> setHomeShare(HomeShareTier v) =>
       _prefs.setString(_kHomeShare, v.name);
 
+  /// The opt-in nightly wind-down reminder (Phase 8.5). Default off — nothing
+  /// fires unless the user enables it.
+  bool get bedtimeReminderEnabled =>
+      _prefs.getBool(_kBedtimeReminderEnabled) ?? false;
+  Future<void> setBedtimeReminderEnabled(bool v) =>
+      _prefs.setBool(_kBedtimeReminderEnabled, v);
+
+  /// The wind-down reminder's wall-clock time (24-hour form), default 22:30.
+  /// The two components are always stored together.
+  int get bedtimeHour => _prefs.getInt(_kBedtimeHour) ?? 22;
+  int get bedtimeMinute => _prefs.getInt(_kBedtimeMinute) ?? 30;
+
+  Future<void> setBedtimeTime(int hour, int minute) async {
+    await _prefs.setInt(_kBedtimeHour, hour);
+    await _prefs.setInt(_kBedtimeMinute, minute);
+  }
+
   /// A snapshot of the mutable settings (snooze + wake-check + wake plan +
   /// steady wake time).
   RiseSettings get settings => RiseSettings(
@@ -156,6 +176,9 @@ class AppSettings {
         smartWakeCheck: smartWakeCheck,
         sunriseWake: sunriseWake,
         realLightPrompt: realLightPrompt,
+        bedtimeReminderEnabled: bedtimeReminderEnabled,
+        bedtimeHour: bedtimeHour,
+        bedtimeMinute: bedtimeMinute,
         use24HourTime: use24HourTime,
         themeMode: themeMode,
         homeLat: homeLat,

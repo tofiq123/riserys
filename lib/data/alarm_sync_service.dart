@@ -46,6 +46,7 @@ class PigeonAlarmPlatform implements AlarmPlatform {
         label: o.label,
         soundAsset: o.soundAsset,
         vibrate: o.vibrate,
+        vibrationPattern: o.vibrationPattern,
         hour: o.hour,
         minute: o.minute,
         weekdays: o.weekdays.toList()..sort(),

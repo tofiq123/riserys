@@ -22,6 +22,12 @@ class Alarms extends Table {
       text().withDefault(const Constant('sounds/default_alarm.mp3'))();
   BoolColumn get vibrate => boolean().withDefault(const Constant(true))();
 
+  /// Vibration pattern while ringing: 'gentle' | 'standard' | 'intense'
+  /// (added in schema v9). Default 'standard' = today's pattern; unknown
+  /// values degrade to 'standard' at the platform side.
+  TextColumn get vibrationPattern =>
+      text().withDefault(const Constant('standard'))();
+
   /// UTC instant the alarm was last dismissed, or null if never dismissed.
   /// Used by recovery to avoid re-ringing an occurrence the user already
   /// dealt with, and by [AlarmRepository.recordDismissed] to disable a
@@ -97,7 +103,7 @@ class RiseDatabase extends _$RiseDatabase {
   RiseDatabase(super.e);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -180,6 +186,19 @@ class RiseDatabase extends _$RiseDatabase {
             final existing = await _columnNames('alarms');
             if (!existing.contains('mission_data')) {
               await m.addColumn(alarms, alarms.missionData);
+            }
+          }
+
+          // v8 -> v9: the vibration_pattern column on alarms (per-alarm
+          // vibration pattern). Idempotent like the other add-column
+          // migrations — a losing isolate (or a partial prior run) that finds
+          // it present skips the ALTER rather than crashing on "duplicate
+          // column name". Existing rows keep the default of 'standard'
+          // (today's pattern — unchanged behavior).
+          if (from < 9) {
+            final existing = await _columnNames('alarms');
+            if (!existing.contains('vibration_pattern')) {
+              await m.addColumn(alarms, alarms.vibrationPattern);
             }
           }
         },

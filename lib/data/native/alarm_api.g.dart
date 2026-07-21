@@ -107,6 +107,7 @@ class NativeAlarm {
     required this.label,
     required this.soundAsset,
     required this.vibrate,
+    required this.vibrationPattern,
     required this.hour,
     required this.minute,
     required this.weekdays,
@@ -121,6 +122,12 @@ class NativeAlarm {
   String soundAsset;
 
   bool vibrate;
+
+  /// Vibration pattern key: 'gentle' | 'standard' | 'intense'. Only meaningful
+  /// while [vibrate] is true. Unknown values fall back to 'standard' on the
+  /// platform side, so a newer Dart never breaks an older native build.
+  /// iOS ignores this — notification vibration is not customizable there.
+  String vibrationPattern;
 
   /// Recurrence pattern, for platforms that own recurrence natively (iOS
   /// AlarmKit / UNCalendar). [weekdays] uses 0=Sun…6=Sat; empty = one-shot.
@@ -138,6 +145,7 @@ class NativeAlarm {
       label,
       soundAsset,
       vibrate,
+      vibrationPattern,
       hour,
       minute,
       weekdays,
@@ -155,9 +163,10 @@ class NativeAlarm {
       label: result[2]! as String,
       soundAsset: result[3]! as String,
       vibrate: result[4]! as bool,
-      hour: result[5]! as int,
-      minute: result[6]! as int,
-      weekdays: (result[7]! as List<Object?>).cast<int>(),
+      vibrationPattern: result[5]! as String,
+      hour: result[6]! as int,
+      minute: result[7]! as int,
+      weekdays: (result[8]! as List<Object?>).cast<int>(),
     );
   }
 
@@ -170,7 +179,7 @@ class NativeAlarm {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(id, other.id) && _deepEquals(fireAtEpochMs, other.fireAtEpochMs) && _deepEquals(label, other.label) && _deepEquals(soundAsset, other.soundAsset) && _deepEquals(vibrate, other.vibrate) && _deepEquals(hour, other.hour) && _deepEquals(minute, other.minute) && _deepEquals(weekdays, other.weekdays);
+    return _deepEquals(id, other.id) && _deepEquals(fireAtEpochMs, other.fireAtEpochMs) && _deepEquals(label, other.label) && _deepEquals(soundAsset, other.soundAsset) && _deepEquals(vibrate, other.vibrate) && _deepEquals(vibrationPattern, other.vibrationPattern) && _deepEquals(hour, other.hour) && _deepEquals(minute, other.minute) && _deepEquals(weekdays, other.weekdays);
   }
 
   @override
@@ -696,6 +705,48 @@ class AlarmHostApi {
       binaryMessenger: pigeonVar_binaryMessenger,
     );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[alarmId]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  /// Arms the nightly wind-down reminder: a plain notification (its own
+  /// low-stakes channel/category — never the alarm channel) every day at
+  /// [hour]:[minute] local time with the given [title]/[body]. Replaces any
+  /// previously scheduled bedtime reminder. Purely a reminder: missing it has
+  /// no effect on alarms.
+  Future<void> scheduleBedtimeReminder(int hour, int minute, String title, String body) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.scheduleBedtimeReminder$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[hour, minute, title, body]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  /// Cancels the nightly wind-down reminder. Safe to call when none is armed.
+  Future<void> cancelBedtimeReminder() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.cancelBedtimeReminder$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     _extractReplyValueOrThrow(

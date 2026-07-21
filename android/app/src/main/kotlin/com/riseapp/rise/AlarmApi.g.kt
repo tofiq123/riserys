@@ -206,6 +206,13 @@ data class NativeAlarm (
   val soundAsset: String,
   val vibrate: Boolean,
   /**
+   * Vibration pattern key: 'gentle' | 'standard' | 'intense'. Only meaningful
+   * while [vibrate] is true. Unknown values fall back to 'standard' on the
+   * platform side, so a newer Dart never breaks an older native build.
+   * iOS ignores this — notification vibration is not customizable there.
+   */
+  val vibrationPattern: String,
+  /**
    * Recurrence pattern, for platforms that own recurrence natively (iOS
    * AlarmKit / UNCalendar). [weekdays] uses 0=Sun…6=Sat; empty = one-shot.
    * Android ignores these and schedules the single [fireAtEpochMs] instant.
@@ -222,10 +229,11 @@ data class NativeAlarm (
       val label = pigeonVar_list[2] as String
       val soundAsset = pigeonVar_list[3] as String
       val vibrate = pigeonVar_list[4] as Boolean
-      val hour = pigeonVar_list[5] as Long
-      val minute = pigeonVar_list[6] as Long
-      val weekdays = pigeonVar_list[7] as List<Long>
-      return NativeAlarm(id, fireAtEpochMs, label, soundAsset, vibrate, hour, minute, weekdays)
+      val vibrationPattern = pigeonVar_list[5] as String
+      val hour = pigeonVar_list[6] as Long
+      val minute = pigeonVar_list[7] as Long
+      val weekdays = pigeonVar_list[8] as List<Long>
+      return NativeAlarm(id, fireAtEpochMs, label, soundAsset, vibrate, vibrationPattern, hour, minute, weekdays)
     }
   }
   fun toList(): List<Any?> {
@@ -235,6 +243,7 @@ data class NativeAlarm (
       label,
       soundAsset,
       vibrate,
+      vibrationPattern,
       hour,
       minute,
       weekdays,
@@ -248,7 +257,7 @@ data class NativeAlarm (
       return true
     }
     val other = other as NativeAlarm
-    return AlarmApiPigeonUtils.deepEquals(this.id, other.id) && AlarmApiPigeonUtils.deepEquals(this.fireAtEpochMs, other.fireAtEpochMs) && AlarmApiPigeonUtils.deepEquals(this.label, other.label) && AlarmApiPigeonUtils.deepEquals(this.soundAsset, other.soundAsset) && AlarmApiPigeonUtils.deepEquals(this.vibrate, other.vibrate) && AlarmApiPigeonUtils.deepEquals(this.hour, other.hour) && AlarmApiPigeonUtils.deepEquals(this.minute, other.minute) && AlarmApiPigeonUtils.deepEquals(this.weekdays, other.weekdays)
+    return AlarmApiPigeonUtils.deepEquals(this.id, other.id) && AlarmApiPigeonUtils.deepEquals(this.fireAtEpochMs, other.fireAtEpochMs) && AlarmApiPigeonUtils.deepEquals(this.label, other.label) && AlarmApiPigeonUtils.deepEquals(this.soundAsset, other.soundAsset) && AlarmApiPigeonUtils.deepEquals(this.vibrate, other.vibrate) && AlarmApiPigeonUtils.deepEquals(this.vibrationPattern, other.vibrationPattern) && AlarmApiPigeonUtils.deepEquals(this.hour, other.hour) && AlarmApiPigeonUtils.deepEquals(this.minute, other.minute) && AlarmApiPigeonUtils.deepEquals(this.weekdays, other.weekdays)
   }
 
   override fun hashCode(): Int {
@@ -258,6 +267,7 @@ data class NativeAlarm (
     result = 31 * result + AlarmApiPigeonUtils.deepHash(this.label)
     result = 31 * result + AlarmApiPigeonUtils.deepHash(this.soundAsset)
     result = 31 * result + AlarmApiPigeonUtils.deepHash(this.vibrate)
+    result = 31 * result + AlarmApiPigeonUtils.deepHash(this.vibrationPattern)
     result = 31 * result + AlarmApiPigeonUtils.deepHash(this.hour)
     result = 31 * result + AlarmApiPigeonUtils.deepHash(this.minute)
     result = 31 * result + AlarmApiPigeonUtils.deepHash(this.weekdays)
@@ -527,6 +537,16 @@ interface AlarmHostApi {
   fun scheduleWakeCheck(alarm: NativeAlarm, checkAtEpochMs: Long)
   /** Cancels any pending wake-check (notification + re-fire) for [alarmId]. */
   fun cancelWakeCheck(alarmId: Long)
+  /**
+   * Arms the nightly wind-down reminder: a plain notification (its own
+   * low-stakes channel/category — never the alarm channel) every day at
+   * [hour]:[minute] local time with the given [title]/[body]. Replaces any
+   * previously scheduled bedtime reminder. Purely a reminder: missing it has
+   * no effect on alarms.
+   */
+  fun scheduleBedtimeReminder(hour: Long, minute: Long, title: String, body: String)
+  /** Cancels the nightly wind-down reminder. Safe to call when none is armed. */
+  fun cancelBedtimeReminder()
 
   companion object {
     /** The codec used by AlarmHostApi. */
@@ -777,6 +797,43 @@ interface AlarmHostApi {
             val alarmIdArg = args[0] as Long
             val wrapped: List<Any?> = try {
               api.cancelWakeCheck(alarmIdArg)
+              listOf(null)
+            } catch (exception: Throwable) {
+              AlarmApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.scheduleBedtimeReminder$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val hourArg = args[0] as Long
+            val minuteArg = args[1] as Long
+            val titleArg = args[2] as String
+            val bodyArg = args[3] as String
+            val wrapped: List<Any?> = try {
+              api.scheduleBedtimeReminder(hourArg, minuteArg, titleArg, bodyArg)
+              listOf(null)
+            } catch (exception: Throwable) {
+              AlarmApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.cancelBedtimeReminder$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              api.cancelBedtimeReminder()
               listOf(null)
             } catch (exception: Throwable) {
               AlarmApiPigeonUtils.wrapError(exception)
