@@ -12,6 +12,7 @@ void main() {
     int minute = 30,
     Set<int> days = const {1, 2, 3, 4, 5},
     String mission = 'math',
+    String vibrationPattern = 'standard',
     String? missionData,
     DateTime? lastDismissedAt,
     DateTime? snoozedUntil,
@@ -25,6 +26,7 @@ void main() {
         label: 'Morning',
         soundAsset: 'sounds/x.mp3',
         vibrate: false,
+        vibrationPattern: vibrationPattern,
         mission: mission,
         missionDiff: 'hard',
         missionCount: 2,
@@ -107,6 +109,7 @@ void main() {
     test('alarms round-trip (id reset to 0, runtime fields dropped)', () {
       final src = alarm(
         missionData: 'QR-PAYLOAD',
+        vibrationPattern: 'intense', // a non-default preference must survive
         lastDismissedAt: DateTime.utc(2026, 1, 1),
         snoozedUntil: DateTime.utc(2026, 1, 2),
       );

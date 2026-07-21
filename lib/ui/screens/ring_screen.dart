@@ -213,6 +213,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
   late final AnimationController _sunrise;
   bool _sunriseActive = false; // sunrise setting was on at mount → show + ramp
   bool _sunriseStarted = false; // one-shot guard for didChangeDependencies
+  bool _pulseStarted = false; // one-shot guard for starting the bell pulse
   double _lastBrightness = -1; // last value pushed to the platform (throttle)
 
   Timer? _clock;
@@ -233,7 +234,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
       duration: const Duration(milliseconds: 900),
       lowerBound: 0.92,
       upperBound: 1.08,
-    )..repeat(reverse: true);
+    ); // started in didChangeDependencies, only when animations are enabled
     _sunrise = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 45),
@@ -247,6 +248,15 @@ class _RingScreenState extends ConsumerState<RingScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Start the bell pulse only when animations are enabled — under reduce-motion
+    // the bell is rendered static (see build), so a repeating controller would
+    // just tick every frame with no listener. Guarded to start once.
+    if (!_pulseStarted) {
+      _pulseStarted = true;
+      if (!MediaQuery.of(context).disableAnimations) {
+        _pulse.repeat(reverse: true);
+      }
+    }
     // Start the sunrise once, here, where MediaQuery is available. Guarded so a
     // later dependency change never restarts or re-boosts it.
     if (_sunriseStarted) return;
@@ -313,6 +323,11 @@ class _RingScreenState extends ConsumerState<RingScreen>
       }
       return;
     }
+    // The alarm is now silenced. If the ring screen was torn down during the
+    // awaited dismissal (e.g. an OS resume drove a reconcile that disposed it),
+    // bail before touching ref — the post-dismiss bookkeeping needs a live
+    // element, and the dismissal itself has already succeeded.
+    if (!mounted) return;
     if (widget.record) {
       try {
         await ref

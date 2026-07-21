@@ -39,6 +39,11 @@ class StatusPublisher {
 final statusPublisherProvider = Provider<StatusPublisher>(
     (ref) => StatusPublisher(ref.watch(statusServiceProvider)));
 
+/// How recently a still-open wake event must have started ringing to count as
+/// "waking now". Generous enough to span a real ring + snooze/wake-check cycle,
+/// short enough that a stale abandoned open event stops reading as waking.
+const Duration _activeRingWindow = Duration(hours: 2);
+
 /// The signed-in user's own [CrewStatus], derived from local alarm/wake state,
 /// or [CrewStatus.unknown] when signed out. Recomputes when alarms/wake events
 /// change; purely time-based transitions are picked up on the next change or on
@@ -48,7 +53,15 @@ final derivedStatusProvider = Provider<CrewStatus>((ref) {
   if (account == null) return CrewStatus.unknown;
   final next = ref.watch(nextOccurrenceProvider).value;
   final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
-  final hasOpen = events.any((e) => e.isOpen);
+  final now = DateTime.now().toUtc();
+  // Only a RECENTLY-opened event means "waking right now". An open event is
+  // closed solely by finalizeDismiss, so sleeping through an alarm, force-
+  // quitting mid-ring, or ignoring a wake-check re-ring leaves a permanent open
+  // row. Without this bound that stale row would pin the crew status to
+  // "Waking" forever (and broadcast it). A live ring + snooze/wake-check cycle
+  // fits comfortably inside the window; anything older is treated as not-ringing.
+  final hasOpen = events.any(
+      (e) => e.isOpen && now.difference(e.firstRingAt) < _activeRingWindow);
   DateTime? lastDismissed;
   for (final e in events) {
     final d = e.dismissedAt;
@@ -57,7 +70,7 @@ final derivedStatusProvider = Provider<CrewStatus>((ref) {
     }
   }
   final status = deriveStatus(
-    now: DateTime.now().toUtc(),
+    now: now,
     nextAlarmAt: next?.fireAt.toUtc(),
     hasOpenWakeEvent: hasOpen,
     lastDismissedAt: lastDismissed?.toUtc(),

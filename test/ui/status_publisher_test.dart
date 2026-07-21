@@ -16,12 +16,25 @@ import 'package:rise/ui/state/wake_providers.dart';
 import 'package:rise/ui/status_publisher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-WakeEvent _openEvent() => WakeEvent(
-      id: 1,
-      alarmId: 1,
+/// A currently-ringing event: open AND rang just now, so it reads as `waking`.
+WakeEvent _openEvent() {
+  final now = DateTime.now().toUtc();
+  return WakeEvent(
+    id: 1,
+    alarmId: 1,
+    scheduledAt: now,
+    firstRingAt: now,
+  ); // dismissedAt == null -> open + recent -> waking
+}
+
+/// An open event whose ring is hours old (e.g. a slept-through alarm that never
+/// finalized). It must NOT read as `waking` — the stale-open regression.
+WakeEvent _staleOpenEvent() => WakeEvent(
+      id: 9,
+      alarmId: 9,
       scheduledAt: DateTime.utc(2026, 7, 18, 6),
       firstRingAt: DateTime.utc(2026, 7, 18, 6),
-    ); // dismissedAt == null -> open -> deriveStatus returns waking regardless of `now`
+    );
 
 /// A dismissed-just-now event, so deriveStatus (which uses the real clock)
 /// resolves to `awake`.
@@ -83,6 +96,30 @@ void main() {
       ));
       await t.pumpAndSettle();
       expect(status.lastPublished, CrewStatus.waking);
+    });
+
+    testWidgets('a stale open event does NOT pin the status to waking',
+        (t) async {
+      final auth = FakeAuthService();
+      await auth.signInWithGoogle();
+      await auth.claimUsername('me', displayName: 'Me');
+      addTearDown(auth.dispose);
+      final status = FakeStatusService();
+      addTearDown(status.dispose);
+
+      await t.pumpWidget(ProviderScope(
+        overrides: [
+          authServiceProvider.overrideWithValue(auth),
+          statusServiceProvider.overrideWithValue(status),
+          wakeEventsProvider
+              .overrideWith((ref) => Stream.value([_staleOpenEvent()])),
+          nextOccurrenceProvider.overrideWith((ref) async => null),
+        ],
+        child: const MaterialApp(home: StatusPublisherHost(child: SizedBox())),
+      ));
+      await t.pumpAndSettle();
+      // A months-old open row (slept-through alarm) must not read as waking.
+      expect(status.lastPublished, isNot(CrewStatus.waking));
     });
 
     testWidgets(
