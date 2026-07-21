@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -42,16 +44,18 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   tzdata.initializeTimeZones();
 
-  // Optional push backend. Additive and best-effort: a missing/failed
-  // Firebase config must never stop the app from launching.
-  try {
-    await Firebase.initializeApp();
-  } catch (e) {
-    debugPrint('Rise: Firebase init skipped (push disabled): $e');
-  }
+  // ── Only what the first frame — and the dismiss/ring UI — actually needs runs
+  // before runApp(). RingActivity cold-boots this SAME main() in its own engine
+  // while an alarm is already audibly ringing (the sound is native and instant),
+  // so every ms spent here before the dismiss screen renders is a ms the user
+  // can't shut the alarm off. Firebase, RevenueCat and the scheduler reconcile
+  // are NOT needed to show or dismiss the alarm, so they run in _deferredStartup
+  // AFTER runApp. Everything here must also never let an exception escape, or
+  // runApp() would be skipped and the ring would be unstoppable.
 
-  // Optional social backend. Additive and best-effort: a failure here must
-  // never stop the local alarm app from launching.
+  // Social backend: the account/social providers read Supabase.instance eagerly,
+  // so it must be initialized before runApp — but it's a local session restore,
+  // not a network round-trip, so it's cheap. Best-effort.
   if (SupabaseConfig.isConfigured) {
     try {
       await Supabase.initialize(
@@ -65,20 +69,8 @@ Future<void> main() async {
     }
   }
 
-  // Optional monetization. Additive and best-effort: with no RevenueCat key the
-  // SDK is never initialised and the app runs fully unlocked (see
-  // UnlockedEntitlementService). A configure failure must never stop launch.
-  if (RevenueCatConfig.isConfigured) {
-    try {
-      await RevenueCatEntitlementService.configureSdk(RevenueCatConfig.apiKey);
-    } catch (e) {
-      debugPrint('Rise: RevenueCat init failed (premium gating disabled): $e');
-    }
-  }
-
-  // App preferences (the onboarding flag). Independent of the alarm engine, so
-  // a failure here must not stop the app from launching — and must not trap the
-  // user in onboarding.
+  // App preferences (the onboarding flag) — local + fast. A failure must not
+  // stop launch or trap the user in onboarding.
   AppSettings? settings;
   try {
     settings = await AppSettings.load();
@@ -86,27 +78,15 @@ Future<void> main() async {
     debugPrint('Rise: settings load failed: $e');
   }
 
-  // RingActivity is a plain FlutterActivity: it runs this same main() in its own
-  // engine while an alarm is audibly ringing. If a throw here stopped runApp()
-  // from being reached, the ring UI — including its Dismiss — would never
-  // render, and the alarm would be unstoppable short of force-stop or reboot.
-  // So this must never let an exception escape.
-  try {
-    await AlarmSyncService.configureForApp();
-    // Every launch re-arms the scheduler: OEMs and OS updates silently clear it.
-    await AlarmSyncService.instance.reconcileNow();
-  } catch (e, s) {
-    debugPrint('Rise: startup reconcile failed: $e\n$s');
-  }
-
-  // AlarmSyncService.instance throws if configureForApp() itself failed above.
-  // Guard this access so a startup failure already reported does not crash
-  // main() a second time before runApp() is reached.
+  // Open the local DB (fast) so the alarm list renders and the ring can record
+  // its wake event. The scheduler *reconcile* (re-arm every alarm) is deferred
+  // — it isn't needed to render or dismiss, and it's the costly loop.
   AlarmRepository? repository;
   try {
+    await AlarmSyncService.configureForApp();
     repository = AlarmSyncService.instance.repository;
-  } catch (e) {
-    debugPrint('Rise: AlarmSyncService unavailable after startup failure: $e');
+  } catch (e, s) {
+    debugPrint('Rise: startup DB configure failed: $e\n$s');
   }
 
   runApp(ProviderScope(
@@ -115,6 +95,38 @@ Future<void> main() async {
     ],
     child: RiseApp(repository: repository, settings: settings),
   ));
+
+  // Off the critical path-to-first-frame. Best-effort throughout.
+  unawaited(_deferredStartup());
+}
+
+/// Non-critical startup that runs AFTER the first frame so the UI — especially
+/// the alarm dismiss screen — appears immediately. Push (Firebase/FCM),
+/// monetization (RevenueCat) and the scheduler reconcile all tolerate arriving
+/// a beat late, and none is needed to show or dismiss a ringing alarm.
+Future<void> _deferredStartup() async {
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Rise: Firebase init skipped (push disabled): $e');
+  }
+
+  if (RevenueCatConfig.isConfigured) {
+    try {
+      await RevenueCatEntitlementService.configureSdk(RevenueCatConfig.apiKey);
+    } catch (e) {
+      debugPrint('Rise: RevenueCat init failed (premium gating disabled): $e');
+    }
+  }
+
+  // Every launch re-arms the scheduler: OEMs and OS updates silently clear it.
+  // The alarms were already armed by the previous session, so re-arming a beat
+  // after the UI shows is safe. Guarded: instance throws if configure failed.
+  try {
+    await AlarmSyncService.instance.reconcileNow();
+  } catch (e, s) {
+    debugPrint('Rise: deferred reconcile failed: $e\n$s');
+  }
 }
 
 class RiseApp extends ConsumerStatefulWidget {
