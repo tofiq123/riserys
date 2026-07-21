@@ -70,6 +70,11 @@ class SettingsController extends StateNotifier<RiseSettings> {
     await _store.setRealLightPrompt(v);
     state = state.copyWith(realLightPrompt: v);
   }
+
+  Future<void> setUse24HourTime(bool v) async {
+    await _store.setUse24HourTime(v);
+    state = state.copyWith(use24HourTime: v);
+  }
 }
 
 final settingsProvider =

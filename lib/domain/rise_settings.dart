@@ -13,6 +13,7 @@ class RiseSettings {
     this.smartWakeCheck = false,
     this.sunriseWake = false,
     this.realLightPrompt = false,
+    this.use24HourTime = false,
   });
 
   /// Max snoozes before the button hides (0 disables snooze).
@@ -72,6 +73,12 @@ class RiseSettings {
   /// alertness. Default on: it's a gentle, non-nagging one-liner, not a gate.
   final bool realLightPrompt;
 
+  /// Whether times are shown in 24-hour ("digital", e.g. 07:05 / 19:30) form
+  /// rather than 12-hour AM/PM. Default off (AM/PM) to preserve existing
+  /// behaviour; on for the many locales that don't use AM/PM. Purely a display
+  /// preference — [Alarm.hour] is always stored in 24-hour form regardless.
+  final bool use24HourTime;
+
   static const _shrinking = [9, 5, 3, 2, 1];
 
   /// The duration (minutes) of the [index]-th snooze (0-based): a flat value
@@ -93,6 +100,7 @@ class RiseSettings {
     bool? smartWakeCheck,
     bool? sunriseWake,
     bool? realLightPrompt,
+    bool? use24HourTime,
     // The `field ?? this.field` idiom cannot express "clear this nullable field
     // back to null" — passing null is indistinguishable from not passing it. A
     // sentinel flag keeps the intent explicit at the call site:
@@ -115,6 +123,7 @@ class RiseSettings {
         smartWakeCheck: smartWakeCheck ?? this.smartWakeCheck,
         sunriseWake: sunriseWake ?? this.sunriseWake,
         realLightPrompt: realLightPrompt ?? this.realLightPrompt,
+        use24HourTime: use24HourTime ?? this.use24HourTime,
       );
 
   @override
@@ -130,7 +139,8 @@ class RiseSettings {
       other.adaptiveMissions == adaptiveMissions &&
       other.smartWakeCheck == smartWakeCheck &&
       other.sunriseWake == sunriseWake &&
-      other.realLightPrompt == realLightPrompt;
+      other.realLightPrompt == realLightPrompt &&
+      other.use24HourTime == use24HourTime;
 
   @override
   int get hashCode => Object.hash(
@@ -144,5 +154,6 @@ class RiseSettings {
       adaptiveMissions,
       smartWakeCheck,
       sunriseWake,
-      realLightPrompt);
+      realLightPrompt,
+      use24HourTime);
 }

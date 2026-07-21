@@ -247,6 +247,33 @@ class SettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+            const SectionLabel('Display'),
+            const SizedBox(height: 12),
+            RiseCard(
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('24-hour time', style: RiseText.body),
+                      RiseSwitch(
+                          key: const Key('use-24h-time-switch'),
+                          value: s.use24HourTime,
+                          onChanged: ctrl.setUse24HourTime),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                        'Show times like 19:30 instead of 7:30 PM, everywhere '
+                        'in the app.',
+                        style: RiseText.caption),
+                  ),
+                ],
+              ),
+            ),
             const _AccountBackupSection(),
           ],
         ),

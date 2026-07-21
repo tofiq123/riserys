@@ -68,6 +68,18 @@ void main() {
     expect((await AppSettings.load()).realLightPrompt, isFalse); // persisted
   });
 
+  test('SettingsController toggles 24-hour time (default off)', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    final c = ProviderContainer(
+        overrides: [appSettingsProvider.overrideWithValue(store)]);
+    addTearDown(c.dispose);
+    expect(c.read(settingsProvider).use24HourTime, isFalse);
+    await c.read(settingsProvider.notifier).setUse24HourTime(true);
+    expect(c.read(settingsProvider).use24HourTime, isTrue); // state updated
+    expect((await AppSettings.load()).use24HourTime, isTrue); // persisted
+  });
+
   test('SettingsController sets and clears the steady wake time', () async {
     SharedPreferences.setMockInitialValues({});
     final store = await AppSettings.load();
