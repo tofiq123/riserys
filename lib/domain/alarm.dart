@@ -33,11 +33,11 @@ class Alarm {
   final bool vibrate;
 
   /// Dismiss mission:
-  /// 'none' | 'math' | 'tap' | 'memory' | 'pvt' | 'typing' |
+  /// 'none' | 'math' | 'tap' | 'hold' | 'memory' | 'pvt' | 'typing' |
   /// 'shake' | 'qr' | 'steps' | 'photo' | 'eyes'.
   ///
-  /// A legacy/unknown key (e.g. the removed 'hold') degrades safely to
-  /// slide-to-wake at the mission host, so it never traps the user.
+  /// A legacy/unknown key degrades safely to slide-to-wake at the mission
+  /// host, so it never traps the user.
   final String mission;
 
   /// Mission difficulty: 'easy' | 'medium' | 'hard'.

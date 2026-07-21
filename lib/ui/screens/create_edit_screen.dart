@@ -29,6 +29,7 @@ const Map<String, String> _missionLabels = {
   'none': 'None',
   'math': 'Math',
   'tap': 'Tap',
+  'hold': 'Hold',
   'memory': 'Memory',
   'pvt': 'Alertness (PVT)',
   'typing': 'Type a phrase',

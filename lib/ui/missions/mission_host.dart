@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../domain/alarm.dart';
 import '../components/slide_to_wake.dart';
 import 'eyes_mission.dart';
+import 'hold_mission.dart';
 import 'math_mission.dart';
 import 'memory_mission.dart';
 import 'photo_mission.dart';
@@ -27,6 +28,8 @@ Widget buildMission(BuildContext context, Alarm alarm, VoidCallback onSolved,
       return MathMission(diff: alarm.missionDiff, onSolved: onSolved);
     case 'tap':
       return TapMission(diff: alarm.missionDiff, onSolved: onSolved);
+    case 'hold':
+      return HoldMission(diff: alarm.missionDiff, onSolved: onSolved);
     case 'memory':
       return MemoryMission(diff: alarm.missionDiff, onSolved: onSolved);
     case 'pvt':
@@ -45,8 +48,8 @@ Widget buildMission(BuildContext context, Alarm alarm, VoidCallback onSolved,
     case 'eyes':
       return EyesMission(diff: alarm.missionDiff, onSolved: onSolved);
     default:
-      // Unknown / legacy keys (e.g. the removed 'hold') degrade to the safe
-      // slide-to-wake gate — the mission is always completable (anti-trap).
+      // Unknown / legacy keys degrade to the safe slide-to-wake gate — the
+      // mission is always completable (anti-trap).
       return SlideToWake(onWake: onSolved);
   }
 }

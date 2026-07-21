@@ -67,6 +67,7 @@ void main() {
       'none',
       'math',
       'tap',
+      'hold',
       'memory',
       'shake',
       'pvt',
