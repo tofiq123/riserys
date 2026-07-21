@@ -80,6 +80,13 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
     return UNNotificationSound(named: UNNotificationSoundName(rawValue: name))
   }
 
+  // NOTE (per-alarm vibration patterns): `NativeAlarm.vibrationPattern`
+  // ('gentle' | 'standard' | 'intense') is intentionally IGNORED on iOS.
+  // Local notifications cannot carry a custom vibration pattern — iOS plays
+  // the system's notification haptic alongside the sound and exposes no API
+  // to change it (CoreHaptics only works with the app foregrounded, which an
+  // alarm firing from a killed app is not). Android honors the pattern in
+  // AlarmService.startVibration; here every alarm keeps today's behavior.
   private func alarmContent(label: String, soundAsset: String) -> UNMutableNotificationContent {
     let content = UNMutableNotificationContent()
     content.title = label.isEmpty ? "Rise" : label

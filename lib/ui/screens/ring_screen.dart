@@ -68,6 +68,7 @@ Future<void> defaultArmWakeCheck(Alarm alarm, Duration delay) async {
       label: alarm.label,
       soundAsset: alarm.soundAsset,
       vibrate: alarm.vibrate,
+      vibrationPattern: alarm.vibrationPattern,
       hour: alarm.hour,
       minute: alarm.minute,
       weekdays: alarm.days.toList(),

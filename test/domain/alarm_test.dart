@@ -73,6 +73,18 @@ void main() {
       expect(a.hashCode == b.hashCode, isFalse);
     });
 
+    test('vibrationPattern defaults to standard and round-trips through '
+        'copyWith/equality', () {
+      const a = Alarm(id: 1, hour: 6, minute: 30);
+      expect(a.vibrationPattern, 'standard');
+      final b = a.copyWith(vibrationPattern: 'intense');
+      expect(b.vibrationPattern, 'intense');
+      expect(b.hour, 6); // unrelated field preserved
+      expect(a == b, isFalse); // equality includes vibrationPattern
+      expect(a.hashCode == b.hashCode, isFalse);
+      expect(a == a.copyWith(), isTrue);
+    });
+
     test('clearMissionData nulls missionData (sentinel); plain copyWith keeps it', () {
       const a = Alarm(id: 1, hour: 6, minute: 30, mission: 'qr', missionData: 'CODE-123');
       expect(a.missionData, 'CODE-123');

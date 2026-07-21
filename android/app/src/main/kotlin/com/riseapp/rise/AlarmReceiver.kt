@@ -24,6 +24,9 @@ class AlarmReceiver : BroadcastReceiver() {
                 intent.getStringExtra(AlarmScheduler.EXTRA_SOUND) ?: "")
             putExtra(AlarmScheduler.EXTRA_VIBRATE,
                 intent.getBooleanExtra(AlarmScheduler.EXTRA_VIBRATE, true))
+            putExtra(AlarmScheduler.EXTRA_VIBRATION_PATTERN,
+                intent.getStringExtra(AlarmScheduler.EXTRA_VIBRATION_PATTERN)
+                    ?: "standard")
         }
         // Starting an FGS from an exact-alarm broadcast is an allowed exemption.
         ContextCompat.startForegroundService(context, service)

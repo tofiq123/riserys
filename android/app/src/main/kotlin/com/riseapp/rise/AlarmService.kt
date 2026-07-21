@@ -63,6 +63,8 @@ class AlarmService : Service() {
         val label = intent?.getStringExtra(AlarmScheduler.EXTRA_LABEL) ?: "Alarm"
         val sound = intent?.getStringExtra(AlarmScheduler.EXTRA_SOUND) ?: ""
         val vibrate = intent?.getBooleanExtra(AlarmScheduler.EXTRA_VIBRATE, true) ?: true
+        val vibrationPattern =
+            intent?.getStringExtra(AlarmScheduler.EXTRA_VIBRATION_PATTERN) ?: "standard"
         Log.i(TAG, "ringing alarm $id")
 
         ringingAlarmId = id
@@ -71,7 +73,7 @@ class AlarmService : Service() {
 
         acquireWakeLock()
         startAudio(sound)
-        if (vibrate) startVibration()
+        if (vibrate) startVibration(vibrationPattern)
 
         // START_REDELIVER_INTENT: if the system kills us under memory
         // pressure while an alarm is ringing, come back with the *same*
@@ -223,10 +225,23 @@ class AlarmService : Service() {
         }, 5000) // 12 steps x 5 s = 60 s
     }
 
-    private fun startVibration() {
-        // Intermittent patterns rouse better than continuous buzzing.
-        val timings = longArrayOf(0, 600, 400, 600, 400)
-        val amplitudes = intArrayOf(0, 255, 0, 255, 0)
+    /**
+     * Starts the looping ring vibration for [pattern]:
+     *  - "gentle":   short soft pulses  — timings [0,300,700], amplitude 140
+     *  - "standard": today's pattern    — timings [0,600,400,600,400], amp 255
+     *  - "intense":  long hard pulses,
+     *    shorter gaps                   — timings [0,900,200,900,200], amp 255
+     * Intermittent patterns rouse better than continuous buzzing. Any unknown
+     * key (an older native build receiving a newer pattern, or a corrupt
+     * value) falls back to "standard" — the pattern choice must never be able
+     * to silence the alarm's vibration.
+     */
+    private fun startVibration(pattern: String) {
+        val (timings, amplitudes) = when (pattern) {
+            "gentle" -> longArrayOf(0, 300, 700) to intArrayOf(0, 140, 0)
+            "intense" -> longArrayOf(0, 900, 200, 900, 200) to intArrayOf(0, 255, 0, 255, 0)
+            else -> longArrayOf(0, 600, 400, 600, 400) to intArrayOf(0, 255, 0, 255, 0)
+        }
         vibrator().vibrate(VibrationEffect.createWaveform(timings, amplitudes, 1))
     }
 

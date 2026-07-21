@@ -18,6 +18,7 @@ class NativeAlarm {
     required this.label,
     required this.soundAsset,
     required this.vibrate,
+    required this.vibrationPattern,
     required this.hour,
     required this.minute,
     required this.weekdays,
@@ -28,6 +29,12 @@ class NativeAlarm {
   String label;
   String soundAsset;
   bool vibrate;
+
+  /// Vibration pattern key: 'gentle' | 'standard' | 'intense'. Only meaningful
+  /// while [vibrate] is true. Unknown values fall back to 'standard' on the
+  /// platform side, so a newer Dart never breaks an older native build.
+  /// iOS ignores this — notification vibration is not customizable there.
+  String vibrationPattern;
 
   /// Recurrence pattern, for platforms that own recurrence natively (iOS
   /// AlarmKit / UNCalendar). [weekdays] uses 0=Sun…6=Sat; empty = one-shot.

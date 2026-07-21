@@ -17,6 +17,7 @@ object AlarmScheduler {
     const val EXTRA_LABEL = "label"
     const val EXTRA_SOUND = "soundAsset"
     const val EXTRA_VIBRATE = "vibrate"
+    const val EXTRA_VIBRATION_PATTERN = "vibrationPattern"
 
     private const val PREFS = "rise_scheduled"
     private const val KEY_IDS = "ids"
@@ -57,6 +58,7 @@ object AlarmScheduler {
             putExtra(EXTRA_LABEL, alarm.label)
             putExtra(EXTRA_SOUND, alarm.soundAsset)
             putExtra(EXTRA_VIBRATE, alarm.vibrate)
+            putExtra(EXTRA_VIBRATION_PATTERN, alarm.vibrationPattern)
         }
         return PendingIntent.getBroadcast(
             context,
@@ -92,6 +94,7 @@ object AlarmScheduler {
             putExtra(EXTRA_LABEL, alarm.label)
             putExtra(EXTRA_SOUND, alarm.soundAsset)
             putExtra(EXTRA_VIBRATE, alarm.vibrate)
+            putExtra(EXTRA_VIBRATION_PATTERN, alarm.vibrationPattern)
         }
         val firePi = PendingIntent.getBroadcast(
             context,

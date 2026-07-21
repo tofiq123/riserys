@@ -56,6 +56,7 @@ object WakeCheckScheduler {
             putExtra(AlarmScheduler.EXTRA_LABEL, alarm.label)
             putExtra(AlarmScheduler.EXTRA_SOUND, alarm.soundAsset)
             putExtra(AlarmScheduler.EXTRA_VIBRATE, alarm.vibrate)
+            putExtra(AlarmScheduler.EXTRA_VIBRATION_PATTERN, alarm.vibrationPattern)
         }
         val firePi = PendingIntent.getBroadcast(
             context, REFIRE_BASE + id, fireIntent,

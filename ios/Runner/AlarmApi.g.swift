@@ -185,6 +185,11 @@ struct NativeAlarm: Hashable {
   var label: String
   var soundAsset: String
   var vibrate: Bool
+  /// Vibration pattern key: 'gentle' | 'standard' | 'intense'. Only meaningful
+  /// while [vibrate] is true. Unknown values fall back to 'standard' on the
+  /// platform side, so a newer Dart never breaks an older native build.
+  /// iOS ignores this — notification vibration is not customizable there.
+  var vibrationPattern: String
   /// Recurrence pattern, for platforms that own recurrence natively (iOS
   /// AlarmKit / UNCalendar). [weekdays] uses 0=Sun…6=Sat; empty = one-shot.
   /// Android ignores these and schedules the single [fireAtEpochMs] instant.
@@ -200,9 +205,10 @@ struct NativeAlarm: Hashable {
     let label = pigeonVar_list[2] as! String
     let soundAsset = pigeonVar_list[3] as! String
     let vibrate = pigeonVar_list[4] as! Bool
-    let hour = pigeonVar_list[5] as! Int64
-    let minute = pigeonVar_list[6] as! Int64
-    let weekdays = pigeonVar_list[7] as! [Int64]
+    let vibrationPattern = pigeonVar_list[5] as! String
+    let hour = pigeonVar_list[6] as! Int64
+    let minute = pigeonVar_list[7] as! Int64
+    let weekdays = pigeonVar_list[8] as! [Int64]
 
     return NativeAlarm(
       id: id,
@@ -210,6 +216,7 @@ struct NativeAlarm: Hashable {
       label: label,
       soundAsset: soundAsset,
       vibrate: vibrate,
+      vibrationPattern: vibrationPattern,
       hour: hour,
       minute: minute,
       weekdays: weekdays
@@ -222,6 +229,7 @@ struct NativeAlarm: Hashable {
       label,
       soundAsset,
       vibrate,
+      vibrationPattern,
       hour,
       minute,
       weekdays,
@@ -231,7 +239,7 @@ struct NativeAlarm: Hashable {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return deepEqualsAlarmApi(lhs.id, rhs.id) && deepEqualsAlarmApi(lhs.fireAtEpochMs, rhs.fireAtEpochMs) && deepEqualsAlarmApi(lhs.label, rhs.label) && deepEqualsAlarmApi(lhs.soundAsset, rhs.soundAsset) && deepEqualsAlarmApi(lhs.vibrate, rhs.vibrate) && deepEqualsAlarmApi(lhs.hour, rhs.hour) && deepEqualsAlarmApi(lhs.minute, rhs.minute) && deepEqualsAlarmApi(lhs.weekdays, rhs.weekdays)
+    return deepEqualsAlarmApi(lhs.id, rhs.id) && deepEqualsAlarmApi(lhs.fireAtEpochMs, rhs.fireAtEpochMs) && deepEqualsAlarmApi(lhs.label, rhs.label) && deepEqualsAlarmApi(lhs.soundAsset, rhs.soundAsset) && deepEqualsAlarmApi(lhs.vibrate, rhs.vibrate) && deepEqualsAlarmApi(lhs.vibrationPattern, rhs.vibrationPattern) && deepEqualsAlarmApi(lhs.hour, rhs.hour) && deepEqualsAlarmApi(lhs.minute, rhs.minute) && deepEqualsAlarmApi(lhs.weekdays, rhs.weekdays)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -241,6 +249,7 @@ struct NativeAlarm: Hashable {
     deepHashAlarmApi(value: label, hasher: &hasher)
     deepHashAlarmApi(value: soundAsset, hasher: &hasher)
     deepHashAlarmApi(value: vibrate, hasher: &hasher)
+    deepHashAlarmApi(value: vibrationPattern, hasher: &hasher)
     deepHashAlarmApi(value: hour, hasher: &hasher)
     deepHashAlarmApi(value: minute, hasher: &hasher)
     deepHashAlarmApi(value: weekdays, hasher: &hasher)
