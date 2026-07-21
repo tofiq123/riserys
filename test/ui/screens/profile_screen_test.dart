@@ -94,7 +94,11 @@ void main() {
     await _pump(t, overrides: [authServiceProvider.overrideWithValue(fake)]);
 
     expect(find.text('@ada'), findsOneWidget);
+    // Sign out now asks for confirmation first (no accidental silent logout).
     await t.tap(find.text('Sign out'));
+    await t.pumpAndSettle();
+    expect(fake.current, isNotNull, reason: 'not signed out until confirmed');
+    await t.tap(find.byKey(const Key('signout-confirm-button')));
     await t.pumpAndSettle();
     expect(fake.current, isNull);
   });

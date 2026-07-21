@@ -236,10 +236,51 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
       () => ref.read(authServiceProvider).signInWithGoogle(),
       onError: 'Sign-in was cancelled.');
 
-  Future<void> _signOut() => _run(() async {
-        await _unregisterPush();
-        await ref.read(authServiceProvider).signOut();
-      }, onError: 'Could not sign out. Try again.');
+  Future<void> _signOut() async {
+    if (_busy) return;
+    final confirmed = await _confirmSignOut();
+    if (confirmed != true) return;
+    await _run(() async {
+      await _unregisterPush();
+      await ref.read(authServiceProvider).signOut();
+      _snack('Signed out.');
+    }, onError: 'Could not sign out. Try again.');
+  }
+
+  Future<bool?> _confirmSignOut() {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: RiseColors.card,
+        title: Text('Sign out?', style: RiseText.title),
+        content: Text(
+          'Your alarms and streak stay on this device. Sign back in '
+          'anytime to sync with your crew.',
+          style: RiseText.body.copyWith(color: RiseColors.textDim),
+        ),
+        actions: [
+          GhostButton(
+            label: 'Cancel',
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+          ),
+          GestureDetector(
+            key: const Key('signout-confirm-button'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(dialogContext).pop(true),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+              child: Text('Sign out',
+                  style: RiseText.body.copyWith(
+                    color: RiseColors.primary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  )),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   /// Removes this device's FCM token while still authenticated — must run BEFORE
   /// signOut(), since the reactive host unregister fires after the session is
@@ -434,7 +475,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
         ),
         const SizedBox(height: 12),
         _actionRow('Sign out', Icons.logout,
-            onTap: _busy ? null : _signOut),
+            onTap: _busy ? null : _signOut, busy: _busy),
         const SizedBox(height: 8),
         _actionRow('Delete account', Icons.delete_outline,
             danger: true, onTap: _busy ? null : _delete),
@@ -443,7 +484,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
   }
 
   Widget _actionRow(String label, IconData icon,
-      {required VoidCallback? onTap, bool danger = false}) {
+      {required VoidCallback? onTap, bool danger = false, bool busy = false}) {
     final color = danger ? RiseColors.danger : RiseColors.text;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -456,6 +497,15 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
             Text(label,
                 style: RiseText.body
                     .copyWith(color: color, fontWeight: FontWeight.w600)),
+            if (busy) ...[
+              const Spacer(),
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: RiseColors.textDim),
+              ),
+            ],
           ],
         ),
       ),
