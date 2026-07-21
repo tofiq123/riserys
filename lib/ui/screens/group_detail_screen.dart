@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../data/group/group_service.dart';
+import '../../data/invite_links.dart';
 import '../../domain/crew_member.dart';
 import '../../domain/crew_score.dart';
 import '../../domain/crew_standing.dart';
@@ -66,6 +68,21 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
     await Clipboard.setData(ClipboardData(text: _group.inviteCode));
     _snack('Invite code copied. Share it with your crew.',
         kind: RiseToastKind.success);
+  }
+
+  /// Opens the OS share sheet with a tappable deep link — the recipient taps it,
+  /// Rise opens, and they join this group straight away (no code to type).
+  Future<void> _shareLink() async {
+    final link = buildInviteLink(_group.inviteCode);
+    try {
+      await SharePlus.instance.share(ShareParams(
+        text: 'Join my Rise group "${_group.name}" — we wake up together.\n$link',
+        subject: 'Join my Rise crew',
+      ));
+    } catch (_) {
+      // Share sheet unavailable → fall back to copying the code, never crash.
+      await _copyCode();
+    }
   }
 
   Future<void> _rename() async {
@@ -265,7 +282,9 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            CrewPill('Copy', onTap: _copyCode, filled: true),
+            CrewPill('Share', onTap: _shareLink, filled: true),
+            const SizedBox(width: 8),
+            CrewPill('Copy', onTap: _copyCode, filled: false),
           ],
         ),
       );

@@ -24,6 +24,7 @@ import '../components/segmented.dart';
 import '../components/shareable_stats_card.dart';
 import '../components/sparkline.dart';
 import '../components/toast.dart';
+import '../components/wake_evidence_card.dart';
 import '../share/stats_share.dart';
 import '../state/auth_providers.dart';
 import '../state/crew_providers.dart';
@@ -158,6 +159,10 @@ class StatsScreen extends ConsumerWidget {
     // free (the PVT hook). Unconfigured/unlocked → true, unchanged behaviour.
     final trendUnlocked =
         ref.watch(premiumGateProvider).canUse(PremiumFeature.alertnessHistory);
+    // The "how you woke this morning" user card — the freshest, most personal
+    // read, so it sits right under the streak. Null until there's a finished
+    // wake to summarise.
+    final evidence = ref.watch(wakeEvidenceProvider);
 
     return SafeArea(
       child: ListView(
@@ -170,6 +175,10 @@ class StatsScreen extends ConsumerWidget {
             _empty()
           else ...[
             _streakCard(streak),
+            if (evidence != null) ...[
+              const SizedBox(height: 12),
+              WakeEvidenceCard(evidence: evidence),
+            ],
             const _AccountabilityPingCard(),
             const SizedBox(height: 12),
             const _RoughNightCard(),
@@ -1517,7 +1526,9 @@ class _AccountabilityPingCardState
     var sent = 0;
     for (final m in friends) {
       try {
-        await nudge.nudge(m.id);
+        // The accountability "I'm back on it" ping — server composes the fixed
+        // backup copy from this kind (never client text).
+        await nudge.nudge(m.id, kind: NudgeKind.backup);
         sent++;
       } on NudgeException {
         // Best-effort per member (e.g. rate-limited) — keep going.

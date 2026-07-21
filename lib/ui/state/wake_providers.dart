@@ -5,6 +5,7 @@ import '../../data/local/wake_event_repository.dart';
 import '../../data/wake_recorder.dart';
 import '../../domain/streak.dart';
 import '../../domain/wake_event.dart';
+import '../../domain/wake_evidence.dart';
 import 'alarm_providers.dart';
 import 'home_providers.dart';
 
@@ -33,6 +34,21 @@ final excusedDaysRepositoryProvider = Provider<ExcusedDaysRepository>((ref) =>
 /// The live set of excused (rough-night) local-midnight days.
 final excusedDaysProvider = StreamProvider<Set<DateTime>>(
     (ref) => ref.watch(excusedDaysRepositoryProvider).watchAll());
+
+/// The wake-evidence "user card" for the most recent COMPLETED wake, or null
+/// when there is nothing to summarise yet. Fuses the morning's many signals
+/// (timing, method, snoozes, mission slips, alertness) with today's opt-in
+/// left-home verdict into a single warm read. Recomputes when the event log or
+/// the left-home flag changes.
+final wakeEvidenceProvider = Provider<WakeEvidence?>((ref) {
+  final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
+  WakeEvent? latest;
+  for (final e in events) {
+    if (e.isOpen) continue; // only a finished wake can be summarised
+    if (latest == null || e.firstRingAt.isAfter(latest.firstRingAt)) latest = e;
+  }
+  return WakeEvidence.of(latest, leftHome: ref.watch(leftHomeTodayProvider));
+});
 
 /// The streak recomputed from the live event log, with any excused rough-night
 /// days held (they neither break nor advance the streak).
