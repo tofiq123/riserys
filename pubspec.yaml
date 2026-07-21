@@ -66,6 +66,17 @@ dependencies:
   pedometer: ^4.0.2
   share_plus: ^12.0.2
 
+  # Camera-based dismiss missions (Phase camera-missions). camera: live preview
+  # + still capture for the photo-match ("snap a spot") mission and the
+  # eye-open mission's front-camera feed (CAMERA permission +
+  # NSCameraUsageDescription — both already present).
+  # google_mlkit_face_detection: on-device face + eye-open classification for
+  # the eye-open ("prove you're really up") mission. NOTE for the Mac pass:
+  # this raises the iOS min deployment target to 15.5 (Podfile is already at
+  # 16.0, so no change needed) and pulls the GoogleMLKit pods.
+  camera: ^0.12.0+1
+  google_mlkit_face_detection: ^0.14.0
+
   # Reads Build.MANUFACTURER for the Setup Guardian's OEM-aware battery
   # guidance (Phase 12). No runtime permission required.
   device_info_plus: ^11.5.0
@@ -73,6 +84,11 @@ dependencies:
   screen_brightness: ^2.1.11
   record: ^6.2.1
   just_audio: ^0.10.6
+
+  # Pure-Dart image decode/resize/grayscale for the photo-match mission's
+  # perceptual (average) hash — see lib/domain/photo_match.dart. Also used
+  # dev-only by tool/gen_icon.dart to draw the source launcher icon.
+  image: ^4.3.0
 
 dev_dependencies:
   flutter_test:
@@ -89,11 +105,9 @@ dev_dependencies:
   pigeon: ^26.3.4
   sqlite3: ^2.4.0
 
-  # Pure-Dart image library used only by tool/gen_icon.dart to draw the
-  # reproducible source launcher icon. Dev-only: not shipped in the app.
-  image: ^4.3.0
   # Generates the platform launcher-icon assets from the source PNGs.
   # Config lives in the top-level `flutter_launcher_icons:` section below.
+  # (The `image` package it uses is now a normal dependency — see above.)
   flutter_launcher_icons: ^0.14.1
 
 # For information on the generic Dart part of this file, see the

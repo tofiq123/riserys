@@ -18,6 +18,7 @@ import '../state/entitlement_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'paywall_screen.dart';
+import 'photo_register_screen.dart';
 import 'qr_register_screen.dart';
 
 /// Mission keys ↔ display labels. The `SoundChips` pill row is a generic
@@ -33,6 +34,8 @@ const Map<String, String> _missionLabels = {
   'shake': 'Shake it off',
   'qr': 'Scan a code',
   'steps': 'Walk it off',
+  'photo': 'Snap a spot',
+  'eyes': 'Keep your eyes open',
 };
 
 class CreateEditScreen extends ConsumerStatefulWidget {
@@ -142,6 +145,53 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
           label: hasCode ? 'Re-register QR code' : 'Register QR code',
           icon: Icons.qr_code_scanner,
           onPressed: _busy ? null : _registerQr,
+        ),
+      ],
+    );
+  }
+
+  /// Captures a reference photo once and stores its perceptual hash as the
+  /// alarm's registered spot ([Alarm.missionData]) — what the 'photo' dismiss
+  /// mission will later match against.
+  Future<void> _registerPhoto() async {
+    final hash = await registerReferencePhoto(context);
+    if (!mounted || hash == null) return;
+    final draft = ref.read(draftProvider);
+    if (draft == null) return;
+    _update(draft.copyWith(missionData: hash));
+    ref.read(toastProvider.notifier).state =
+        (message: 'Reference photo registered', kind: RiseToastKind.success);
+  }
+
+  /// The "Register photo" control shown for the 'photo' mission. When no photo
+  /// is registered the mission accepts any photo (never a trap), which this
+  /// states plainly so the choice is explicit.
+  Widget _photoRegisterRow(Alarm draft) {
+    final hasPhoto = (draft.missionData?.trim() ?? '').isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(hasPhoto ? Icons.check_circle : Icons.photo_camera,
+                size: 18,
+                color: hasPhoto ? RiseColors.positive : RiseColors.textDim),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                hasPhoto
+                    ? 'Spot registered — snap it to dismiss'
+                    : 'No spot yet — any photo will dismiss',
+                style: RiseText.caption,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SecondaryButton(
+          label: hasPhoto ? 'Re-register photo' : 'Register photo',
+          icon: Icons.photo_camera,
+          onPressed: _busy ? null : _registerPhoto,
         ),
       ],
     );
@@ -267,6 +317,8 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
                 : null),
           if (draft.mission == 'qr')
             _section('QR code', _qrRegisterRow(draft)),
+          if (draft.mission == 'photo')
+            _section('Reference photo', _photoRegisterRow(draft)),
           const SizedBox(height: 20),
           RiseCard(
             radius: RiseRadii.base,

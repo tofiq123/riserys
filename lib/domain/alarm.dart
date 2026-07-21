@@ -34,7 +34,7 @@ class Alarm {
 
   /// Dismiss mission:
   /// 'none' | 'math' | 'hold' | 'tap' | 'memory' | 'pvt' | 'typing' |
-  /// 'shake' | 'qr' | 'steps'.
+  /// 'shake' | 'qr' | 'steps' | 'photo' | 'eyes'.
   final String mission;
 
   /// Mission difficulty: 'easy' | 'medium' | 'hard'.
@@ -47,10 +47,11 @@ class Alarm {
   final int missionCount;
 
   /// Mission-specific config, e.g. the registered QR payload the 'qr' mission
-  /// must scan to dismiss. Null/empty means unconfigured — a mission that reads
-  /// this must degrade gracefully (the QR mission accepts any first scan) so an
-  /// unconfigured alarm never traps the user. Ignored by missions that don't
-  /// need extra config.
+  /// must scan, or the reference-photo perceptual hash the 'photo' mission must
+  /// match. Null/empty means unconfigured — a mission that reads this must
+  /// degrade gracefully (the QR mission accepts any first scan; the photo
+  /// mission accepts any photo) so an unconfigured alarm never traps the user.
+  /// Ignored by missions that don't need extra config.
   final String? missionData;
 
   /// UTC instant this alarm was last dismissed, or null if never dismissed.
