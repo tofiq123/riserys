@@ -87,6 +87,8 @@ class _RecordingRecorder implements WakeRecorder {
   final finalized = <(int, String?)>[];
   int? lastAlertness;
   @override
+  void Function()? get onRingOpened => null;
+  @override
   Future<void> openRing(int alarmId) async => opened.add(alarmId);
   @override
   Future<void> finalizeDismiss(int alarmId,
@@ -97,6 +99,8 @@ class _RecordingRecorder implements WakeRecorder {
 }
 
 class _ThrowingRecorder implements WakeRecorder {
+  @override
+  void Function()? get onRingOpened => null;
   @override
   Future<void> openRing(int alarmId) async => throw StateError('wake db down');
   @override

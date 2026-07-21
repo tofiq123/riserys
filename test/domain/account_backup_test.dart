@@ -55,6 +55,20 @@ void main() {
       );
 
   group('encodeBackup', () {
+    test(
+        'PRIVACY: the payload carries only alarms + wake events — the home '
+        'anchor (homeLat/homeLng, a device-local setting) is never included',
+        () {
+      final map = encodeBackup([alarm()], [event()]);
+      // Exactly the three known top-level keys; adding a new one (or leaking a
+      // settings field like the home anchor) must be a conscious, reviewed act.
+      expect(map.keys.toSet(), {'v', 'alarms', 'wakeEvents'});
+      final serialized = jsonEncode(map);
+      expect(serialized, isNot(contains('homeLat')));
+      expect(serialized, isNot(contains('homeLng')));
+      expect(serialized, isNot(contains('homeShare')));
+    });
+
     test('has version 1 and both lists', () {
       final map = encodeBackup([alarm()], [event()]);
       expect(map['v'], 1);

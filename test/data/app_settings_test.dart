@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/app_settings.dart';
+import 'package:rise/domain/rise_settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -128,6 +129,47 @@ void main() {
     final s2 = await AppSettings.load();
     expect(s2.realLightPrompt, isFalse);
     expect(s2.settings.realLightPrompt, isFalse);
+  });
+
+  test('home anchor defaults unset, round-trips, clears, reaches the snapshot',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.homeLat, isNull);
+    expect(s.homeLng, isNull);
+    expect(s.settings.hasHome, isFalse);
+
+    await s.setHome(52.52, 13.405);
+
+    final s2 = await AppSettings.load();
+    expect(s2.homeLat, 52.52);
+    expect(s2.homeLng, 13.405);
+    expect(s2.settings.hasHome, isTrue);
+
+    await s2.clearHome();
+    final s3 = await AppSettings.load();
+    expect(s3.homeLat, isNull);
+    expect(s3.homeLng, isNull);
+    expect(s3.settings.hasHome, isFalse);
+  });
+
+  test('homeShare defaults off, round-trips, unknown value falls back to off',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.homeShare, HomeShareTier.off); // privacy: default off
+    expect(s.settings.homeShare, HomeShareTier.off);
+
+    await s.setHomeShare(HomeShareTier.crew);
+
+    final s2 = await AppSettings.load();
+    expect(s2.homeShare, HomeShareTier.crew);
+    expect(s2.settings.homeShare, HomeShareTier.crew);
+
+    // A corrupt/legacy value falls back to off, the safe direction.
+    SharedPreferences.setMockInitialValues({'homeShare': 'everyone'});
+    final s3 = await AppSettings.load();
+    expect(s3.homeShare, HomeShareTier.off);
   });
 
   test('use24HourTime defaults false, round-trips, and reaches the snapshot',

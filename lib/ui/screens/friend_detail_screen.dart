@@ -364,6 +364,7 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
   static Color _statusColor(CrewStatus s) => switch (s) {
         CrewStatus.waking => RiseColors.waking,
         CrewStatus.awake => RiseColors.positive,
+        CrewStatus.out => RiseColors.positive, // awake-and-out — same family
         CrewStatus.asleep => RiseColors.asleep,
         CrewStatus.unknown => RiseColors.textFaint,
       };
@@ -371,6 +372,7 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
   static String _statusLine(CrewStatus s) => switch (s) {
         CrewStatus.waking => 'Waking up now',
         CrewStatus.awake => 'Up and about',
+        CrewStatus.out => 'Up and out the door',
         CrewStatus.asleep => 'Probably asleep',
         CrewStatus.unknown => 'Status unavailable',
       };

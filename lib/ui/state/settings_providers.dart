@@ -80,6 +80,22 @@ class SettingsController extends StateNotifier<RiseSettings> {
     await _store.setThemeMode(v);
     state = state.copyWith(themeMode: v);
   }
+
+  /// Persists the home anchor. DEVICE-LOCAL ONLY — see [RiseSettings.homeLat].
+  Future<void> setHome(double lat, double lng) async {
+    await _store.setHome(lat, lng);
+    state = state.copyWith(homeLat: lat, homeLng: lng);
+  }
+
+  Future<void> clearHome() async {
+    await _store.clearHome();
+    state = state.copyWith(clearHome: true);
+  }
+
+  Future<void> setHomeShare(HomeShareTier v) async {
+    await _store.setHomeShare(v);
+    state = state.copyWith(homeShare: v);
+  }
 }
 
 final settingsProvider =

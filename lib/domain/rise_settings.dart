@@ -2,6 +2,15 @@
 /// setting; [light] and [dark] force one. Default is [system].
 enum RiseThemeMode { system, light, dark }
 
+/// How the "left home" wake signal may be used. Privacy tiers, default [off]:
+///   * [off]     — no location is ever read.
+///   * [private] — used ONLY on this device to confirm the user's own wake-up
+///                 (feeds the wake-confidence fusion); nothing is shared.
+///   * [crew]    — additionally shows the crew a coarse "up & out" status.
+///                 ONLY the derived boolean is shared — never a coordinate,
+///                 distance, or the home anchor itself.
+enum HomeShareTier { off, private, crew }
+
 /// Immutable snapshot of the user's app-level preferences (snooze budget + the
 /// wake-up check). Persisted by `AppSettings`; edited via `settingsProvider`.
 class RiseSettings {
@@ -19,6 +28,9 @@ class RiseSettings {
     this.realLightPrompt = false,
     this.use24HourTime = false,
     this.themeMode = RiseThemeMode.system,
+    this.homeLat,
+    this.homeLng,
+    this.homeShare = HomeShareTier.off,
   });
 
   /// Max snoozes before the button hides (0 disables snooze).
@@ -89,6 +101,23 @@ class RiseSettings {
   /// swaps the [RiseColors] palette accordingly.
   final RiseThemeMode themeMode;
 
+  /// The home anchor (latitude/longitude), or null when unset. DEVICE-LOCAL
+  /// ONLY, non-negotiable: persisted in local preferences, never synced, never
+  /// part of the account-backup payload (`encodeBackup` carries only alarms +
+  /// wake events), never sent to Supabase. Around wake time — foreground only,
+  /// WhenInUse — one fix is compared against this anchor; only the derived
+  /// "left home" boolean ever leaves the domain layer. The two components are
+  /// always set or cleared together — [hasHome] guards reads.
+  final double? homeLat;
+  final double? homeLng;
+
+  /// Whether a home anchor is set (both components present).
+  bool get hasHome => homeLat != null && homeLng != null;
+
+  /// The left-home privacy tier. Default [HomeShareTier.off] — everything
+  /// about this feature is opt-in.
+  final HomeShareTier homeShare;
+
   static const _shrinking = [9, 5, 3, 2, 1];
 
   /// The duration (minutes) of the [index]-th snooze (0-based): a flat value
@@ -112,11 +141,16 @@ class RiseSettings {
     bool? realLightPrompt,
     bool? use24HourTime,
     RiseThemeMode? themeMode,
+    double? homeLat,
+    double? homeLng,
+    HomeShareTier? homeShare,
     // The `field ?? this.field` idiom cannot express "clear this nullable field
     // back to null" — passing null is indistinguishable from not passing it. A
     // sentinel flag keeps the intent explicit at the call site:
-    // `copyWith(clearTargetWake: true)` reads unambiguously.
+    // `copyWith(clearTargetWake: true)` reads unambiguously. Same for
+    // `clearHome`, which resets both anchor components together.
     bool clearTargetWake = false,
+    bool clearHome = false,
   }) =>
       RiseSettings(
         snoozeMaxCount: snoozeMaxCount ?? this.snoozeMaxCount,
@@ -136,6 +170,9 @@ class RiseSettings {
         realLightPrompt: realLightPrompt ?? this.realLightPrompt,
         use24HourTime: use24HourTime ?? this.use24HourTime,
         themeMode: themeMode ?? this.themeMode,
+        homeLat: clearHome ? null : (homeLat ?? this.homeLat),
+        homeLng: clearHome ? null : (homeLng ?? this.homeLng),
+        homeShare: homeShare ?? this.homeShare,
       );
 
   @override
@@ -153,7 +190,10 @@ class RiseSettings {
       other.sunriseWake == sunriseWake &&
       other.realLightPrompt == realLightPrompt &&
       other.use24HourTime == use24HourTime &&
-      other.themeMode == themeMode;
+      other.themeMode == themeMode &&
+      other.homeLat == homeLat &&
+      other.homeLng == homeLng &&
+      other.homeShare == homeShare;
 
   @override
   int get hashCode => Object.hash(
@@ -169,5 +209,8 @@ class RiseSettings {
       sunriseWake,
       realLightPrompt,
       use24HourTime,
-      themeMode);
+      themeMode,
+      homeLat,
+      homeLng,
+      homeShare);
 }

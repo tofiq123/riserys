@@ -7,12 +7,20 @@ import 'local/wake_event_repository.dart';
 /// starts ringing and finalises it on dismissal. Callers invoke these
 /// best-effort — a stats-write failure must never block the ring.
 class WakeRecorder {
-  WakeRecorder(this._events, this._alarms);
+  WakeRecorder(this._events, this._alarms, {this.onRingOpened});
 
   final WakeEventRepository _events;
   final AlarmRepository _alarms;
 
+  /// Invoked at the start of [openRing] — the "a new wake day begins" hook.
+  /// The app wires this (where `wakeRecorderProvider` is built) to reset
+  /// day-scoped wake evidence, e.g. the `leftHomeTodayProvider` flag in
+  /// lib/ui/status_publisher.dart. Optional so plain construction (and every
+  /// existing call site) is unchanged.
+  final void Function()? onRingOpened;
+
   Future<void> openRing(int alarmId) async {
+    onRingOpened?.call();
     final alarm = (await _alarms.all()).firstWhereOrNull((a) => a.id == alarmId);
     final now = DateTime.now();
     await _events.openRing(

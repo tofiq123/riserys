@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/app_settings.dart';
+import 'package:rise/data/home_location_gateway.dart';
+import 'package:rise/domain/rise_settings.dart';
 import 'package:rise/ui/screens/settings_screen.dart';
 import 'package:rise/ui/state/settings_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -186,5 +188,115 @@ void main() {
         ));
     await t.pump();
     expect(find.text('6:45 AM'), findsOneWidget);
+  });
+
+  // ── Home & wake detection ──────────────────────────────────────────────────
+
+  Future<AppSettings> pumpWithGateway(
+      WidgetTester t, HomeLocationGateway gateway,
+      {Map<String, Object> initial = const {}}) async {
+    SharedPreferences.setMockInitialValues(initial);
+    final store = await AppSettings.load();
+    await _pump(
+        t,
+        ProviderScope(
+          overrides: [appSettingsProvider.overrideWithValue(store)],
+          child: MaterialApp(home: SettingsScreen(homeLocation: gateway)),
+        ));
+    await t.pump();
+    return store;
+  }
+
+  /// Drains the toast overlay's ~2.7s auto-dismiss timer + fade-out.
+  Future<void> drainToast(WidgetTester t) async {
+    await t.pump(const Duration(seconds: 3));
+    await t.pump(const Duration(milliseconds: 300));
+  }
+
+  testWidgets('setting home persists the fix and shows the accuracy',
+      (t) async {
+    final gateway = FakeHomeLocationGateway(
+        granted: true,
+        fix: const HomeFix(
+            latitude: 52.52, longitude: 13.405, accuracyMeters: 12));
+    final store = await pumpWithGateway(t, gateway);
+
+    await t.tap(find.byKey(const Key('set-home-row')));
+    await t.pump();
+    await t.pump();
+
+    expect(store.homeLat, 52.52);
+    expect(store.homeLng, 13.405);
+    expect(gateway.ensurePermissionCalls, 1);
+    expect(gateway.currentFixCalls, 1);
+    // Warm, honest copy: resolved accuracy + the local-only promise.
+    expect(
+        find.text('Home set — accurate to about 12 m. It stays on this phone.'),
+        findsOneWidget);
+    await drainToast(t);
+  });
+
+  testWidgets('permission denied degrades to a toast — no crash, nothing saved',
+      (t) async {
+    final gateway = FakeHomeLocationGateway(granted: false);
+    final store = await pumpWithGateway(t, gateway);
+
+    await t.tap(find.byKey(const Key('set-home-row')));
+    await t.pump();
+    await t.pump();
+
+    expect(store.homeLat, isNull);
+    expect(gateway.currentFixCalls, 0); // denied → never reads a location
+    expect(find.textContaining('needs location permission'), findsOneWidget);
+    await drainToast(t);
+  });
+
+  testWidgets('no fix (timeout/services off) shows a toast and saves nothing',
+      (t) async {
+    final gateway = FakeHomeLocationGateway(granted: true, fix: null);
+    final store = await pumpWithGateway(t, gateway);
+
+    await t.tap(find.byKey(const Key('set-home-row')));
+    await t.pump();
+    await t.pump();
+
+    expect(store.homeLat, isNull);
+    expect(find.textContaining('Couldn\'t get a location fix'), findsOneWidget);
+    await drainToast(t);
+  });
+
+  testWidgets('clear home removes the anchor (row only shows when set)',
+      (t) async {
+    final gateway = FakeHomeLocationGateway();
+    final store = await pumpWithGateway(t, gateway,
+        initial: {'homeLat': 52.52, 'homeLng': 13.405});
+
+    expect(find.byKey(const Key('clear-home-row')), findsOneWidget);
+    await t.tap(find.byKey(const Key('clear-home-row')));
+    await t.pump();
+    await t.pump();
+
+    expect(store.homeLat, isNull);
+    expect(store.homeLng, isNull);
+    expect(find.byKey(const Key('clear-home-row')), findsNothing);
+    await drainToast(t);
+  });
+
+  testWidgets('clear-home row is hidden while home is unset', (t) async {
+    await pumpWithGateway(t, FakeHomeLocationGateway());
+    expect(find.byKey(const Key('clear-home-row')), findsNothing);
+  });
+
+  testWidgets('home share tier defaults Off and persists a change', (t) async {
+    final store = await pumpWithGateway(t, FakeHomeLocationGateway());
+    expect(store.homeShare, HomeShareTier.off); // privacy default
+
+    await t.tap(find.text('My crew'));
+    await t.pump();
+    expect(store.homeShare, HomeShareTier.crew);
+
+    await t.tap(find.text('Just me'));
+    await t.pump();
+    expect(store.homeShare, HomeShareTier.private);
   });
 }

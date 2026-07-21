@@ -98,6 +98,37 @@ void main() {
     expect((await AppSettings.load()).targetWakeHour, isNull);
   });
 
+  test('SettingsController sets and clears the home anchor', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    final c = ProviderContainer(
+        overrides: [appSettingsProvider.overrideWithValue(store)]);
+    addTearDown(c.dispose);
+
+    expect(c.read(settingsProvider).hasHome, isFalse);
+    await c.read(settingsProvider.notifier).setHome(52.52, 13.405);
+    expect(c.read(settingsProvider).homeLat, 52.52);
+    expect(c.read(settingsProvider).homeLng, 13.405);
+    expect((await AppSettings.load()).homeLat, 52.52); // persisted
+
+    await c.read(settingsProvider.notifier).clearHome();
+    expect(c.read(settingsProvider).hasHome, isFalse);
+    expect((await AppSettings.load()).homeLat, isNull);
+  });
+
+  test('SettingsController sets the home share tier (default off)', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppSettings.load();
+    final c = ProviderContainer(
+        overrides: [appSettingsProvider.overrideWithValue(store)]);
+    addTearDown(c.dispose);
+
+    expect(c.read(settingsProvider).homeShare, HomeShareTier.off);
+    await c.read(settingsProvider.notifier).setHomeShare(HomeShareTier.crew);
+    expect(c.read(settingsProvider).homeShare, HomeShareTier.crew);
+    expect((await AppSettings.load()).homeShare, HomeShareTier.crew);
+  });
+
   test(
       'currentSettingsProvider falls back to defaults when the store is unavailable',
       () {

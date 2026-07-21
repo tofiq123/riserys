@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/auth/auth_service.dart';
 import '../../data/backup/backup_coordinator.dart';
+import '../../data/home_location_gateway.dart';
 import '../../domain/alarm.dart';
 import '../../domain/clock_format.dart';
 import '../../domain/premium_feature.dart';
@@ -26,7 +27,13 @@ import '../theme/typography.dart';
 import 'paywall_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen(
+      {super.key, this.homeLocation = const GeolocatorHomeLocationGateway()});
+
+  /// Injectable location gateway for the "Home & wake detection" section
+  /// (mirrors ProfileScreen.permissions). Only ever invoked on an explicit
+  /// tap — never at build time.
+  final HomeLocationGateway homeLocation;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -155,6 +162,16 @@ class SettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+            const SectionLabel('Home & wake detection'),
+            const SizedBox(height: 6),
+            Text(
+                'Around wake-up — and only while Rise is open — Rise can check '
+                'how far you are from home to confirm you\'re really up. Your '
+                'home location is saved only on this phone and never leaves it.',
+                style: RiseText.caption),
+            const SizedBox(height: 12),
+            _HomeSection(gateway: homeLocation),
             const SizedBox(height: 24),
             const SectionLabel('Wake plan'),
             const SizedBox(height: 6),
@@ -366,6 +383,155 @@ class SettingsScreen extends ConsumerWidget {
           child: Icon(icon, size: 18, color: RiseColors.textDim),
         ),
       );
+}
+
+/// "Home & wake detection": set/clear the on-device home anchor and choose the
+/// left-home privacy tier. PRIVACY INVARIANTS (non-negotiable): location is
+/// read only on an explicit tap, foreground, WhenInUse; the anchor is stored
+/// only in local settings; only the derived "up & out" boolean is ever shared,
+/// and only at [HomeShareTier.crew]. Everything defaults OFF.
+class _HomeSection extends ConsumerStatefulWidget {
+  const _HomeSection({required this.gateway});
+
+  final HomeLocationGateway gateway;
+
+  @override
+  ConsumerState<_HomeSection> createState() => _HomeSectionState();
+}
+
+class _HomeSectionState extends ConsumerState<_HomeSection> {
+  bool _busy = false;
+
+  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
+    if (!mounted) return;
+    RiseToast.show(context, message, kind: kind);
+  }
+
+  Future<void> _setHome() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final granted = await widget.gateway.ensurePermission();
+      if (!granted) {
+        // Denied is a fine answer — degrade gracefully, never crash or nag.
+        _snack(
+            'Rise needs location permission for this — it\'s one fix while '
+            'the app is open, nothing is tracked.',
+            kind: RiseToastKind.error);
+        return;
+      }
+      final fix = await widget.gateway.currentFix();
+      if (fix == null) {
+        _snack('Couldn\'t get a location fix. Try again near a window or '
+            'outside.', kind: RiseToastKind.error);
+        return;
+      }
+      await ref
+          .read(settingsProvider.notifier)
+          .setHome(fix.latitude, fix.longitude);
+      _snack(
+          'Home set — accurate to about ${fix.accuracyMeters.round()} m. '
+          'It stays on this phone.',
+          kind: RiseToastKind.success);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _clearHome() async {
+    await ref.read(settingsProvider.notifier).clearHome();
+    _snack('Home cleared.', kind: RiseToastKind.success);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = ref.watch(settingsProvider);
+    final ctrl = ref.read(settingsProvider.notifier);
+
+    return RiseCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            key: const Key('set-home-row'),
+            behavior: HitTestBehavior.opaque,
+            onTap: _busy ? null : _setHome,
+            child: Row(
+              children: [
+                Icon(Icons.home_outlined, color: RiseColors.textDim, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Set home to current location',
+                          style: RiseText.body
+                              .copyWith(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(
+                          s.hasHome
+                              ? 'Home is set — tap to move it to where you are'
+                              : 'Not set — uses a single location fix',
+                          style: RiseText.caption
+                              .copyWith(color: RiseColors.textDim)),
+                    ],
+                  ),
+                ),
+                if (_busy)
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: RiseColors.primary),
+                  )
+                else
+                  Icon(Icons.chevron_right,
+                      color: RiseColors.textFaint, size: 20),
+              ],
+            ),
+          ),
+          if (s.hasHome) ...[
+            Divider(height: 20, color: RiseColors.divider),
+            GestureDetector(
+              key: const Key('clear-home-row'),
+              behavior: HitTestBehavior.opaque,
+              onTap: _busy ? null : _clearHome,
+              child: Row(
+                children: [
+                  Icon(Icons.location_off_outlined,
+                      color: RiseColors.textDim, size: 20),
+                  const SizedBox(width: 12),
+                  Text('Clear home',
+                      style: RiseText.body.copyWith(
+                          color: RiseColors.textDim,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ],
+          Divider(height: 20, color: RiseColors.divider),
+          Text('Use leaving home as a wake signal', style: RiseText.body),
+          const SizedBox(height: 8),
+          SegmentedControl<HomeShareTier>(
+            key: const Key('home-share-segmented'),
+            segments: const [
+              (value: HomeShareTier.off, label: 'Off'),
+              (value: HomeShareTier.private, label: 'Just me'),
+              (value: HomeShareTier.crew, label: 'My crew'),
+            ],
+            selected: s.homeShare,
+            onChanged: ctrl.setHomeShare,
+          ),
+          const SizedBox(height: 6),
+          Text(
+              '"Just me" only helps confirm your own wake-up, on this phone. '
+              '"My crew" also shows them a simple "Up & out". Your exact '
+              'location is never shared — only that you\'re up and out.',
+              style: RiseText.caption),
+        ],
+      ),
+    );
+  }
 }
 
 /// The editable wake-plan (implementation intention) field. Its own stateful

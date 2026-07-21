@@ -21,6 +21,12 @@
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <!-- Voice wake-ups (Phase 16): record a short clip to send to your crew. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- "Left home" wake signal: FOREGROUND (while-in-use) location only, read
+         around wake-up to compare against the on-device home anchor. Home
+         coordinates never leave the device. Deliberately NO
+         ACCESS_BACKGROUND_LOCATION — do not add it. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
         android:label="Rise"
