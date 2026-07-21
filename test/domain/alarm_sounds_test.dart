@@ -2,24 +2,73 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/domain/alarm_sounds.dart';
 
 void main() {
-  test('catalog is non-empty and Default maps to the entity default asset', () {
+  test('catalog is Default-first and Default maps to the entity default asset',
+      () {
     expect(kAlarmSounds, isNotEmpty);
     expect(kAlarmSounds.first.label, 'Default');
     expect(kAlarmSounds.first.asset, 'sounds/default_alarm.mp3');
+    expect(kAlarmSounds.first.categoryKey, kDefaultCategory.key);
+    expect(identical(kAlarmSounds.first, kDefaultSound), isTrue);
   });
 
-  test('ships the full bundled ringtone library', () {
-    final labels = kAlarmSounds.map((s) => s.label).toList();
-    expect(
-      labels,
-      containsAll(
-          ['Default', 'Sunrise', 'Aurora', 'Tide', 'Ascend', 'Kalimba', 'Pulse']),
-    );
-    // Every non-default tone points at a bundled wav under sounds/rise_*.
-    for (final s in kAlarmSounds.skip(1)) {
+  test('ships Default + the full 58-tone categorized library', () {
+    // 58 bundled tones plus the pinned Default entry.
+    expect(kAlarmSounds.length, 59);
+    expect(kAlarmSounds.where((s) => s.categoryKey != kDefaultCategory.key),
+        hasLength(58));
+
+    // Seven ordered categories with the expected labels.
+    expect(kSoundCategories.map((c) => c.key).toList(), [
+      'gentle',
+      'melodic',
+      'energetic',
+      'intense',
+      'nature',
+      'classic',
+      'brutal',
+    ]);
+    expect(kSoundCategories.map((c) => c.label).toList(), [
+      'Gentle',
+      'Melodic',
+      'Energetic',
+      'Intense',
+      'Nature',
+      'Classic',
+      'Brutal',
+    ]);
+
+    // Every non-default tone points at a bundled ogg under sounds/rise_*.
+    for (final s in kAlarmSounds.where((s) => s != kDefaultSound)) {
       expect(s.asset, startsWith('sounds/rise_'));
-      expect(s.asset, endsWith('.wav'));
+      expect(s.asset, endsWith('.ogg'));
     }
+  });
+
+  test('every catalog asset resolves to a category', () {
+    for (final s in kAlarmSounds) {
+      final cat = soundCategoryFor(s.asset);
+      expect(cat, isNotNull, reason: '${s.label} has no category');
+      expect(cat!.key, s.categoryKey);
+    }
+    // A non-catalog asset (voice clip) resolves to no category.
+    expect(soundCategoryFor('/data/voice_alarms/abc.m4a'), isNull);
+  });
+
+  test('soundsInCategory returns each category in catalog order', () {
+    // The full library is partitioned across the seven categories.
+    var total = 0;
+    for (final c in kSoundCategories) {
+      final tones = soundsInCategory(c.key);
+      expect(tones, isNotEmpty, reason: '${c.key} is empty');
+      for (final t in tones) {
+        expect(t.categoryKey, c.key);
+      }
+      total += tones.length;
+    }
+    expect(total, 58);
+    // The Default pseudo-category yields exactly the pinned entry.
+    expect(soundsInCategory(kDefaultCategory.key), [kDefaultSound]);
+    expect(soundsInCategory('nonexistent'), isEmpty);
   });
 
   test('labels and assets are unique (no collision in the catalog)', () {
@@ -35,7 +84,7 @@ void main() {
   });
 
   test('unknown asset or label falls back to the first entry', () {
-    expect(soundLabelFor('sounds/does_not_exist.mp3'), kAlarmSounds.first.label);
+    expect(soundLabelFor('sounds/does_not_exist.ogg'), kAlarmSounds.first.label);
     expect(soundAssetFor('Nonexistent'), kAlarmSounds.first.asset);
   });
 
@@ -54,16 +103,16 @@ void main() {
 
   group('previewAssetKeyFor', () {
     test('bundled tones preview from assets/sounds/', () {
-      expect(previewAssetKeyFor('sounds/rise_sunrise.wav'),
-          'assets/sounds/rise_sunrise.wav');
-      expect(previewAssetKeyFor('sounds/rise_pulse.wav'),
-          'assets/sounds/rise_pulse.wav');
+      expect(previewAssetKeyFor('sounds/rise_sunrise.ogg'),
+          'assets/sounds/rise_sunrise.ogg');
+      expect(previewAssetKeyFor('sounds/rise_meltdown.ogg'),
+          'assets/sounds/rise_meltdown.ogg');
     });
 
     test('Default, file paths, and unknown assets have no bundled preview', () {
-      expect(previewAssetKeyFor(kAlarmSounds.first.asset), isNull); // Default
+      expect(previewAssetKeyFor(kDefaultSound.asset), isNull); // Default
       expect(previewAssetKeyFor('/data/voice_alarms/abc.m4a'), isNull);
-      expect(previewAssetKeyFor('sounds/not_a_real_tone.wav'), isNull);
+      expect(previewAssetKeyFor('sounds/not_a_real_tone.ogg'), isNull);
     });
   });
 }
