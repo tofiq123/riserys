@@ -8,7 +8,6 @@ import 'package:rise/domain/alarm.dart';
 import 'package:rise/domain/rise_settings.dart';
 import 'package:rise/domain/scheduled_occurrence.dart';
 import 'package:rise/domain/wake_event.dart';
-import 'package:rise/ui/components/toast.dart';
 import 'package:rise/ui/screens/app_shell.dart';
 import 'package:rise/ui/screens/create_edit_screen.dart';
 import 'package:rise/ui/screens/crew_screen.dart';
@@ -89,17 +88,6 @@ void main() {
     await t.pump();
     expect(find.byType(ProfileScreen), findsOneWidget);
     expect(find.byType(HomeScreen), findsNothing);
-  });
-
-  testWidgets('a toast message renders then is cleared', (t) async {
-    final c = _container();
-    await t.pumpWidget(_host(c));
-    await t.pump();
-    c.read(toastProvider.notifier).state =
-        (message: 'Saved', kind: RiseToastKind.success);
-    await t.pump();
-    expect(find.byType(RiseToast), findsOneWidget);
-    expect(find.text('Saved'), findsOneWidget);
   });
 
   testWidgets('preview opens the ring screen', (t) async {

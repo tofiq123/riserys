@@ -74,8 +74,7 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
       return;
     }
     if (!mounted) return;
-    ref.read(toastProvider.notifier).state =
-        (message: 'Alarm saved', kind: RiseToastKind.success);
+    RiseToast.show(context, 'Alarm saved', kind: RiseToastKind.success);
     ref.read(draftProvider.notifier).clear();
     widget.onDone();
   }
@@ -90,8 +89,7 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
       return;
     }
     if (!mounted) return;
-    ref.read(toastProvider.notifier).state =
-        (message: 'Alarm deleted', kind: RiseToastKind.info);
+    RiseToast.show(context, 'Alarm deleted');
     ref.read(draftProvider.notifier).clear();
     widget.onDone();
   }

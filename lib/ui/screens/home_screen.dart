@@ -410,7 +410,7 @@ class _ShiftSuggestion extends ConsumerWidget {
               label:
                   'Shift to ${formatShift(shifted, use24h: settings.use24HourTime)}',
               icon: Icons.arrow_forward,
-              onPressed: () => _apply(ref, targetAlarm, shifted),
+              onPressed: () => _apply(context, ref, targetAlarm, shifted),
             ),
           ],
         ),
@@ -418,8 +418,8 @@ class _ShiftSuggestion extends ConsumerWidget {
     );
   }
 
-  void _apply(
-      WidgetRef ref, Alarm alarm, ({int hour, int minute}) shifted) {
+  void _apply(BuildContext context, WidgetRef ref, Alarm alarm,
+      ({int hour, int minute}) shifted) {
     final use24h = ref.read(currentSettingsProvider).use24HourTime;
     // Editing the time clears any stale dismissal so the new occurrence rings.
     ref.read(alarmMutationsProvider).save(alarm.copyWith(
@@ -427,9 +427,8 @@ class _ShiftSuggestion extends ConsumerWidget {
           minute: shifted.minute,
           clearLastDismissedAt: true,
         ));
-    ref.read(toastProvider.notifier).state = (
-      message: 'Moved to ${formatShift(shifted, use24h: use24h)}',
-      kind: RiseToastKind.info
-    );
+    // Fires into the root overlay, so it survives this suggestion card vanishing
+    // once the alarm is shifted (the card's `shifted == alarm` guard hides it).
+    RiseToast.show(context, 'Moved to ${formatShift(shifted, use24h: use24h)}');
   }
 }

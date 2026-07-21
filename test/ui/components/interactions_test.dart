@@ -105,19 +105,37 @@ void main() {
     });
   });
 
-  group('ToastHost', () {
-    testWidgets('shows the message then hides it after ~2.7s', (t) async {
-      var hidden = false;
-      await t.pumpWidget(_wrap(SizedBox(
-        width: 300, height: 300,
-        child: ToastHost(message: 'Alarm set', onHide: () => hidden = true, child: const SizedBox()),
+  group('RiseToast.show', () {
+    testWidgets('shows the message then removes it after ~2.7s', (t) async {
+      await t.pumpWidget(_wrap(Builder(
+        builder: (context) => TextButton(
+          onPressed: () => RiseToast.show(context, 'Alarm set'),
+          child: const Text('go'),
+        ),
       )));
-      await t.pump();
+      await t.tap(find.text('go'));
+      await t.pump(); // insert the overlay entry
+      await t.pump(const Duration(milliseconds: 260)); // fade/slide in
       expect(find.text('Alarm set'), findsOneWidget);
-      await t.pump(const Duration(milliseconds: 1000));
-      expect(hidden, isFalse, reason: 'must not hide before ~2.7s');
-      await t.pump(const Duration(milliseconds: 1800));
-      expect(hidden, isTrue);
+      await t.pump(const Duration(milliseconds: 2700)); // hold elapses
+      await t.pump(const Duration(milliseconds: 300)); // reverse + remove
+      expect(find.text('Alarm set'), findsNothing);
+    });
+
+    testWidgets('tapping the toast dismisses it early', (t) async {
+      await t.pumpWidget(_wrap(Builder(
+        builder: (context) => TextButton(
+          onPressed: () => RiseToast.show(context, 'Alarm deleted'),
+          child: const Text('go'),
+        ),
+      )));
+      await t.tap(find.text('go'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 260));
+      expect(find.text('Alarm deleted'), findsOneWidget);
+      await t.tap(find.text('Alarm deleted'));
+      await t.pumpAndSettle(); // reverse animation completes, entry removed
+      expect(find.text('Alarm deleted'), findsNothing);
     });
   });
 }

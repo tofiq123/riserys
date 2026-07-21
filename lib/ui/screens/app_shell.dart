@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/permission_gateway.dart';
 import '../../domain/alarm.dart';
 import '../backup_sync_host.dart';
-import '../components/toast.dart';
 import '../feed_publisher.dart';
 import '../missions/mission_host.dart';
 import '../morning_departure_host.dart';
@@ -81,7 +80,6 @@ class _AppShellState extends ConsumerState<AppShell> {
     final editing = ref.watch(draftProvider) != null;
     final account = ref.watch(accountProvider).value;
     final needsClaim = account != null && account.needsUsername;
-    final toast = ref.watch(toastProvider);
 
     return PushRegistrarHost(
       child: MorningDepartureHost(
@@ -96,11 +94,7 @@ class _AppShellState extends ConsumerState<AppShell> {
             },
             child: Scaffold(
               backgroundColor: RiseColors.appBg,
-              body: ToastHost(
-                message: toast?.message,
-                kind: toast?.kind ?? RiseToastKind.info,
-                onHide: () => ref.read(toastProvider.notifier).state = null,
-                child: Stack(
+              body: Stack(
                   children: [
                     _activeTab(context),
                     if (editing)
@@ -121,7 +115,6 @@ class _AppShellState extends ConsumerState<AppShell> {
                       ),
                   ],
                 ),
-              ),
               bottomNavigationBar: (editing || needsClaim) ? null : _tabBar(),
             ),
           ),

@@ -4,7 +4,6 @@ import '../../data/alarm_sync_service.dart';
 import '../../data/local/alarm_repository.dart';
 import '../../domain/alarm.dart';
 import '../../domain/scheduled_occurrence.dart';
-import '../components/toast.dart';
 
 /// The app's configured AlarmSyncService. In production this is the singleton
 /// built by `AlarmSyncService.configureForApp()` in main(); tests override it
@@ -63,12 +62,6 @@ class DraftNotifier extends StateNotifier<Alarm?> {
 
 final draftProvider =
     StateNotifierProvider<DraftNotifier, Alarm?>((ref) => DraftNotifier());
-
-/// A branded toast for the shell-level [ToastHost]: its message and tone.
-typedef ShellToast = ({String message, RiseToastKind kind});
-
-/// The toast shown by the ToastHost, or null when no toast is visible.
-final toastProvider = StateProvider<ShellToast?>((ref) => null);
 
 /// The soonest upcoming alarm occurrence, or null if no alarm is enabled.
 /// Recomputes whenever the alarm list changes.
