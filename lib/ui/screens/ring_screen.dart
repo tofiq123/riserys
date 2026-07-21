@@ -76,6 +76,13 @@ Future<void> defaultArmWakeCheck(Alarm alarm, Duration delay) async {
   );
 }
 
+/// Cancels the pending native wake-check (notification + re-fire) for
+/// [alarmId]. Used by the opt-in smart wake-check once it is confident the
+/// user stayed up: the check is armed unconditionally at dismissal, so
+/// cancelling is the only thing "confident" changes.
+Future<void> defaultCancelWakeCheck(int alarmId) =>
+    AlarmHostApi().cancelWakeCheck(alarmId);
+
 /// Decides the opt-in smart wake-check outcome: is the post-dismissal stay-up
 /// check satisfied, or do we fall back to the ordinary wake-check re-ring?
 /// Injectable for tests; the default is [defaultStayUpDecision].
@@ -144,6 +151,7 @@ class RingScreen extends ConsumerStatefulWidget {
     this.record = false,
     this.snooze = snoozeAlarm,
     this.armWakeCheck = defaultArmWakeCheck,
+    this.cancelWakeCheck = defaultCancelWakeCheck,
     this.stayUpDecision = defaultStayUpDecision,
     this.brightness = const ScreenBrightnessController(),
   });
@@ -171,6 +179,12 @@ class RingScreen extends ConsumerStatefulWidget {
   /// Arms the "still up?" check after a real dismissal. Injectable for tests;
   /// defaults to [defaultArmWakeCheck].
   final Future<void> Function(Alarm alarm, Duration delay) armWakeCheck;
+
+  /// Cancels an armed wake-check once the smart stay-up check is confident the
+  /// user got up. Injectable for tests; defaults to [defaultCancelWakeCheck].
+  /// Only ever called on the opt-in smart path, and only on a confident
+  /// decision — never on the default path.
+  final Future<void> Function(int alarmId) cancelWakeCheck;
 
   /// Decides the smart stay-up outcome when the smart wake-check setting is on.
   /// Injectable for tests; defaults to [defaultStayUpDecision] (device-only
@@ -315,19 +329,22 @@ class _RingScreenState extends ConsumerState<RingScreen>
             ?.firstWhereOrNull((a) => a.id == widget.alarmId);
         if (alarm != null) {
           final delay = Duration(minutes: settings.wakeCheckDelayMinutes);
+          // Arm the native wake-check NOW, smart or not — the safety net is
+          // always on. Smart mode can only *cancel* it later, once sensing is
+          // confident the user stayed up; it never defers the arming. This
+          // closes the app-killed-mid-window gap: if Rise dies while sensing,
+          // the OS-scheduled check still fires exactly as in the default path.
+          try {
+            await widget.armWakeCheck(alarm, delay);
+          } catch (e) {
+            debugPrint(
+                'Rise: wake-check schedule failed for ${widget.alarmId}: $e');
+          }
           if (settings.smartWakeCheck) {
-            // Opt-in smart path: sense over the window, then arm the re-ring
-            // ONLY if confidence is low/unknown. Detached so the ring screen
-            // closes immediately (the sensing outlives it); best-effort.
+            // Opt-in smart path: sense over the window and, if confident the
+            // user got up, cancel the just-armed check. Detached so the ring
+            // screen closes immediately (the sensing outlives it); best-effort.
             unawaited(_runSmartStayUp(alarm, delay, _pendingAlertness));
-          } else {
-            // Default path — unchanged: arm the native wake-check now.
-            try {
-              await widget.armWakeCheck(alarm, delay);
-            } catch (e) {
-              debugPrint(
-                  'Rise: wake-check schedule failed for ${widget.alarmId}: $e');
-            }
           }
         }
       }
@@ -336,12 +353,15 @@ class _RingScreenState extends ConsumerState<RingScreen>
     widget.onDismissed?.call();
   }
 
-  /// The opt-in smart stay-up check. Best-effort and detached from the ring
-  /// screen's lifecycle (it may outlive the popped screen): it senses over the
-  /// window and, ONLY if confidence is low or unknown, arms the ordinary
-  /// wake-check re-ring — the exact same [armWakeCheck] path as today. It never
-  /// suppresses a needed re-ring: any sensing error defaults to re-check. Uses
-  /// only the injected callbacks (no `ref`/`context`), so it is safe post-dispose.
+  /// The opt-in smart stay-up check (arm-then-cancel). The ordinary wake-check
+  /// was already armed at dismissal; this senses over the window and — ONLY on
+  /// strong evidence the user stayed up — cancels that armed check via the
+  /// native [RingScreen.cancelWakeCheck]. Low or unknown confidence (including
+  /// any sensing error) simply leaves the check armed, so the safety net can
+  /// never be lost: the worst failure mode is an unnecessary "still up?"
+  /// prompt, never a missing re-ring. Best-effort and detached from the ring
+  /// screen's lifecycle (it may outlive the popped screen); uses only the
+  /// injected callbacks (no `ref`/`context`), so it is safe post-dispose.
   Future<void> _runSmartStayUp(
       Alarm alarm, Duration delay, int? alertness) async {
     WakeChallengeDecision decision;
@@ -349,13 +369,14 @@ class _RingScreenState extends ConsumerState<RingScreen>
       decision = await widget.stayUpDecision(alarm, delay, alertness);
     } catch (e) {
       debugPrint('Rise: smart stay-up sense failed for ${alarm.id}: $e');
-      decision = WakeChallengeDecision.reCheck; // conservative
+      decision = WakeChallengeDecision.reCheck; // conservative: stay armed
     }
-    if (decision == WakeChallengeDecision.reCheck) {
+    if (decision == WakeChallengeDecision.confident) {
       try {
-        await widget.armWakeCheck(alarm, delay);
+        await widget.cancelWakeCheck(alarm.id);
       } catch (e) {
-        debugPrint('Rise: wake-check schedule failed for ${alarm.id}: $e');
+        // A failed cancel is the safe direction: the armed check just fires.
+        debugPrint('Rise: wake-check cancel failed for ${alarm.id}: $e');
       }
     }
   }

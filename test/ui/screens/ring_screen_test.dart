@@ -45,6 +45,7 @@ Widget _host({
   bool record = false,
   WakeRecorder? recorder,
   Future<void> Function(Alarm, Duration)? armWakeCheck,
+  Future<void> Function(int)? cancelWakeCheck,
   StayUpDecider? stayUpDecision,
   BrightnessController? brightness,
 }) {
@@ -64,6 +65,7 @@ Widget _host({
         snooze: snooze ?? (_, __) async {},
         record: record,
         armWakeCheck: armWakeCheck ?? (_, __) async {},
+        cancelWakeCheck: cancelWakeCheck ?? (_) async {},
         stayUpDecision: stayUpDecision ?? defaultStayUpDecision,
         brightness: brightness ?? const NoopBrightnessController(),
       ),
@@ -610,11 +612,13 @@ void main() {
     expect(armedCount, 0);
   });
 
-  // ---- Phase 11: opt-in smart wake-check (stay-up verification) ----
+  // ---- Phase 11: opt-in smart wake-check (arm-then-cancel stay-up check) ----
 
-  testWidgets('smart wake-check on: a confident stay-up decision skips the re-ring',
+  testWidgets(
+      'smart wake-check on: arms immediately, then a confident decision cancels it',
       (t) async {
     var armedCount = 0;
+    final cancelled = <int>[];
     await t.pumpWidget(_host(
       alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
       alarmId: 5,
@@ -624,20 +628,26 @@ void main() {
           const RiseSettings(wakeCheckEnabled: true, smartWakeCheck: true),
       stayUpDecision: (_, __, ___) async => WakeChallengeDecision.confident,
       armWakeCheck: (_, __) async => armedCount++,
+      cancelWakeCheck: (id) async => cancelled.add(id),
       onDismissed: () {},
     ));
     await t.pump();
     await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
     await t.pump();
     await t.pump(const Duration(milliseconds: 20));
-    expect(armedCount, 0, reason: 'strong stay-up confidence suppresses the re-ring');
+    expect(armedCount, 1,
+        reason: 'the safety net is armed BEFORE sensing, never deferred — '
+            'an app killed mid-window still gets its check');
+    expect(cancelled, [5],
+        reason: 'strong stay-up confidence cancels the armed check');
   });
 
   testWidgets(
-      'smart wake-check on: a low/unknown decision falls back to the ordinary re-ring',
+      'smart wake-check on: a low/unknown decision leaves the armed check alone',
       (t) async {
     Alarm? armed;
     Duration? delay;
+    var cancelCount = 0;
     await t.pumpWidget(_host(
       alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
       alarmId: 5,
@@ -650,6 +660,7 @@ void main() {
         armed = a;
         delay = d;
       },
+      cancelWakeCheck: (_) async => cancelCount++,
       onDismissed: () {},
     ));
     await t.pump();
@@ -658,12 +669,14 @@ void main() {
     await t.pump(const Duration(milliseconds: 20));
     expect(armed?.id, 5); // same alarm, same delay as the ordinary check
     expect(delay, const Duration(minutes: 7));
+    expect(cancelCount, 0, reason: 'low/unknown confidence never cancels');
   });
 
   testWidgets(
-      'smart wake-check on: a failing decider still arms the re-ring (safe default)',
+      'smart wake-check on: a failing decider leaves the armed check alone (safe default)',
       (t) async {
     var armedCount = 0;
+    var cancelCount = 0;
     await t.pumpWidget(_host(
       alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
       alarmId: 5,
@@ -673,20 +686,24 @@ void main() {
           const RiseSettings(wakeCheckEnabled: true, smartWakeCheck: true),
       stayUpDecision: (_, __, ___) async => throw StateError('sensor down'),
       armWakeCheck: (_, __) async => armedCount++,
+      cancelWakeCheck: (_) async => cancelCount++,
       onDismissed: () {},
     ));
     await t.pump();
     await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
     await t.pump();
     await t.pump(const Duration(milliseconds: 20));
-    expect(armedCount, 1, reason: 'a sensing failure must never suppress the re-ring');
+    expect(armedCount, 1, reason: 'the check was armed before sensing began');
+    expect(cancelCount, 0,
+        reason: 'a sensing failure must never suppress the re-ring');
   });
 
   testWidgets(
-      'smart wake-check off (default): arms immediately and never consults the decider',
-      (t) async {
+      'smart wake-check off (default): arms immediately, never consults the '
+      'decider, never cancels', (t) async {
     var armedCount = 0;
     var deciderCalls = 0;
+    var cancelCount = 0;
     await t.pumpWidget(_host(
       alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
       alarmId: 5,
@@ -698,6 +715,7 @@ void main() {
         return WakeChallengeDecision.confident;
       },
       armWakeCheck: (_, __) async => armedCount++,
+      cancelWakeCheck: (_) async => cancelCount++,
       onDismissed: () {},
     ));
     await t.pump();
@@ -706,6 +724,7 @@ void main() {
     await t.pump(const Duration(milliseconds: 20));
     expect(armedCount, 1, reason: 'off = exactly today\'s behavior');
     expect(deciderCalls, 0);
+    expect(cancelCount, 0);
   });
 
   testWidgets('smart wake-check on: threads the PVT alertness score into the decider',
