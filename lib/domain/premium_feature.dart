@@ -18,7 +18,7 @@ enum PremiumFeature {
   careOffRamp,
 
   // ---- Always FREE: the generous taste (rule 2) ----------------------------
-  basicMissions, // math / tap / hold / memory / shake
+  basicMissions, // math / tap / memory / shake
   pvtMission, // the alertness marketing hook — a taste stays free
   singleMission, // one mission per alarm
   basicStreak,
@@ -71,7 +71,7 @@ const int kFreeCrewLimit = 3;
 /// Free mission "chain" length. 2–3 repeats need Premium (missionChains).
 const int kFreeMissionCount = 1;
 
-/// Mission keys that require Premium. Everything else — none, math, hold, tap,
+/// Mission keys that require Premium. Everything else — none, math, tap,
 /// memory, shake, and the PVT alertness hook — is free. The advanced
 /// camera/sensor missions (typing, QR, walk-it-off, photo-match, eye-open) are
 /// premium.

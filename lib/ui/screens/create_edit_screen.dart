@@ -27,7 +27,6 @@ import 'qr_register_screen.dart';
 const Map<String, String> _missionLabels = {
   'none': 'None',
   'math': 'Math',
-  'hold': 'Hold',
   'tap': 'Tap',
   'memory': 'Memory',
   'pvt': 'Alertness (PVT)',
