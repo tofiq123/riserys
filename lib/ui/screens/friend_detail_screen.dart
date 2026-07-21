@@ -7,6 +7,7 @@ import '../../data/nudge/nudge_service.dart';
 import '../../domain/crew_member.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/crew_status.dart';
+import '../components/confirm_dialog.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
 import '../components/toast.dart';
@@ -62,6 +63,15 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
 
   Future<void> _remove() async {
     if (_removing) return;
+    final ok = await showConfirmDialog(
+      context,
+      title: 'Remove @${_member.username}?',
+      message: "You'll stop seeing each other's wake status and streaks. "
+          'You can add them back anytime.',
+      confirmLabel: 'Remove',
+      danger: true,
+    );
+    if (!ok) return;
     setState(() => _removing = true);
     try {
       await ref.read(crewServiceProvider).removeFriend(_member.id);

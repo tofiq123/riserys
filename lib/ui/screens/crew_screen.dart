@@ -7,6 +7,7 @@ import '../../domain/crew_member.dart';
 import '../../domain/crew_state.dart';
 import '../../domain/crew_status.dart';
 import '../../domain/premium_feature.dart';
+import '../components/confirm_dialog.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
 import '../components/segmented.dart';
@@ -127,8 +128,18 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
       _run(() => ref.read(crewServiceProvider).declineRequest(id));
   Future<void> _cancel(String id) =>
       _run(() => ref.read(crewServiceProvider).cancelRequest(id));
-  Future<void> _remove(String id) =>
-      _run(() => ref.read(crewServiceProvider).removeFriend(id));
+  Future<void> _remove(CrewMember m) async {
+    final ok = await showConfirmDialog(
+      context,
+      title: 'Remove @${m.username}?',
+      message: "You'll stop seeing each other's wake status and streaks. "
+          'You can add them back anytime.',
+      confirmLabel: 'Remove',
+      danger: true,
+    );
+    if (!ok) return;
+    await _run(() => ref.read(crewServiceProvider).removeFriend(m.id));
+  }
 
   void _openDetail(CrewMember m) {
     Navigator.of(context).push(MaterialPageRoute<void>(
@@ -217,7 +228,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
                               ? null
                               : () => _nudge(m)),
                       const SizedBox(width: 6),
-                      _pill('Remove', _busy ? null : () => _remove(m.id),
+                      _pill('Remove', _busy ? null : () => _remove(m),
                           danger: true),
                     ])),
             if (crew.outgoing.isNotEmpty) ...[
