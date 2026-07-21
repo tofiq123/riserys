@@ -306,7 +306,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             child: RiseCard(
               child: Row(
                 children: [
-                  const Icon(Icons.wb_sunny_outlined,
+                  Icon(Icons.wb_sunny_outlined,
                       color: RiseColors.waking, size: 20),
                   const SizedBox(width: 12),
                   Expanded(
@@ -314,7 +314,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         style: RiseText.body
                             .copyWith(fontWeight: FontWeight.w600)),
                   ),
-                  const Icon(Icons.add, color: RiseColors.textFaint, size: 20),
+                  Icon(Icons.add, color: RiseColors.textFaint, size: 20),
                 ],
               ),
             ),
@@ -376,7 +376,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             child: RiseCard(
               child: Row(
                 children: [
-                  const Icon(Icons.alarm_add,
+                  Icon(Icons.alarm_add,
                       color: RiseColors.accent, size: 20),
                   const SizedBox(width: 12),
                   Expanded(
@@ -384,7 +384,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         style: RiseText.body
                             .copyWith(fontWeight: FontWeight.w600)),
                   ),
-                  const Icon(Icons.add, color: RiseColors.textFaint, size: 20),
+                  Icon(Icons.add, color: RiseColors.textFaint, size: 20),
                 ],
               ),
             ),
@@ -483,7 +483,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               color: RiseColors.accentSoft,
               borderRadius: BorderRadius.circular(28),
             ),
-            child: const Icon(Icons.cloud_sync,
+            child: Icon(Icons.cloud_sync,
                 size: 44, color: RiseColors.accent),
           ),
           const SizedBox(height: 28),
@@ -507,7 +507,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   onPressed: _signingIn ? null : _signInAndFinish,
                 ),
                 if (_signingIn)
-                  const SizedBox(
+                  SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(

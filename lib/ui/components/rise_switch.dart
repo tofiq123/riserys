@@ -28,10 +28,13 @@ class RiseSwitch extends StatelessWidget {
             width: 22,
             height: 22,
             margin: const EdgeInsets.symmetric(horizontal: 3),
-            decoration: const BoxDecoration(
-              color: Color(0xFFFFFFFF),
+            // Thumb is the raised-surface token (white in light — byte-identical
+            // to before — dark in the dark theme) so it stays legible against
+            // the light `primary` track when the switch is on in dark mode.
+            decoration: BoxDecoration(
+              color: RiseColors.card,
               shape: BoxShape.circle,
-              boxShadow: [BoxShadow(color: Color(0x33000000), blurRadius: 2, offset: Offset(0, 1))],
+              boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 2, offset: Offset(0, 1))],
             ),
           ),
         ),

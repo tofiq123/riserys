@@ -131,9 +131,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             Container(
               width: 40,
               height: 40,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                   color: RiseColors.primary, shape: BoxShape.circle),
-              child: const Icon(Icons.person,
+              child: Icon(Icons.person,
                   color: RiseColors.primaryText, size: 20),
             ),
           ],
@@ -241,7 +241,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   color: RiseColors.accentSoft,
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.notifications_active_outlined,
+                child: Icon(Icons.notifications_active_outlined,
                     color: RiseColors.accent, size: 22),
               ),
             ],
@@ -387,7 +387,7 @@ class _ShiftSuggestion extends ConsumerWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.wb_twilight_outlined,
+                Icon(Icons.wb_twilight_outlined,
                     color: RiseColors.waking, size: 20),
                 const SizedBox(width: 10),
                 Expanded(

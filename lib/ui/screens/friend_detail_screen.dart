@@ -151,7 +151,7 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => Navigator.of(context).maybePop(),
-            child: const Padding(
+            child: Padding(
               padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
               child: Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
             ),
@@ -275,7 +275,7 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
           padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
           child: Column(
             children: [
-              const Icon(Icons.insights_outlined,
+              Icon(Icons.insights_outlined,
                   size: 30, color: RiseColors.textFaint),
               const SizedBox(height: 10),
               Text('No stats to show yet',

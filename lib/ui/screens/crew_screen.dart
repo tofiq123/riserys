@@ -259,9 +259,9 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
               width: 40,
               height: 40,
               alignment: Alignment.center,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                   color: RiseColors.accentSoft, shape: BoxShape.circle),
-              child: const Icon(Icons.wb_sunny_outlined,
+              child: Icon(Icons.wb_sunny_outlined,
                   color: RiseColors.primary, size: 20),
             ),
             const SizedBox(width: 12),
@@ -277,7 +277,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: RiseColors.textFaint),
+            Icon(Icons.chevron_right, color: RiseColors.textFaint),
           ],
         ),
       ),
@@ -299,9 +299,9 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
               width: 40,
               height: 40,
               alignment: Alignment.center,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                   color: RiseColors.accentSoft, shape: BoxShape.circle),
-              child: const Icon(Icons.graphic_eq,
+              child: Icon(Icons.graphic_eq,
                   color: RiseColors.primary, size: 20),
             ),
             const SizedBox(width: 12),
@@ -334,7 +334,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
                         color: RiseColors.primaryText)),
               ),
             const SizedBox(width: 4),
-            const Icon(Icons.chevron_right, color: RiseColors.textFaint),
+            Icon(Icons.chevron_right, color: RiseColors.textFaint),
           ],
         ),
       ),
@@ -554,7 +554,7 @@ class _CrewSignedOut extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.groups_outlined,
+            Icon(Icons.groups_outlined,
                 size: 44, color: RiseColors.textFaint),
             const SizedBox(height: 16),
             Text('Wake up with your crew', style: RiseText.title),

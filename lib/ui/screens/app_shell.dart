@@ -138,7 +138,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       (icon: Icons.person_outline, label: 'Profile'),
     ];
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: RiseColors.card,
         border: Border(top: BorderSide(color: RiseColors.border)),
       ),

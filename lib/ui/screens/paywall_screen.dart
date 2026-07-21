@@ -181,7 +181,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
                 key: const Key('paywall-close'),
                 behavior: HitTestBehavior.opaque,
                 onTap: () => Navigator.of(context).maybePop(),
-                child: const Padding(
+                child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                   child: Icon(Icons.close, color: RiseColors.text, size: 22),
                 ),
@@ -200,7 +200,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   List<Widget> _premiumBody() {
     return [
       const SizedBox(height: 24),
-      const Center(
+      Center(
         child: Icon(Icons.verified, size: 48, color: RiseColors.primary),
       ),
       const SizedBox(height: 16),

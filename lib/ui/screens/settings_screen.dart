@@ -52,7 +52,7 @@ class SettingsScreen extends ConsumerWidget {
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () => Navigator.of(context).maybePop(),
-                  child: const Padding(
+                  child: Padding(
                     padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                     child: Icon(Icons.arrow_back,
                         color: RiseColors.text, size: 22),
@@ -77,7 +77,7 @@ class SettingsScreen extends ConsumerWidget {
                     onInc: () => ctrl
                         .setSnoozeMaxCount((s.snoozeMaxCount + 1).clamp(0, 5)),
                   ),
-                  const Divider(height: 20, color: RiseColors.divider),
+                  Divider(height: 20, color: RiseColors.divider),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text('Length', style: RiseText.caption),
@@ -115,7 +115,7 @@ class SettingsScreen extends ConsumerWidget {
                           onChanged: ctrl.setWakeCheckEnabled),
                     ],
                   ),
-                  const Divider(height: 20, color: RiseColors.divider),
+                  Divider(height: 20, color: RiseColors.divider),
                   _stepperRow(
                     label: 'Check after',
                     value: s.wakeCheckDelayMinutes,
@@ -126,7 +126,7 @@ class SettingsScreen extends ConsumerWidget {
                     onInc: () => ctrl.setWakeCheckDelayMinutes(
                         (s.wakeCheckDelayMinutes + 1).clamp(1, 30)),
                   ),
-                  const Divider(height: 20, color: RiseColors.divider),
+                  Divider(height: 20, color: RiseColors.divider),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -222,7 +222,7 @@ class SettingsScreen extends ConsumerWidget {
                           onChanged: ctrl.setSunriseWake),
                     ],
                   ),
-                  const Divider(height: 20, color: RiseColors.divider),
+                  Divider(height: 20, color: RiseColors.divider),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -242,6 +242,35 @@ class SettingsScreen extends ConsumerWidget {
                         'When you wake, a brief note suggests getting real, '
                         'bright light — the thing that actually helps you feel '
                         'awake.',
+                        style: RiseText.caption),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            const SectionLabel('Appearance'),
+            const SizedBox(height: 12),
+            RiseCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Theme', style: RiseText.body),
+                  const SizedBox(height: 8),
+                  SegmentedControl<RiseThemeMode>(
+                    key: const Key('theme-mode-segmented'),
+                    segments: const [
+                      (value: RiseThemeMode.system, label: 'System'),
+                      (value: RiseThemeMode.light, label: 'Light'),
+                      (value: RiseThemeMode.dark, label: 'Dark'),
+                    ],
+                    selected: s.themeMode,
+                    onChanged: ctrl.setThemeMode,
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                        'System follows your device\'s light or dark setting.',
                         style: RiseText.caption),
                   ),
                 ],
@@ -317,7 +346,7 @@ class SettingsScreen extends ConsumerWidget {
           Flexible(child: Text(text, style: RiseText.body)),
           if (locked) ...[
             const SizedBox(width: 6),
-            const Icon(Icons.lock_outline, size: 14, color: RiseColors.textDim),
+            Icon(Icons.lock_outline, size: 14, color: RiseColors.textDim),
           ],
         ],
       );
@@ -393,7 +422,7 @@ class _SleepGoalCard extends ConsumerWidget {
       child: RiseCard(
         child: Row(
           children: [
-            const Icon(Icons.wb_sunny_outlined,
+            Icon(Icons.wb_sunny_outlined,
                 color: RiseColors.waking, size: 20),
             const SizedBox(width: 12),
             Expanded(
@@ -412,7 +441,7 @@ class _SleepGoalCard extends ConsumerWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right,
+            Icon(Icons.chevron_right,
                 color: RiseColors.textFaint, size: 20),
           ],
         ),
@@ -538,7 +567,7 @@ class _AccountBackupSectionState extends ConsumerState<_AccountBackupSection> {
           child: RiseCard(
             child: Row(
               children: [
-                const Icon(Icons.cloud_download_outlined,
+                Icon(Icons.cloud_download_outlined,
                     color: RiseColors.primary, size: 20),
                 const SizedBox(width: 12),
                 Expanded(
@@ -556,14 +585,14 @@ class _AccountBackupSectionState extends ConsumerState<_AccountBackupSection> {
                   ),
                 ),
                 if (_restoring)
-                  const SizedBox(
+                  SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: RiseColors.primary),
                   )
                 else
-                  const Icon(Icons.chevron_right,
+                  Icon(Icons.chevron_right,
                       color: RiseColors.textFaint, size: 20),
               ],
             ),

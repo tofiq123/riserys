@@ -140,7 +140,7 @@ class _StepsMissionState extends State<StepsMission> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.directions_walk,
+            Icon(Icons.directions_walk,
                 size: 40, color: RiseColors.primaryText),
             const SizedBox(height: 8),
             Text('$remaining',

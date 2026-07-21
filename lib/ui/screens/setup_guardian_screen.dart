@@ -107,7 +107,7 @@ class _SetupGuardianScreenState extends State<SetupGuardianScreen>
       backgroundColor: RiseColors.appBg,
       body: SafeArea(
         child: p == null
-            ? const Center(child: Text('Checking…', style: RiseText.body))
+            ? Center(child: Text('Checking…', style: RiseText.body))
             : _dashboard(p),
       ),
     );
@@ -134,7 +134,7 @@ class _SetupGuardianScreenState extends State<SetupGuardianScreen>
                 key: const Key('guardian-back'),
                 behavior: HitTestBehavior.opaque,
                 onTap: () => Navigator.of(context).maybePop(),
-                child: const Padding(
+                child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                   child:
                       Icon(Icons.arrow_back, color: RiseColors.text, size: 22),

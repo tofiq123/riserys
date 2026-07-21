@@ -137,7 +137,7 @@ class _TypingMissionState extends State<TypingMission> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(RiseRadii.base),
-                borderSide: const BorderSide(color: RiseColors.primary),
+                borderSide: BorderSide(color: RiseColors.primary),
               ),
             ),
           ),

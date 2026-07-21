@@ -247,13 +247,13 @@ class _ShakeMissionState extends State<ShakeMission> {
                 value: _progress,
                 strokeWidth: 10,
                 backgroundColor: RiseColors.surface2,
-                valueColor: const AlwaysStoppedAnimation(RiseColors.primary),
+                valueColor: AlwaysStoppedAnimation(RiseColors.primary),
               ),
             ),
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.vibration, size: 40, color: RiseColors.primary),
+                Icon(Icons.vibration, size: 40, color: RiseColors.primary),
                 const SizedBox(height: 8),
                 Text('$pct%',
                     style: RiseText.mono(

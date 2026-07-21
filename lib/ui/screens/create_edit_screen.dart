@@ -362,7 +362,7 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
               },
             ),
             trailing: chainsLocked
-                ? const Icon(Icons.lock_outline,
+                ? Icon(Icons.lock_outline,
                     size: 14, color: RiseColors.textDim)
                 : null),
           if (draft.mission == 'qr')
