@@ -20,7 +20,11 @@ const _ada = CrewMember(
     id: 'u1', username: 'ada', displayName: 'Ada', avatarColor: '#7C9CF4');
 
 CrewStanding _standing(String id,
-        {int current = 0, int best = 0, int total = 0, int onTime = 0, bool isMe = false}) =>
+        {int current = 0,
+        int best = 0,
+        int total = 0,
+        int onTime = 0,
+        bool isMe = false}) =>
     CrewStanding(
       id: id,
       username: id,
@@ -71,13 +75,12 @@ void main() {
     expect(find.text('Up and about'), findsOneWidget);
   });
 
-  testWidgets('unknown status degrades to a placeholder', (t) async {
+  testWidgets('unknown status degrades to a gentle placeholder', (t) async {
     await _pump(t);
-    expect(find.text('Status unavailable'), findsOneWidget);
+    expect(find.text('No status right now'), findsOneWidget);
   });
 
-  testWidgets('renders their streak and on-time % from the leaderboard',
-      (t) async {
+  testWidgets('renders streak, on-time % and best as stat tiles', (t) async {
     await _pump(t, standings: [
       _standing('u1', current: 5, best: 9, total: 10, onTime: 8),
     ]);
@@ -108,11 +111,22 @@ void main() {
     expect(nudge.lastNudged, 'u1');
   });
 
-  testWidgets('Remove action confirms first, then removes the friend', (t) async {
+  testWidgets('the voice-clip action is offered as a secondary', (t) async {
+    await _pump(t);
+    expect(find.text('Send a voice clip'), findsOneWidget);
+  });
+
+  testWidgets('remove hides in the overflow and still confirms first',
+      (t) async {
     final (crew, _) = await _pump(t);
-    await t.tap(find.text('Remove'));
+    // Not on the main surface anymore.
+    expect(find.text('Remove'), findsNothing);
+    await t.tap(find.byKey(const Key('friend-overflow')));
     await t.pumpAndSettle();
-    expect(crew.current.friends, isNotEmpty, reason: 'not removed until confirmed');
+    await t.tap(find.byKey(const Key('friend-remove-action')));
+    await t.pumpAndSettle();
+    expect(crew.current.friends, isNotEmpty,
+        reason: 'not removed until confirmed');
     await t.tap(find.byKey(const Key('confirm-dialog-confirm')));
     await t.pumpAndSettle();
     expect(crew.current.friends, isEmpty);

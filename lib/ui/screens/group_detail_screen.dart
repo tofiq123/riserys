@@ -7,18 +7,21 @@ import '../../domain/crew_member.dart';
 import '../../domain/crew_score.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/group.dart';
+import '../components/crew_avatar.dart';
+import '../components/crew_entrance.dart';
+import '../components/crew_pill.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
 import '../components/toast.dart';
 import '../state/auth_providers.dart';
 import '../state/group_providers.dart';
-import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 
-/// One group's page: its invite code (to share), a group leaderboard reusing the
-/// per-member streak/stats data, the roster, and owner/member actions (rename,
-/// remove member, leave / delete). Reads via the group providers.
+/// One group's page: its invite code (to share), the collective group score,
+/// a leaderboard reusing the per-member streak/stats data, the roster, and
+/// owner/member actions (rename, remove member, leave / delete). Reads via
+/// the existing group providers.
 class GroupDetailScreen extends ConsumerStatefulWidget {
   const GroupDetailScreen({super.key, required this.group});
 
@@ -108,7 +111,9 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
   Future<void> _removeMember(CrewMember m) => _run(() async {
         await ref.read(groupServiceProvider).removeMember(_gid, m.id);
         _refresh();
-        if (mounted) _snack('Removed @${m.username}.', kind: RiseToastKind.success);
+        if (mounted) {
+          _snack('Removed @${m.username}.', kind: RiseToastKind.success);
+        }
       });
 
   Future<void> _leave() => _run(() async {
@@ -136,40 +141,58 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
           padding: const EdgeInsets.fromLTRB(
               RiseSpacing.screen, 8, RiseSpacing.screen, 40),
           children: [
-            _header(),
-            const SizedBox(height: 20),
-            _inviteCard(),
-            const SizedBox(height: 24),
-            const SectionLabel('Group leaderboard'),
-            const SizedBox(height: 12),
-            board.when(
-              data: (standings) => standings.isEmpty
-                  ? Text('No streaks yet — start waking up together.',
-                      style: RiseText.caption)
-                  : Column(children: [
-                      _scoreCard(computeCrewScore(standings)),
-                      const SizedBox(height: 14),
-                      for (var i = 0; i < standings.length; i++)
-                        _standingRow(i + 1, standings[i]),
-                    ]),
-              loading: _spinner,
-              error: (_, __) => Text('Could not load the leaderboard.',
-                  style: RiseText.caption),
+            CrewEntrance(index: 0, child: _header()),
+            const SizedBox(height: 18),
+            CrewEntrance(index: 1, child: _inviteCard()),
+            const SizedBox(height: 26),
+            CrewEntrance(
+              index: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionLabel('Group leaderboard'),
+                  const SizedBox(height: 12),
+                  board.when(
+                    data: (standings) => standings.isEmpty
+                        ? Text('No streaks yet — start waking up together.',
+                            style: RiseText.caption)
+                        : Column(children: [
+                            _scoreCard(computeCrewScore(standings)),
+                            const SizedBox(height: 14),
+                            for (var i = 0; i < standings.length; i++)
+                              _standingRow(i + 1, standings[i]),
+                          ]),
+                    loading: _spinner,
+                    error: (_, __) => Text('Could not load the leaderboard.',
+                        style: RiseText.caption),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 24),
-            const SectionLabel('Members'),
-            const SizedBox(height: 12),
-            members.when(
-              data: (list) => list.isEmpty
-                  ? Text('No members to show yet.', style: RiseText.caption)
-                  : Column(
-                      children: [for (final m in list) _memberRow(m, me)]),
-              loading: _spinner,
-              error: (_, __) =>
-                  Text('Could not load members.', style: RiseText.caption),
+            const SizedBox(height: 26),
+            CrewEntrance(
+              index: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionLabel('Members'),
+                  const SizedBox(height: 12),
+                  members.when(
+                    data: (list) => list.isEmpty
+                        ? Text('No members to show yet.',
+                            style: RiseText.caption)
+                        : Column(children: [
+                            for (final m in list) _memberRow(m, me)
+                          ]),
+                    loading: _spinner,
+                    error: (_, __) => Text('Could not load members.',
+                        style: RiseText.caption),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 28),
-            _footerAction(),
+            const SizedBox(height: 30),
+            CrewEntrance(index: 4, child: _footerAction()),
           ],
         ),
       ),
@@ -191,15 +214,17 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => Navigator.of(context).maybePop(),
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.centerLeft,
               child: Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
           Expanded(
             child: Text(_group.name,
-                style: RiseText.title,
+                style: RiseText.title.copyWith(fontSize: 19),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
           ),
@@ -207,8 +232,10 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _busy ? null : _rename,
-              child: Padding(
-                padding: EdgeInsets.all(6),
+              child: Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.centerRight,
                 child: Icon(Icons.edit_outlined,
                     color: RiseColors.textDim, size: 20),
               ),
@@ -225,17 +252,20 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Invite code',
-                      style: RiseText.caption
-                          .copyWith(color: RiseColors.textDim)),
+                      style:
+                          RiseText.caption.copyWith(color: RiseColors.textDim)),
                   const SizedBox(height: 4),
                   Text(_group.inviteCode,
-                      style: RiseText.mono(size: 24, weight: FontWeight.w600),
+                      style: RiseText.mono(
+                          size: 24,
+                          weight: FontWeight.w600,
+                          letterSpacing: 1.5),
                       maxLines: 1),
                 ],
               ),
             ),
             const SizedBox(width: 12),
-            _pill('Copy', _copyCode, filled: true),
+            CrewPill('Copy', onTap: _copyCode, filled: true),
           ],
         ),
       );
@@ -250,6 +280,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
       decoration: BoxDecoration(
         color: RiseColors.primary,
         borderRadius: BorderRadius.circular(RiseRadii.base),
+        boxShadow: RiseShadows.primary,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -293,8 +324,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
         decoration: BoxDecoration(
           color: s.isMe ? RiseColors.accentSoft : RiseColors.card,
           borderRadius: BorderRadius.circular(RiseRadii.base),
-          border:
-              Border.all(color: s.isMe ? RiseColors.accent : RiseColors.border),
+          border: Border.all(
+              color: s.isMe ? RiseColors.accent : RiseColors.border),
         ),
         child: Row(
           children: [
@@ -304,13 +335,17 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
                   style: RiseText.mono(size: 15, weight: FontWeight.w600)),
             ),
             const SizedBox(width: 8),
-            _avatar(s.username, s.avatarColor, 34),
+            CrewAvatar(
+                username: s.username, colorHex: s.avatarColor, size: 34),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(s.displayName.isNotEmpty ? s.displayName : '@${s.username}',
+                  Text(
+                      s.displayName.isNotEmpty
+                          ? s.displayName
+                          : '@${s.username}',
                       style:
                           RiseText.body.copyWith(fontWeight: FontWeight.w600),
                       maxLines: 1,
@@ -347,19 +382,24 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
       child: RiseCard(
         child: Row(
           children: [
-            _avatar(m.username, m.avatarColor, 38),
+            CrewAvatar(
+                username: m.username, colorHex: m.avatarColor, size: 38),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(m.displayName.isNotEmpty ? m.displayName : '@${m.username}',
+                  Text(
+                      m.displayName.isNotEmpty
+                          ? m.displayName
+                          : '@${m.username}',
                       style:
                           RiseText.body.copyWith(fontWeight: FontWeight.w600),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
                   Text('@${m.username}',
-                      style: RiseText.mono(size: 12, color: RiseColors.textDim),
+                      style:
+                          RiseText.mono(size: 12, color: RiseColors.textDim),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
                 ],
@@ -371,8 +411,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
             ],
             if (canRemove) ...[
               const SizedBox(width: 8),
-              _pill('Remove', _busy ? null : () => _removeMember(m),
-                  danger: true),
+              CrewPill('Remove',
+                  onTap: _busy ? null : () => _removeMember(m), danger: true),
             ],
           ],
         ),
@@ -381,21 +421,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
   }
 
   Widget _footerAction() => _group.isOwner
-      ? _wideButton('Delete group', _busy ? null : _delete, danger: true)
-      : _wideButton('Leave group', _busy ? null : _leave, danger: true);
-
-  Widget _avatar(String username, String colorHex, double size) => Container(
-        width: size,
-        height: size,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-            color: avatarColorFromHex(colorHex), shape: BoxShape.circle),
-        child: Text(
-          (username.isNotEmpty ? username : '?').characters.first.toUpperCase(),
-          style: RiseText.body.copyWith(
-              color: RiseColors.primaryText, fontWeight: FontWeight.w700),
-        ),
-      );
+      ? _wideButton('Delete group', _busy ? null : _delete)
+      : _wideButton('Leave group', _busy ? null : _leave);
 
   Widget _badge(String label) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -411,35 +438,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
                 color: RiseColors.textDim)),
       );
 
-  Widget _pill(String label, VoidCallback? onTap,
-      {bool filled = false, bool danger = false}) {
-    final bg = filled ? RiseColors.primary : RiseColors.card;
-    final fg = danger
-        ? RiseColors.danger
-        : filled
-            ? RiseColors.primaryText
-            : RiseColors.text;
-    return Opacity(
-      opacity: onTap == null ? 0.4 : 1,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(RiseRadii.sm),
-            border: filled ? null : Border.all(color: RiseColors.border),
-          ),
-          child: Text(label,
-              style: RiseText.body.copyWith(
-                  color: fg, fontWeight: FontWeight.w600, fontSize: 13)),
-        ),
-      ),
-    );
-  }
-
-  Widget _wideButton(String label, VoidCallback? onTap, {bool danger = false}) {
+  Widget _wideButton(String label, VoidCallback? onTap) {
     return Opacity(
       opacity: onTap == null ? 0.4 : 1,
       child: GestureDetector(
@@ -447,16 +446,16 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
         onTap: onTap,
         child: Container(
           alignment: Alignment.center,
+          constraints: const BoxConstraints(minHeight: 44),
           padding: const EdgeInsets.symmetric(vertical: 13),
           decoration: BoxDecoration(
             color: RiseColors.card,
-            borderRadius: BorderRadius.circular(RiseRadii.sm),
-            border: Border.all(
-                color: danger ? RiseColors.danger : RiseColors.border),
+            borderRadius: BorderRadius.circular(RiseRadii.base),
+            border: Border.all(color: RiseColors.danger),
           ),
           child: Text(label,
               style: RiseText.body.copyWith(
-                  color: danger ? RiseColors.danger : RiseColors.text,
+                  color: RiseColors.danger,
                   fontWeight: FontWeight.w600,
                   fontSize: 14)),
         ),
