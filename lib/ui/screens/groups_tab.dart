@@ -5,6 +5,7 @@ import '../../data/group/group_service.dart';
 import '../../domain/group.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
+import '../components/toast.dart';
 import '../state/group_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
@@ -33,10 +34,9 @@ class _GroupsTabState extends ConsumerState<GroupsTab> {
     super.dispose();
   }
 
-  void _snack(String message) {
+  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    RiseToast.show(context, message, kind: kind);
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -45,9 +45,9 @@ class _GroupsTabState extends ConsumerState<GroupsTab> {
     try {
       await action();
     } on GroupException catch (e) {
-      _snack(e.message);
+      _snack(e.message, kind: RiseToastKind.error);
     } catch (_) {
-      _snack('Something went wrong. Try again.');
+      _snack('Something went wrong. Try again.', kind: RiseToastKind.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -56,7 +56,7 @@ class _GroupsTabState extends ConsumerState<GroupsTab> {
   Future<void> _create() => _run(() async {
         final name = _name.text.trim();
         if (name.isEmpty) {
-          _snack('Give your group a name first.');
+          _snack('Give your group a name first.', kind: RiseToastKind.info);
           return;
         }
         final group = await ref.read(groupServiceProvider).createGroup(name);
@@ -69,14 +69,14 @@ class _GroupsTabState extends ConsumerState<GroupsTab> {
   Future<void> _join() => _run(() async {
         final code = _code.text.trim();
         if (code.isEmpty) {
-          _snack('Enter an invite code.');
+          _snack('Enter an invite code.', kind: RiseToastKind.info);
           return;
         }
         final group = await ref.read(groupServiceProvider).joinByCode(code);
         ref.invalidate(myGroupsProvider);
         if (!mounted) return;
         _code.clear();
-        _snack('Joined "${group.name}".');
+        _snack('Joined "${group.name}".', kind: RiseToastKind.success);
         _open(group);
       });
 

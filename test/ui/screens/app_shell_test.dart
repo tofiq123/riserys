@@ -95,7 +95,8 @@ void main() {
     final c = _container();
     await t.pumpWidget(_host(c));
     await t.pump();
-    c.read(toastProvider.notifier).state = 'Saved';
+    c.read(toastProvider.notifier).state =
+        (message: 'Saved', kind: RiseToastKind.success);
     await t.pump();
     expect(find.byType(RiseToast), findsOneWidget);
     expect(find.text('Saved'), findsOneWidget);

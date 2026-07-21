@@ -8,6 +8,7 @@ import '../../data/voice/voice_recorder.dart';
 import '../../domain/crew_member.dart';
 import '../../domain/voice_recording.dart';
 import '../components/rise_card.dart';
+import '../components/toast.dart';
 import '../state/voice_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
@@ -43,17 +44,17 @@ class _VoiceComposerScreenState extends ConsumerState<VoiceComposerScreen> {
     super.dispose();
   }
 
-  void _snack(String message) {
+  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    RiseToast.show(context, message, kind: kind);
   }
 
   Future<void> _startRecording() async {
     final recorder = ref.read(voiceRecorderProvider);
     final ok = await recorder.hasPermission();
     if (!ok) {
-      _snack('Microphone access is needed to record a clip.');
+      _snack('Microphone access is needed to record a clip.',
+          kind: RiseToastKind.error);
       return;
     }
     await recorder.start();
@@ -81,7 +82,8 @@ class _VoiceComposerScreenState extends ConsumerState<VoiceComposerScreen> {
     if (!mounted) return;
     if (clip == null) {
       setState(() => _phase = _Phase.idle);
-      _snack('That recording came up empty — try again.');
+      _snack('That recording came up empty — try again.',
+          kind: RiseToastKind.error);
       return;
     }
     setState(() {
@@ -131,15 +133,15 @@ class _VoiceComposerScreenState extends ConsumerState<VoiceComposerScreen> {
           .send(targetId: _member.id, recording: clip);
       if (!mounted) return;
       Navigator.of(context).maybePop();
-      _snack('Sent to @${_member.username} 🎙️');
+      _snack('Sent to @${_member.username} 🎙️', kind: RiseToastKind.success);
     } on VoiceClipException catch (e) {
       if (!mounted) return;
       setState(() => _phase = _Phase.recorded);
-      _snack(e.message);
+      _snack(e.message, kind: RiseToastKind.error);
     } catch (_) {
       if (!mounted) return;
       setState(() => _phase = _Phase.recorded);
-      _snack('Something went wrong. Try again.');
+      _snack('Something went wrong. Try again.', kind: RiseToastKind.error);
     }
   }
 

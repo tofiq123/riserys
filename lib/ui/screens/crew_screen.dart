@@ -10,6 +10,7 @@ import '../../domain/premium_feature.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
 import '../components/segmented.dart';
+import '../components/toast.dart';
 import '../state/auth_providers.dart';
 import '../state/crew_providers.dart';
 import '../state/entitlement_providers.dart';
@@ -51,10 +52,9 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
     super.dispose();
   }
 
-  void _snack(String message) {
+  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    RiseToast.show(context, message, kind: kind);
   }
 
   Future<void> _search() async {
@@ -88,9 +88,9 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
     try {
       await action();
     } on FriendshipException catch (e) {
-      _snack(e.message);
+      _snack(e.message, kind: RiseToastKind.error);
     } catch (_) {
-      _snack('Something went wrong. Try again.');
+      _snack('Something went wrong. Try again.', kind: RiseToastKind.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -116,7 +116,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
         _found = null;
         _searchMessage = null;
       });
-      _snack('Request sent to @${m.username}.');
+      _snack('Request sent to @${m.username}.', kind: RiseToastKind.success);
     });
   }
 
@@ -139,11 +139,11 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
     setState(() => _nudging.add(m.id));
     try {
       await ref.read(nudgeServiceProvider).nudge(m.id);
-      if (mounted) _snack('Nudged @${m.username} 👋');
+      if (mounted) _snack('Nudged @${m.username} 👋', kind: RiseToastKind.success);
     } on NudgeException catch (e) {
-      if (mounted) _snack(e.message);
+      if (mounted) _snack(e.message, kind: RiseToastKind.error);
     } catch (_) {
-      if (mounted) _snack('Could not send the nudge.');
+      if (mounted) _snack('Could not send the nudge.', kind: RiseToastKind.error);
     } finally {
       if (mounted) setState(() => _nudging.remove(m.id));
     }

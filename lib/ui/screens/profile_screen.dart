@@ -10,6 +10,7 @@ import '../components/permissions_section.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
+import '../components/toast.dart';
 import '../state/auth_providers.dart';
 import '../state/entitlement_providers.dart';
 import '../theme/avatar_color.dart';
@@ -214,10 +215,9 @@ class _AccountSection extends ConsumerStatefulWidget {
 class _AccountSectionState extends ConsumerState<_AccountSection> {
   bool _busy = false;
 
-  void _snack(String message) {
+  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    RiseToast.show(context, message, kind: kind);
   }
 
   Future<void> _run(Future<void> Function() action, {String? onError}) async {
@@ -226,7 +226,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
     try {
       await action();
     } catch (_) {
-      if (onError != null) _snack(onError);
+      if (onError != null) _snack(onError, kind: RiseToastKind.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -243,7 +243,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
     await _run(() async {
       await _unregisterPush();
       await ref.read(authServiceProvider).signOut();
-      _snack('Signed out.');
+      _snack('Signed out.', kind: RiseToastKind.success);
     }, onError: 'Could not sign out. Try again.');
   }
 
@@ -298,7 +298,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
     if (confirmed != true) return;
     await _run(() async {
       await ref.read(authServiceProvider).deleteAccount();
-      _snack('Your account was deleted.');
+      _snack('Your account was deleted.', kind: RiseToastKind.success);
     }, onError: 'Could not delete your account. Try again.');
   }
 

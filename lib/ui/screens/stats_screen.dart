@@ -23,6 +23,7 @@ import '../components/section_label.dart';
 import '../components/segmented.dart';
 import '../components/shareable_stats_card.dart';
 import '../components/sparkline.dart';
+import '../components/toast.dart';
 import '../share/stats_share.dart';
 import '../state/auth_providers.dart';
 import '../state/crew_providers.dart';
@@ -798,9 +799,8 @@ class _RoughNightCard extends ConsumerWidget {
       // Best-effort: a storage hiccup must never crash the Stats tab.
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Marked. Your streak\'s safe — rest up.')),
-    );
+    RiseToast.show(context, 'Marked. Your streak\'s safe — rest up.',
+        kind: RiseToastKind.success);
   }
 }
 
@@ -939,9 +939,8 @@ class _ShareCardState extends ConsumerState<_ShareCard> {
       await runner(_boundaryKey);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Couldn\'t share right now. Try again.')),
-        );
+        RiseToast.show(context, 'Couldn\'t share right now. Try again.',
+            kind: RiseToastKind.error);
       }
     } finally {
       if (mounted) {
@@ -1525,10 +1524,12 @@ class _AccountabilityPingCardState
     }
     if (!mounted) return;
     setState(() => _sending = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(sent > 0
+    RiseToast.show(
+      context,
+      sent > 0
           ? 'Your crew knows you\'re on it. 💪'
-          : 'Couldn\'t reach your crew right now. Try again later.'),
-    ));
+          : 'Couldn\'t reach your crew right now. Try again later.',
+      kind: sent > 0 ? RiseToastKind.success : RiseToastKind.error,
+    );
   }
 }

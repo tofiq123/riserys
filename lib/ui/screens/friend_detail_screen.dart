@@ -9,6 +9,7 @@ import '../../domain/crew_standing.dart';
 import '../../domain/crew_status.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
+import '../components/toast.dart';
 import '../state/crew_providers.dart';
 import '../state/leaderboard_providers.dart';
 import '../state/nudge_providers.dart';
@@ -39,10 +40,9 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
 
   CrewMember get _member => widget.member;
 
-  void _snack(String message) {
+  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    RiseToast.show(context, message, kind: kind);
   }
 
   Future<void> _nudge() async {
@@ -50,11 +50,11 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
     setState(() => _nudging = true);
     try {
       await ref.read(nudgeServiceProvider).nudge(_member.id);
-      if (mounted) _snack('Nudged @${_member.username} 👋');
+      if (mounted) _snack('Nudged @${_member.username} 👋', kind: RiseToastKind.success);
     } on NudgeException catch (e) {
-      if (mounted) _snack(e.message);
+      if (mounted) _snack(e.message, kind: RiseToastKind.error);
     } catch (_) {
-      if (mounted) _snack('Could not send the nudge.');
+      if (mounted) _snack('Could not send the nudge.', kind: RiseToastKind.error);
     } finally {
       if (mounted) setState(() => _nudging = false);
     }
@@ -69,12 +69,12 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
     } on FriendshipException catch (e) {
       if (mounted) {
         setState(() => _removing = false);
-        _snack(e.message);
+        _snack(e.message, kind: RiseToastKind.error);
       }
     } catch (_) {
       if (mounted) {
         setState(() => _removing = false);
-        _snack('Something went wrong. Try again.');
+        _snack('Something went wrong. Try again.', kind: RiseToastKind.error);
       }
     }
   }

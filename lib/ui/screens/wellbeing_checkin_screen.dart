@@ -5,6 +5,7 @@ import '../../domain/phq2.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
+import '../components/toast.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 
@@ -219,8 +220,8 @@ class _WellbeingCheckinScreenState extends State<WellbeingCheckinScreen> {
   }
 
   void _helplineFallback(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Visit findahelpline.com to find support near you.')));
+    RiseToast.show(context, 'Visit findahelpline.com to find support near you.',
+        kind: RiseToastKind.info);
   }
 }
 

@@ -9,6 +9,7 @@ import '../../domain/crew_standing.dart';
 import '../../domain/group.dart';
 import '../components/rise_card.dart';
 import '../components/section_label.dart';
+import '../components/toast.dart';
 import '../state/auth_providers.dart';
 import '../state/group_providers.dart';
 import '../theme/avatar_color.dart';
@@ -33,10 +34,9 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
 
   String get _gid => _group.id;
 
-  void _snack(String message) {
+  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    RiseToast.show(context, message, kind: kind);
   }
 
   void _refresh() {
@@ -51,9 +51,9 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
     try {
       await action();
     } on GroupException catch (e) {
-      _snack(e.message);
+      _snack(e.message, kind: RiseToastKind.error);
     } catch (_) {
-      _snack('Something went wrong. Try again.');
+      _snack('Something went wrong. Try again.', kind: RiseToastKind.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -61,7 +61,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
 
   Future<void> _copyCode() async {
     await Clipboard.setData(ClipboardData(text: _group.inviteCode));
-    _snack('Invite code copied. Share it with your crew.');
+    _snack('Invite code copied. Share it with your crew.',
+        kind: RiseToastKind.success);
   }
 
   Future<void> _rename() async {
@@ -100,14 +101,14 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
       if (!mounted) return;
       setState(() => _group = _group.copyWith(name: next));
       _refresh();
-      _snack('Renamed to "$next".');
+      _snack('Renamed to "$next".', kind: RiseToastKind.success);
     });
   }
 
   Future<void> _removeMember(CrewMember m) => _run(() async {
         await ref.read(groupServiceProvider).removeMember(_gid, m.id);
         _refresh();
-        if (mounted) _snack('Removed @${m.username}.');
+        if (mounted) _snack('Removed @${m.username}.', kind: RiseToastKind.success);
       });
 
   Future<void> _leave() => _run(() async {
