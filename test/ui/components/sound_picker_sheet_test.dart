@@ -71,6 +71,30 @@ void main() {
     expect(confirmed, 'sounds/rise_sunrise.ogg');
   });
 
+  testWidgets(
+      'an idle previewable tone still shows a persistent play affordance',
+      (t) async {
+    final fake = _FakePreviewer();
+    await t.pumpWidget(_host(SoundPickerSheet(
+      initialAsset: kDefaultSound.asset,
+      previewer: fake,
+      onConfirm: (_) {},
+      onCancel: () {},
+    )));
+
+    // Nothing is previewing yet, but idle previewable tones advertise the play
+    // control so the user can always see where to tap to (re)play a preview.
+    expect(find.byIcon(Icons.play_arrow_rounded), findsWidgets);
+    expect(find.byIcon(Icons.volume_up_rounded), findsNothing);
+
+    // Previewing swaps only that row's glyph to the volume icon; the other
+    // idle tones keep their play affordance.
+    await t.tap(find.text('Sunrise'));
+    await t.pump();
+    expect(find.byIcon(Icons.volume_up_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsWidgets);
+  });
+
   testWidgets('re-tapping the playing tone stops the preview', (t) async {
     final fake = _FakePreviewer();
     await t.pumpWidget(_host(SoundPickerSheet(
