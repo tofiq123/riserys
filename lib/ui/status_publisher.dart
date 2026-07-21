@@ -4,10 +4,12 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/crew_status.dart';
+import '../domain/rise_settings.dart';
 import '../domain/wake_event.dart';
 import '../data/status/status_service.dart';
 import 'state/alarm_providers.dart';
 import 'state/auth_providers.dart';
+import 'state/settings_providers.dart';
 import 'state/status_providers.dart';
 import 'state/wake_providers.dart';
 
@@ -36,6 +38,13 @@ class StatusPublisher {
 final statusPublisherProvider = Provider<StatusPublisher>(
     (ref) => StatusPublisher(ref.watch(statusServiceProvider)));
 
+/// Whether today's wake evidence showed the user clearly beyond their home
+/// radius. Set true by the home-departure checker after a positive foreground
+/// fix (see `lib/data/home_departure_checker.dart`); reset when the next alarm
+/// starts ringing (the `WakeRecorder.openRing` hook). Device-local state: only
+/// this derived boolean — never a coordinate — feeds the published status.
+final leftHomeTodayProvider = StateProvider<bool>((_) => false);
+
 /// The signed-in user's own [CrewStatus], derived from local alarm/wake state,
 /// or [CrewStatus.unknown] when signed out. Recomputes when alarms/wake events
 /// change; purely time-based transitions are picked up on the next change or on
@@ -53,12 +62,22 @@ final derivedStatusProvider = Provider<CrewStatus>((ref) {
       lastDismissed = d;
     }
   }
-  return deriveStatus(
+  final status = deriveStatus(
     now: DateTime.now().toUtc(),
     nextAlarmAt: next?.fireAt.toUtc(),
     hasOpenWakeEvent: hasOpen,
     lastDismissedAt: lastDismissed?.toUtc(),
   );
+  // "Up & out": upgrade awake → out ONLY when the user explicitly opted into
+  // crew sharing AND today's on-device wake evidence says they left home.
+  // Everything consulted here is a derived boolean or a local setting — the
+  // home anchor / coordinates never reach this layer, let alone the backend.
+  if (status == CrewStatus.awake &&
+      ref.watch(currentSettingsProvider).homeShare == HomeShareTier.crew &&
+      ref.watch(leftHomeTodayProvider)) {
+    return CrewStatus.out;
+  }
+  return status;
 });
 
 /// Mounted in the app shell: publishes the signed-in user's derived status

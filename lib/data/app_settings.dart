@@ -35,6 +35,9 @@ class AppSettings {
   static const _kRealLightPrompt = 'realLightPrompt';
   static const _kUse24HourTime = 'use24HourTime';
   static const _kThemeMode = 'themeMode';
+  static const _kHomeLat = 'homeLat';
+  static const _kHomeLng = 'homeLng';
+  static const _kHomeShare = 'homeShare';
 
   int get snoozeMaxCount => _prefs.getInt(_kSnoozeMaxCount) ?? 3;
   Future<void> setSnoozeMaxCount(int v) => _prefs.setInt(_kSnoozeMaxCount, v);
@@ -109,6 +112,36 @@ class AppSettings {
   Future<void> setThemeMode(RiseThemeMode v) =>
       _prefs.setString(_kThemeMode, v.name);
 
+  /// The home anchor, or null when unset. DEVICE-LOCAL ONLY: these two keys
+  /// live in this on-device store and are deliberately NOT part of the
+  /// account-backup payload (`encodeBackup` serializes only alarms + wake
+  /// events) and are never sent to Supabase. The components are always stored
+  /// and cleared together.
+  double? get homeLat => _prefs.getDouble(_kHomeLat);
+  double? get homeLng => _prefs.getDouble(_kHomeLng);
+
+  Future<void> setHome(double lat, double lng) async {
+    await _prefs.setDouble(_kHomeLat, lat);
+    await _prefs.setDouble(_kHomeLng, lng);
+  }
+
+  Future<void> clearHome() async {
+    await _prefs.remove(_kHomeLat);
+    await _prefs.remove(_kHomeLng);
+  }
+
+  /// The left-home privacy tier, persisted by enum name. Default (and the
+  /// fallback for an unknown/legacy value) is [HomeShareTier.off] — the
+  /// feature is fully opt-in.
+  HomeShareTier get homeShare {
+    final name = _prefs.getString(_kHomeShare);
+    return HomeShareTier.values
+        .firstWhere((t) => t.name == name, orElse: () => HomeShareTier.off);
+  }
+
+  Future<void> setHomeShare(HomeShareTier v) =>
+      _prefs.setString(_kHomeShare, v.name);
+
   /// A snapshot of the mutable settings (snooze + wake-check + wake plan +
   /// steady wake time).
   RiseSettings get settings => RiseSettings(
@@ -125,5 +158,8 @@ class AppSettings {
         realLightPrompt: realLightPrompt,
         use24HourTime: use24HourTime,
         themeMode: themeMode,
+        homeLat: homeLat,
+        homeLng: homeLng,
+        homeShare: homeShare,
       );
 }

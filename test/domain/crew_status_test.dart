@@ -112,4 +112,40 @@ void main() {
       CrewStatus.unknown,
     );
   });
+
+  test('deriveStatus never returns out — it is a publisher-side upgrade only',
+      () {
+    // `out` requires the explicit crew-share opt-in plus today's left-home
+    // evidence; the pure derivation must never produce it on its own.
+    for (final open in [true, false]) {
+      for (final next in [null, now.add(const Duration(hours: 2))]) {
+        for (final dismissed in [
+          null,
+          now.subtract(const Duration(hours: 1)),
+          now.subtract(const Duration(hours: 10)),
+        ]) {
+          expect(
+              deriveStatus(
+                  now: now,
+                  hasOpenWakeEvent: open,
+                  nextAlarmAt: next,
+                  lastDismissedAt: dismissed),
+              isNot(CrewStatus.out));
+        }
+      }
+    }
+  });
+
+  test('crewStatusLabel covers every status; out reads "Up & out"', () {
+    expect(crewStatusLabel(CrewStatus.out), 'Up & out');
+    expect(crewStatusLabel(CrewStatus.awake), 'Awake');
+    expect(crewStatusLabel(CrewStatus.waking), 'Waking');
+    expect(crewStatusLabel(CrewStatus.asleep), 'Asleep');
+    expect(crewStatusLabel(CrewStatus.unknown), '');
+  });
+
+  test("the wire name for the new status is 'out' (matches migration 0010)",
+      () {
+    expect(CrewStatus.out.name, 'out');
+  });
 }

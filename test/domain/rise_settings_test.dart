@@ -17,6 +17,53 @@ void main() {
     expect(s.sunriseWake, isFalse);
     expect(s.realLightPrompt, isFalse);
     expect(s.use24HourTime, isFalse);
+    expect(s.homeLat, isNull);
+    expect(s.homeLng, isNull);
+    expect(s.hasHome, isFalse);
+    expect(s.homeShare, HomeShareTier.off); // privacy: everything opt-in
+  });
+
+  test('home anchor: set, hasHome, equality, and the clear sentinel', () {
+    const unset = RiseSettings();
+    final set = unset.copyWith(homeLat: 52.52, homeLng: 13.405);
+    expect(set.homeLat, 52.52);
+    expect(set.homeLng, 13.405);
+    expect(set.hasHome, isTrue);
+
+    expect(set == unset, isFalse);
+    expect(set.hashCode == unset.hashCode, isFalse);
+
+    // The clear sentinel resets both components together.
+    final cleared = set.copyWith(clearHome: true);
+    expect(cleared.homeLat, isNull);
+    expect(cleared.homeLng, isNull);
+    expect(cleared.hasHome, isFalse);
+    expect(cleared, unset);
+
+    // clearHome wins even if new values are also passed.
+    expect(set.copyWith(homeLat: 1, clearHome: true).hasHome, isFalse);
+
+    // Unrelated copyWith preserves the anchor.
+    expect(set.copyWith(snoozeMaxCount: 2).hasHome, isTrue);
+  });
+
+  test('homeShare tier: default off, copyWith and equality', () {
+    const s = RiseSettings();
+    expect(s.homeShare, HomeShareTier.off);
+    expect(s.copyWith(homeShare: HomeShareTier.private).homeShare,
+        HomeShareTier.private);
+    expect(s.copyWith(homeShare: HomeShareTier.crew).homeShare,
+        HomeShareTier.crew);
+    expect(
+        const RiseSettings(homeShare: HomeShareTier.crew) ==
+            const RiseSettings(),
+        isFalse);
+    // Unrelated copyWith preserves it.
+    expect(
+        const RiseSettings(homeShare: HomeShareTier.private)
+            .copyWith(snoozeMaxCount: 2)
+            .homeShare,
+        HomeShareTier.private);
   });
 
   test('use24HourTime defaults off; copyWith and equality', () {

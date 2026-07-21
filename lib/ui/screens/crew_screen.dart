@@ -471,6 +471,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
   static Color _statusColor(CrewStatus s) => switch (s) {
         CrewStatus.waking => RiseColors.waking,
         CrewStatus.awake => RiseColors.positive,
+        CrewStatus.out => RiseColors.positive, // awake-and-out — same family
         CrewStatus.asleep => RiseColors.asleep,
         CrewStatus.unknown => RiseColors.textFaint,
       };
@@ -478,6 +479,7 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
   static String _statusLabel(CrewStatus s) => switch (s) {
         CrewStatus.waking => 'Waking',
         CrewStatus.awake => 'Awake',
+        CrewStatus.out => crewStatusLabel(CrewStatus.out), // 'Up & out'
         CrewStatus.asleep => 'Asleep',
         CrewStatus.unknown => '',
       };
