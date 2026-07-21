@@ -92,6 +92,12 @@ class Alarm {
     String? missionDiff,
     int? missionCount,
     String? missionData,
+    // As with [clearLastDismissedAt] below, `missionData ?? this.missionData`
+    // can't express "clear this back to null". That matters when the mission is
+    // changed to a different key: a stale registration (e.g. a QR payload) must
+    // not linger and masquerade as the new mission's config (e.g. a photo hash).
+    // `copyWith(mission: k, clearMissionData: true)` reads unambiguously.
+    bool clearMissionData = false,
     DateTime? lastDismissedAt,
     // The `field ?? this.field` idiom used above cannot express "set this
     // nullable field back to null" — passing null is indistinguishable from
@@ -117,7 +123,8 @@ class Alarm {
       mission: mission ?? this.mission,
       missionDiff: missionDiff ?? this.missionDiff,
       missionCount: missionCount ?? this.missionCount,
-      missionData: missionData ?? this.missionData,
+      missionData:
+          clearMissionData ? null : (missionData ?? this.missionData),
       lastDismissedAt: clearLastDismissedAt
           ? null
           : (lastDismissedAt ?? this.lastDismissedAt),

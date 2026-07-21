@@ -5,12 +5,11 @@ import '../../domain/alarm.dart';
 import '../../domain/alarm_sounds.dart';
 import '../../domain/premium_feature.dart';
 import '../components/day_chips.dart';
+import '../components/mission_picker_sheet.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/rise_switch.dart';
 import '../components/section_label.dart';
-import '../components/segmented.dart';
-import '../components/sound_chips.dart';
 import '../components/sound_picker_sheet.dart';
 import '../components/time_dial.dart';
 import '../components/toast.dart';
@@ -22,23 +21,6 @@ import '../theme/typography.dart';
 import 'paywall_screen.dart';
 import 'photo_register_screen.dart';
 import 'qr_register_screen.dart';
-
-/// Mission keys ↔ display labels. The `SoundChips` pill row is a generic
-/// single-select chip strip, reused here for the mission picker.
-const Map<String, String> _missionLabels = {
-  'none': 'None',
-  'math': 'Math',
-  'tap': 'Tap',
-  'hold': 'Hold',
-  'memory': 'Memory',
-  'pvt': 'Alertness (PVT)',
-  'typing': 'Type a phrase',
-  'shake': 'Shake it off',
-  'qr': 'Scan a code',
-  'steps': 'Walk it off',
-  'photo': 'Snap a spot',
-  'eyes': 'Keep your eyes open',
-};
 
 class CreateEditScreen extends ConsumerStatefulWidget {
   const CreateEditScreen({super.key, required this.onDone});
@@ -118,96 +100,62 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
     widget.onDone();
   }
 
-  /// Scans a QR/barcode once and stores it as the alarm's registered code
-  /// ([Alarm.missionData]) — what the 'qr' dismiss mission will require.
-  Future<void> _registerQr() async {
-    final code = await registerQrCode(context);
-    if (!mounted || code == null) return;
-    final draft = ref.read(draftProvider);
-    if (draft == null) return;
-    _update(draft.copyWith(missionData: code));
-    ref.read(toastProvider.notifier).state =
-        (message: 'QR code registered', kind: RiseToastKind.success);
-  }
-
-  /// The "Register QR code" control shown for the 'qr' mission. When no code is
-  /// registered the mission accepts any scan (never a trap), which this states
-  /// plainly so the choice is explicit.
-  Widget _qrRegisterRow(Alarm draft) {
-    final hasCode = (draft.missionData?.trim() ?? '').isNotEmpty;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(hasCode ? Icons.check_circle : Icons.qr_code_2,
-                size: 18,
-                color: hasCode ? RiseColors.positive : RiseColors.textDim),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                hasCode
-                    ? 'Code registered — scan it to dismiss'
-                    : 'No code yet — any scan will dismiss',
-                style: RiseText.caption,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        SecondaryButton(
-          label: hasCode ? 'Re-register QR code' : 'Register QR code',
-          icon: Icons.qr_code_scanner,
-          onPressed: _busy ? null : _registerQr,
-        ),
-      ],
+  /// Opens the browsable mission picker and applies the chosen mission + its
+  /// config to the draft. Cancelling (null) keeps the current mission. Re-reads
+  /// the draft after the async gap so a concurrent edit isn't clobbered. The
+  /// register (QR/photo) flows run from inside the sheet via the injected
+  /// callbacks below.
+  Future<void> _openMissionPicker(
+      Alarm draft, bool missionsLocked, bool chainsLocked) async {
+    final result = await showMissionPickerSheet(
+      context,
+      draft: draft,
+      missionsLocked: missionsLocked,
+      chainsLocked: chainsLocked,
+      onOpenPaywall: () => openPaywall(context),
+      onRegisterQr: () => registerQrCode(context),
+      onRegisterPhoto: () => registerReferencePhoto(context),
     );
+    if (!mounted || result == null) return;
+    final latest = ref.read(draftProvider);
+    if (latest == null) return;
+    // Only the mission fields are owned by the sheet; apply them onto the latest
+    // draft. `clearMissionData` when the sheet returns no registration so a
+    // stale QR/photo can't survive a mission switch.
+    _update(latest.copyWith(
+      mission: result.mission,
+      missionDiff: result.missionDiff,
+      missionCount: result.missionCount,
+      missionData: result.missionData,
+      clearMissionData: result.missionData == null,
+    ));
   }
 
-  /// Captures a reference photo once and stores its perceptual hash as the
-  /// alarm's registered spot ([Alarm.missionData]) — what the 'photo' dismiss
-  /// mission will later match against.
-  Future<void> _registerPhoto() async {
-    final hash = await registerReferencePhoto(context);
-    if (!mounted || hash == null) return;
-    final draft = ref.read(draftProvider);
-    if (draft == null) return;
-    _update(draft.copyWith(missionData: hash));
-    ref.read(toastProvider.notifier).state =
-        (message: 'Reference photo registered', kind: RiseToastKind.success);
-  }
-
-  /// The "Register photo" control shown for the 'photo' mission. When no photo
-  /// is registered the mission accepts any photo (never a trap), which this
-  /// states plainly so the choice is explicit.
-  Widget _photoRegisterRow(Alarm draft) {
-    final hasPhoto = (draft.missionData?.trim() ?? '').isNotEmpty;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+  /// The tappable "Wake mission" row (mirrors [_soundRow]): shows the current
+  /// mission's label with a compact config summary (e.g. "Scan a code · 2×"),
+  /// and opens the browsable mission picker on tap.
+  Widget _missionRow(Alarm draft, bool missionsLocked, bool chainsLocked) {
+    final label = kMissionLabels[draft.mission] ?? kMissionLabels['none']!;
+    final summary = missionConfigSummary(draft);
+    return GestureDetector(
+      key: const Key('wake-mission-row'),
+      behavior: HitTestBehavior.opaque,
+      onTap: _busy
+          ? null
+          : () => _openMissionPicker(draft, missionsLocked, chainsLocked),
+      child: RiseCard(
+        radius: RiseRadii.base,
+        child: Row(
           children: [
-            Icon(hasPhoto ? Icons.check_circle : Icons.photo_camera,
-                size: 18,
-                color: hasPhoto ? RiseColors.positive : RiseColors.textDim),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                hasPhoto
-                    ? 'Spot registered — snap it to dismiss'
-                    : 'No spot yet — any photo will dismiss',
-                style: RiseText.caption,
-              ),
-            ),
+            Expanded(child: Text(label, style: RiseText.body)),
+            if (summary.isNotEmpty) ...[
+              Text(summary, style: RiseText.caption),
+              const SizedBox(width: 8),
+            ],
+            Icon(Icons.chevron_right, size: 20, color: RiseColors.textDim),
           ],
         ),
-        const SizedBox(height: 10),
-        SecondaryButton(
-          label: hasPhoto ? 'Re-register photo' : 'Register photo',
-          icon: Icons.photo_camera,
-          onPressed: _busy ? null : _registerPhoto,
-        ),
-      ],
+      ),
     );
   }
 
@@ -245,15 +193,13 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
     final isEdit = draft.id != 0;
     final use24h = ref.watch(currentSettingsProvider).use24HourTime;
 
-    // Gating: advanced missions (typing/QR/walk) and mission chains (2–3) are
-    // premium. Locked → the picker routes to the paywall instead of selecting.
-    // Unconfigured/unlocked → both false, so behaviour is exactly as before.
+    // Gating: advanced missions (typing/QR/walk/photo/eyes) and mission chains
+    // (2–3) are premium. Watching the gate here keeps the entitlement stream
+    // warm so the flags are resolved by the time the picker opens; a locked
+    // choice inside the sheet routes to the paywall instead of selecting.
     final gate = ref.watch(premiumGateProvider);
     final missionsLocked = !gate.canUse(PremiumFeature.advancedMissions);
     final chainsLocked = !gate.canUse(PremiumFeature.missionChains);
-    final lockedMissionLabels = missionsLocked
-        ? {for (final k in kPremiumMissionKeys) _missionLabels[k]!}
-        : const <String>{};
 
     return SafeArea(
       child: ListView(
@@ -308,55 +254,8 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
             ),
           )),
           _section('Sound', _soundRow(draft)),
-          _section('Wake mission', SoundChips(
-            sounds: _missionLabels.values.toList(),
-            selected: _missionLabels[draft.mission] ?? _missionLabels['none']!,
-            locked: lockedMissionLabels,
-            onChanged: (label) {
-              final key = _missionLabels.entries
-                  .firstWhere((e) => e.value == label)
-                  .key;
-              if (isPremiumMissionKey(key) && missionsLocked) {
-                openPaywall(context);
-                return;
-              }
-              _update(draft.copyWith(mission: key));
-            },
-          )),
-          if (draft.mission != 'none')
-            _section('Difficulty', SegmentedControl<String>(
-              segments: const [
-                (value: 'easy', label: 'Easy'),
-                (value: 'medium', label: 'Medium'),
-                (value: 'hard', label: 'Hard'),
-              ],
-              selected: draft.missionDiff,
-              onChanged: (d) => _update(draft.copyWith(missionDiff: d)),
-            )),
-          if (draft.mission != 'none')
-            _section('Repeat mission', SegmentedControl<int>(
-              segments: const [
-                (value: 1, label: '1×'),
-                (value: 2, label: '2×'),
-                (value: 3, label: '3×'),
-              ],
-              selected: draft.missionCount,
-              onChanged: (n) {
-                if (n > kFreeMissionCount && chainsLocked) {
-                  openPaywall(context);
-                  return;
-                }
-                _update(draft.copyWith(missionCount: n));
-              },
-            ),
-            trailing: chainsLocked
-                ? Icon(Icons.lock_outline,
-                    size: 14, color: RiseColors.textDim)
-                : null),
-          if (draft.mission == 'qr')
-            _section('QR code', _qrRegisterRow(draft)),
-          if (draft.mission == 'photo')
-            _section('Reference photo', _photoRegisterRow(draft)),
+          _section('Wake mission',
+              _missionRow(draft, missionsLocked, chainsLocked)),
           const SizedBox(height: 20),
           RiseCard(
             radius: RiseRadii.base,
