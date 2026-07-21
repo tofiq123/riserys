@@ -129,4 +129,18 @@ void main() {
     expect(s2.realLightPrompt, isFalse);
     expect(s2.settings.realLightPrompt, isFalse);
   });
+
+  test('use24HourTime defaults false, round-trips, and reaches the snapshot',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = await AppSettings.load();
+    expect(s.use24HourTime, isFalse);
+    expect(s.settings.use24HourTime, isFalse);
+
+    await s.setUse24HourTime(true);
+
+    final s2 = await AppSettings.load();
+    expect(s2.use24HourTime, isTrue);
+    expect(s2.settings.use24HourTime, isTrue);
+  });
 }

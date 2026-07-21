@@ -33,6 +33,7 @@ class AppSettings {
   static const _kSmartWakeCheck = 'smartWakeCheck';
   static const _kSunriseWake = 'sunriseWake';
   static const _kRealLightPrompt = 'realLightPrompt';
+  static const _kUse24HourTime = 'use24HourTime';
 
   int get snoozeMaxCount => _prefs.getInt(_kSnoozeMaxCount) ?? 3;
   Future<void> setSnoozeMaxCount(int v) => _prefs.setInt(_kSnoozeMaxCount, v);
@@ -90,6 +91,12 @@ class AppSettings {
   Future<void> setRealLightPrompt(bool v) =>
       _prefs.setBool(_kRealLightPrompt, v);
 
+  /// Show times in 24-hour form instead of 12-hour AM/PM. Default off (AM/PM),
+  /// so existing users see exactly what they saw before unless they opt in.
+  bool get use24HourTime => _prefs.getBool(_kUse24HourTime) ?? false;
+  Future<void> setUse24HourTime(bool v) =>
+      _prefs.setBool(_kUse24HourTime, v);
+
   /// A snapshot of the mutable settings (snooze + wake-check + wake plan +
   /// steady wake time).
   RiseSettings get settings => RiseSettings(
@@ -104,5 +111,6 @@ class AppSettings {
         smartWakeCheck: smartWakeCheck,
         sunriseWake: sunriseWake,
         realLightPrompt: realLightPrompt,
+        use24HourTime: use24HourTime,
       );
 }

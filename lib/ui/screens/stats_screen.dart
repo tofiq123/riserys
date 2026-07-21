@@ -276,7 +276,8 @@ class StatsScreen extends ConsumerWidget {
   List<Widget> _insightsWidgets(List<WakeEvent> events, RiseSettings settings) {
     final insights = buildWakeInsights(events,
         targetWakeHour: settings.targetWakeHour,
-        targetWakeMinute: settings.targetWakeMinute);
+        targetWakeMinute: settings.targetWakeMinute,
+        use24h: settings.use24HourTime);
     if (insights.isEmpty) return const [];
     return [
       const SizedBox(height: 24),
@@ -820,6 +821,7 @@ class _OverviewSectionState extends ConsumerState<_OverviewSection> {
   Widget build(BuildContext context) {
     final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
     final stats = aggregatePeriod(events, DateTime.now(), _period);
+    final use24h = ref.watch(currentSettingsProvider).use24HourTime;
     // Weekly stats are free; the Month/Year views are premium. Locked → tapping
     // them routes to the paywall and the view stays on Week.
     final periodsLocked =
@@ -873,7 +875,8 @@ class _OverviewSectionState extends ConsumerState<_OverviewSection> {
                         stats.avgWakeMinute == null
                             ? '—'
                             : formatClock(stats.avgWakeMinute! ~/ 60,
-                                stats.avgWakeMinute! % 60),
+                                stats.avgWakeMinute! % 60,
+                                use24h: use24h),
                         'typical'),
                     _divider(),
                     _metric('Best run', '${stats.bestStreak}',

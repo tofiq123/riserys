@@ -3,37 +3,84 @@ import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 
-/// The dial's current time: 12-hour clock plus AM/PM.
+/// The dial's current time: 12-hour clock plus AM/PM. The value is always
+/// carried in 12h form regardless of how the dial is displayed — 24h mode is a
+/// presentation-only concern that this widget converts to and from internally,
+/// so callers keep their existing `Alarm.to24Hour(t.hour12, t.isAm)` wiring.
 typedef DialTime = ({int hour12, int minute, bool isAm});
 
 /// Big draggable HH:MM picker. Drag a number vertically (~7px per step) to
-/// change it, or use the chevrons; values wrap. AM/PM buttons on the right.
+/// change it, or use the chevrons; values wrap.
+///
+/// In 12-hour mode (default) the hour ranges 1–12 with AM/PM buttons on the
+/// right. In 24-hour mode ([use24h] true) the hour spinner ranges 0–23 (wrapping
+/// 23→0) and the AM/PM buttons are hidden — but the reported [DialTime] is still
+/// 12h+AM/PM, so nothing downstream changes.
 class TimeDial extends StatelessWidget {
-  const TimeDial({super.key, required this.value, required this.onChanged});
+  const TimeDial({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.use24h = false,
+  });
 
   final DialTime value;
   final ValueChanged<DialTime> onChanged;
 
-  void _setHour(int h) => onChanged((hour12: h, minute: value.minute, isAm: value.isAm));
-  void _setMinute(int m) => onChanged((hour12: value.hour12, minute: m, isAm: value.isAm));
-  void _setAm(bool am) => onChanged((hour12: value.hour12, minute: value.minute, isAm: am));
+  /// Show the hour as a 0–23 spinner with no AM/PM buttons. The reported value
+  /// stays 12h+AM/PM form.
+  final bool use24h;
 
-  static int _wrapHour(int start, int step) => ((start - 1 + step) % 12 + 12) % 12 + 1;
+  /// The current value as a 24-hour hour (0–23).
+  int get _hour24 {
+    final h = value.hour12 % 12;
+    return value.isAm ? h : h + 12;
+  }
+
+  void _setHour12(int h) =>
+      onChanged((hour12: h, minute: value.minute, isAm: value.isAm));
+  void _setMinute(int m) =>
+      onChanged((hour12: value.hour12, minute: m, isAm: value.isAm));
+  void _setAm(bool am) =>
+      onChanged((hour12: value.hour12, minute: value.minute, isAm: am));
+
+  /// Sets the hour from a 0–23 value, converting back to the 12h+AM/PM form the
+  /// [DialTime] carries. 0→12 AM, 12→12 PM.
+  void _setHour24(int h24) {
+    final norm = ((h24 % 24) + 24) % 24;
+    final isAm = norm < 12;
+    final h = norm % 12;
+    onChanged((hour12: h == 0 ? 12 : h, minute: value.minute, isAm: isAm));
+  }
+
+  static int _wrapHour12(int start, int step) => ((start - 1 + step) % 12 + 12) % 12 + 1;
+  static int _wrapHour24(int start, int step) => ((start + step) % 24 + 24) % 24;
   static int _wrapMinute(int start, int step) => ((start + step) % 60 + 60) % 60;
 
   @override
   Widget build(BuildContext context) {
+    final hourNumber = use24h
+        ? _DragNumber(
+            value: _hour24,
+            format: (v) => v.toString().padLeft(2, '0'),
+            wrap: _wrapHour24,
+            onChanged: _setHour24,
+            onIncrement: () => _setHour24(_hour24 + 1),
+            onDecrement: () => _setHour24(_hour24 - 1),
+          )
+        : _DragNumber(
+            value: value.hour12,
+            format: (v) => '$v',
+            wrap: _wrapHour12,
+            onChanged: _setHour12,
+            onIncrement: () => _setHour12(value.hour12 % 12 + 1),
+            onDecrement: () => _setHour12(value.hour12 <= 1 ? 12 : value.hour12 - 1),
+          );
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _DragNumber(
-          value: value.hour12,
-          format: (v) => '$v',
-          wrap: _wrapHour,
-          onChanged: _setHour,
-          onIncrement: () => _setHour(value.hour12 % 12 + 1),
-          onDecrement: () => _setHour(value.hour12 <= 1 ? 12 : value.hour12 - 1),
-        ),
+        hourNumber,
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
           child: Text(':',
@@ -47,15 +94,17 @@ class TimeDial extends StatelessWidget {
           onIncrement: () => _setMinute((value.minute + 1) % 60),
           onDecrement: () => _setMinute((value.minute + 59) % 60),
         ),
-        const SizedBox(width: 8),
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _AmPmButton(label: 'AM', selected: value.isAm, onTap: () => _setAm(true)),
-            const SizedBox(height: 6),
-            _AmPmButton(label: 'PM', selected: !value.isAm, onTap: () => _setAm(false)),
-          ],
-        ),
+        if (!use24h) ...[
+          const SizedBox(width: 8),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _AmPmButton(label: 'AM', selected: value.isAm, onTap: () => _setAm(true)),
+              const SizedBox(height: 6),
+              _AmPmButton(label: 'PM', selected: !value.isAm, onTap: () => _setAm(false)),
+            ],
+          ),
+        ],
       ],
     );
   }

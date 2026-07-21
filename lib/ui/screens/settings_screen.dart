@@ -247,6 +247,33 @@ class SettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+            const SectionLabel('Display'),
+            const SizedBox(height: 12),
+            RiseCard(
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('24-hour time', style: RiseText.body),
+                      RiseSwitch(
+                          key: const Key('use-24h-time-switch'),
+                          value: s.use24HourTime,
+                          onChanged: ctrl.setUse24HourTime),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                        'Show times like 19:30 instead of 7:30 PM, everywhere '
+                        'in the app.',
+                        style: RiseText.caption),
+                  ),
+                ],
+              ),
+            ),
             const _AccountBackupSection(),
           ],
         ),
@@ -355,7 +382,8 @@ class _SleepGoalCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(settingsProvider);
     final subtitle = s.hasTargetWake
-        ? formatClock(s.targetWakeHour!, s.targetWakeMinute!)
+        ? formatClock(s.targetWakeHour!, s.targetWakeMinute!,
+            use24h: s.use24HourTime)
         : 'Not set';
 
     return GestureDetector(
@@ -422,6 +450,7 @@ class _SleepGoalCard extends ConsumerWidget {
                       style: RiseText.caption),
                   const SizedBox(height: 12),
                   TimeDial(
+                    use24h: s.use24HourTime,
                     value: dial,
                     onChanged: (t) => setLocal(() {
                       hour24 = Alarm.to24Hour(t.hour12, t.isAm);

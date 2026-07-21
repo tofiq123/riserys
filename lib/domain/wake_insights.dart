@@ -50,6 +50,7 @@ List<WakeInsight> buildWakeInsights(
   List<WakeEvent> events, {
   int? targetWakeHour,
   int? targetWakeMinute,
+  bool use24h = false,
 }) {
   final dismissed = events.where((e) => e.dismissedAt != null).toList();
   if (dismissed.length < kMinInsightEvents) return const [];
@@ -72,8 +73,8 @@ List<WakeInsight> buildWakeInsights(
     out.add(WakeInsight(
         WakeInsightKind.goal,
         'You woke within 30 min of your '
-        '${formatClock(targetWakeHour, targetWakeMinute)} goal on $within of '
-        '$n mornings.'));
+        '${formatClock(targetWakeHour, targetWakeMinute, use24h: use24h)} goal '
+        'on $within of $n mornings.'));
   }
 
   // 3. Weekday vs weekend average wake time.

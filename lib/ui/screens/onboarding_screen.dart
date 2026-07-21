@@ -323,6 +323,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           RiseCard(
             padding: const EdgeInsets.symmetric(vertical: 18),
             child: TimeDial(
+              use24h: ref.watch(currentSettingsProvider).use24HourTime,
               value: (
                 hour12: _goalHour! % 12 == 0 ? 12 : _goalHour! % 12,
                 minute: _goalMinute!,
@@ -392,6 +393,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           RiseCard(
             padding: const EdgeInsets.symmetric(vertical: 18),
             child: TimeDial(
+              use24h: ref.watch(currentSettingsProvider).use24HourTime,
               value: (
                 hour12: _alarmHour % 12 == 0 ? 12 : _alarmHour % 12,
                 minute: _alarmMinute,

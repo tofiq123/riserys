@@ -16,6 +16,24 @@ void main() {
     expect(s.smartWakeCheck, isFalse);
     expect(s.sunriseWake, isFalse);
     expect(s.realLightPrompt, isFalse);
+    expect(s.use24HourTime, isFalse);
+  });
+
+  test('use24HourTime defaults off; copyWith and equality', () {
+    const s = RiseSettings();
+    expect(s.copyWith(use24HourTime: true).use24HourTime, isTrue);
+    expect(const RiseSettings(use24HourTime: true) == const RiseSettings(),
+        isFalse);
+    expect(
+        const RiseSettings(use24HourTime: true).hashCode ==
+            const RiseSettings().hashCode,
+        isFalse);
+    // Unrelated copyWith preserves it.
+    expect(
+        const RiseSettings(use24HourTime: true)
+            .copyWith(snoozeMaxCount: 2)
+            .use24HourTime,
+        isTrue);
   });
 
   test('realLightPrompt defaults off; copyWith and equality', () {

@@ -8,6 +8,7 @@ import '../../domain/feed_item.dart';
 import '../components/rise_card.dart';
 import '../state/auth_providers.dart';
 import '../state/feed_providers.dart';
+import '../state/settings_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
@@ -75,9 +76,10 @@ class _FeedTile extends ConsumerWidget {
   String get _headline =>
       '$_who ${item.onTime ? 'woke on time' : 'woke up'}';
 
-  String get _meta {
-    final time =
-        formatClock(item.wokeAt.toLocal().hour, item.wokeAt.toLocal().minute);
+  String _meta(bool use24h) {
+    final time = formatClock(
+        item.wokeAt.toLocal().hour, item.wokeAt.toLocal().minute,
+        use24h: use24h);
     final parts = <String>[
       if (item.streak >= 1) '${item.streak}-day streak',
       time,
@@ -87,6 +89,7 @@ class _FeedTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final use24h = ref.watch(currentSettingsProvider).use24HourTime;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: RiseCard(
@@ -122,7 +125,7 @@ class _FeedTile extends ConsumerWidget {
                               .copyWith(fontWeight: FontWeight.w600),
                           overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 2),
-                      Text(_meta,
+                      Text(_meta(use24h),
                           style: RiseText.caption
                               .copyWith(color: RiseColors.textDim)),
                     ],

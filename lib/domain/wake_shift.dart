@@ -37,8 +37,10 @@ const int _minutesPerDay = 1440;
   return (hour: next ~/ 60, minute: next % 60);
 }
 
-/// Formats [nextShiftedWakeTime]'s result as a 12-hour clock string.
-String formatShift(({int hour, int minute}) t) => formatClock(t.hour, t.minute);
+/// Formats [nextShiftedWakeTime]'s result as a clock string, honouring the
+/// caller's 12h/24h [use24h] preference.
+String formatShift(({int hour, int minute}) t, {bool use24h = false}) =>
+    formatClock(t.hour, t.minute, use24h: use24h);
 
 int _clampToDay(int minutes) => ((minutes % _minutesPerDay) + _minutesPerDay) %
     _minutesPerDay;
