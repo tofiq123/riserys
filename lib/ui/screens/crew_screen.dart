@@ -20,6 +20,7 @@ import '../state/voice_providers.dart';
 import '../theme/avatar_color.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import 'activity_feed_screen.dart';
 import 'friend_detail_screen.dart';
 import 'groups_tab.dart';
 import 'paywall_screen.dart';
@@ -180,6 +181,8 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
           if (_view == _CrewView.groups)
             const GroupsTab()
           else ...[
+            _activityFeedTile(),
+            const SizedBox(height: 12),
             _voiceInboxTile(),
             const SizedBox(height: 16),
             _addSection(),
@@ -228,6 +231,44 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
             ],
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _activityFeedTile() {
+    return GestureDetector(
+      key: const Key('activity-feed-tile'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const ActivityFeedScreen())),
+      child: RiseCard(
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                  color: RiseColors.accentSoft, shape: BoxShape.circle),
+              child: const Icon(Icons.wb_sunny_outlined,
+                  color: RiseColors.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Activity',
+                      style:
+                          RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+                  Text('Crew wake-ups — cheer each other on',
+                      style: RiseText.caption),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: RiseColors.textFaint),
+          ],
+        ),
       ),
     );
   }
