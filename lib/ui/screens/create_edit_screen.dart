@@ -35,6 +35,7 @@ const Map<String, String> _missionLabels = {
   'qr': 'Scan a code',
   'steps': 'Walk it off',
   'photo': 'Snap a spot',
+  'eyes': 'Keep your eyes open',
 };
 
 class CreateEditScreen extends ConsumerStatefulWidget {

@@ -34,7 +34,7 @@ class Alarm {
 
   /// Dismiss mission:
   /// 'none' | 'math' | 'hold' | 'tap' | 'memory' | 'pvt' | 'typing' |
-  /// 'shake' | 'qr' | 'steps' | 'photo'.
+  /// 'shake' | 'qr' | 'steps' | 'photo' | 'eyes'.
   final String mission;
 
   /// Mission difficulty: 'easy' | 'medium' | 'hard'.

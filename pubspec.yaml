@@ -70,7 +70,12 @@ dependencies:
   # + still capture for the photo-match ("snap a spot") mission and the
   # eye-open mission's front-camera feed (CAMERA permission +
   # NSCameraUsageDescription — both already present).
+  # google_mlkit_face_detection: on-device face + eye-open classification for
+  # the eye-open ("prove you're really up") mission. NOTE for the Mac pass:
+  # this raises the iOS min deployment target to 15.5 (Podfile is already at
+  # 16.0, so no change needed) and pulls the GoogleMLKit pods.
   camera: ^0.12.0+1
+  google_mlkit_face_detection: ^0.14.0
 
   # Reads Build.MANUFACTURER for the Setup Guardian's OEM-aware battery
   # guidance (Phase 12). No runtime permission required.

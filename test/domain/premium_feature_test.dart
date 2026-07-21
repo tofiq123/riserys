@@ -56,12 +56,13 @@ void main() {
     }
   });
 
-  test('premium missions are typing/qr/steps/photo; the PVT hook and basics are '
-      'free', () {
+  test('premium missions are typing/qr/steps/photo/eyes; the PVT hook and basics '
+      'are free', () {
     expect(isPremiumMissionKey('typing'), isTrue);
     expect(isPremiumMissionKey('qr'), isTrue);
     expect(isPremiumMissionKey('steps'), isTrue);
     expect(isPremiumMissionKey('photo'), isTrue);
+    expect(isPremiumMissionKey('eyes'), isTrue);
     for (final free in const [
       'none',
       'math',

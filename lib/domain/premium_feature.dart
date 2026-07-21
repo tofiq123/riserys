@@ -28,7 +28,7 @@ enum PremiumFeature {
   basicCrew, // up to [kFreeCrewLimit] members
 
   // ---- PREMIUM -------------------------------------------------------------
-  advancedMissions, // typing / QR / walk-it-off (steps) / photo
+  advancedMissions, // typing / QR / walk-it-off (steps) / photo / eye-open
   missionChains, // 2–3 repeats of a mission
   adaptiveDifficulty,
   smartWakeCheck,
@@ -73,7 +73,14 @@ const int kFreeMissionCount = 1;
 
 /// Mission keys that require Premium. Everything else — none, math, hold, tap,
 /// memory, shake, and the PVT alertness hook — is free. The advanced
-/// camera/sensor missions (typing, QR, walk-it-off, photo-match) are premium.
-const Set<String> kPremiumMissionKeys = {'typing', 'qr', 'steps', 'photo'};
+/// camera/sensor missions (typing, QR, walk-it-off, photo-match, eye-open) are
+/// premium.
+const Set<String> kPremiumMissionKeys = {
+  'typing',
+  'qr',
+  'steps',
+  'photo',
+  'eyes',
+};
 
 bool isPremiumMissionKey(String key) => kPremiumMissionKeys.contains(key);
