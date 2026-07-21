@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:just_audio/just_audio.dart';
 
 import '../../domain/alarm.dart';
 import '../../domain/alarm_sounds.dart';
@@ -12,6 +11,7 @@ import '../components/rise_switch.dart';
 import '../components/section_label.dart';
 import '../components/segmented.dart';
 import '../components/sound_chips.dart';
+import '../components/sound_picker_sheet.dart';
 import '../components/time_dial.dart';
 import '../components/toast.dart';
 import '../state/alarm_providers.dart';
@@ -53,13 +53,6 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
   late final TextEditingController _label;
   bool _busy = false;
 
-  // A short tone preview when a sound chip is tapped. Created lazily on the
-  // first preview so nothing is touched unless the user actually taps a chip;
-  // disposed with the screen. All playback is best-effort — a failure is a
-  // no-op and never blocks selecting the sound.
-  AudioPlayer? _preview;
-  String? _previewingLabel;
-
   @override
   void initState() {
     super.initState();
@@ -71,38 +64,22 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
   @override
   void dispose() {
     _label.dispose();
-    _preview?.dispose();
     super.dispose();
   }
 
-  /// Plays a short preview of [label]'s tone from its Flutter asset. Re-tapping
-  /// the tone currently previewing stops it. Selection itself already happened
-  /// at the call site; this is purely the audible preview, best-effort.
-  void _previewSound(String label, String asset) {
-    final player = _preview ??= AudioPlayer();
-    final wasThis = _previewingLabel == label;
-    // Stop whatever is playing first (idempotent), then decide.
-    player.stop().catchError((_) {});
-    final key = previewAssetKeyFor(asset);
-    if (wasThis || key == null) {
-      // Re-tap on the playing chip, or a tone with no bundled preview
-      // (Default / a voice-clip file) → leave it stopped.
-      _previewingLabel = null;
-      return;
-    }
-    _previewingLabel = label;
-    player
-        .setAsset(key)
-        .then((_) => player.play())
-        .then((_) {
-          if (_previewingLabel == label) _previewingLabel = null;
-        })
-        .catchError((_) {
-          if (_previewingLabel == label) _previewingLabel = null;
-        });
-  }
-
   void _update(Alarm next) => ref.read(draftProvider.notifier).update(next);
+
+  /// Opens the categorized sound browser and applies the chosen tone to the
+  /// draft. Cancelling (null) keeps the current sound. Re-reads the draft after
+  /// the async gap so a concurrent edit isn't clobbered.
+  Future<void> _openSoundPicker(Alarm draft) async {
+    final chosen =
+        await showSoundPickerSheet(context, currentAsset: draft.soundAsset);
+    if (!mounted || chosen == null) return;
+    final latest = ref.read(draftProvider);
+    if (latest == null) return;
+    _update(latest.copyWith(soundAsset: chosen));
+  }
 
   Future<void> _save(Alarm draft) async {
     if (_busy) return;
@@ -234,6 +211,33 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
     );
   }
 
+  /// The tappable "Sound" row: shows the current tone's label (or "Voice clip"
+  /// for a downloaded file sound) with its category, and opens the categorized
+  /// browser on tap. A downloaded voice clip is set from the Voice inbox, not
+  /// here, but the row still lets the user switch to a bundled tone.
+  Widget _soundRow(Alarm draft) {
+    final isVoice = isFileSound(draft.soundAsset);
+    final label = isVoice ? kVoiceSoundLabel : soundLabelFor(draft.soundAsset);
+    final category = isVoice ? null : soundCategoryFor(draft.soundAsset);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _busy ? null : () => _openSoundPicker(draft),
+      child: RiseCard(
+        radius: RiseRadii.base,
+        child: Row(
+          children: [
+            Expanded(child: Text(label, style: RiseText.body)),
+            if (category != null) ...[
+              Text(category.label, style: RiseText.caption),
+              const SizedBox(width: 8),
+            ],
+            Icon(Icons.chevron_right, size: 20, color: RiseColors.textDim),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final draft = ref.watch(draftProvider);
@@ -303,24 +307,7 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
               focusedBorder: _fieldBorder(RiseColors.primary),
             ),
           )),
-          _section('Sound', SoundChips(
-            // When the selected sound is a downloaded voice clip (a file path),
-            // surface a read-only "Voice clip" chip so it's visible + changeable;
-            // it's set from the Voice inbox, not here, so tapping it is a no-op.
-            sounds: [
-              for (final s in kAlarmSounds) s.label,
-              if (isFileSound(draft.soundAsset)) kVoiceSoundLabel,
-            ],
-            selected: isFileSound(draft.soundAsset)
-                ? kVoiceSoundLabel
-                : soundLabelFor(draft.soundAsset),
-            onChanged: (label) {
-              if (label == kVoiceSoundLabel) return; // set from the Voice inbox
-              final asset = soundAssetFor(label);
-              _update(draft.copyWith(soundAsset: asset));
-              _previewSound(label, asset);
-            },
-          )),
+          _section('Sound', _soundRow(draft)),
           _section('Wake mission', SoundChips(
             sounds: _missionLabels.values.toList(),
             selected: _missionLabels[draft.mission] ?? _missionLabels['none']!,
