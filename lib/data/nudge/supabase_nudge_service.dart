@@ -15,9 +15,14 @@ class SupabaseNudgeService implements NudgeService {
   final SupabaseClient _client;
 
   @override
-  Future<void> nudge(String userId) async {
+  Future<void> nudge(String userId, {NudgeKind kind = NudgeKind.nudge}) async {
     try {
-      await _client.functions.invoke('send-nudge', body: {'to': userId});
+      // Only the target id + the kind's wire name cross the wire. The push
+      // copy is composed by the edge function — never send message text here.
+      await _client.functions.invoke('send-nudge', body: {
+        'to': userId,
+        'kind': kind.wire,
+      });
     } on FunctionException catch (e) {
       // The function returns a 4xx with {"error": "..."} for a rejection
       // (rate-limited, not crew). Surface that message; else a generic one.
