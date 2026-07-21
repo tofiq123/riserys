@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/permission_gateway.dart';
 import '../../domain/alarm.dart';
+import '../backup_sync_host.dart';
 import '../components/toast.dart';
 import '../missions/mission_host.dart';
 import '../push_registrar_host.dart';
@@ -81,9 +82,10 @@ class _AppShellState extends ConsumerState<AppShell> {
     final toast = ref.watch(toastProvider);
 
     return PushRegistrarHost(
-      child: StatusPublisherHost(
-        child: StatsSyncHost(
-          child: PopScope(
+      child: BackupSyncHost(
+        child: StatusPublisherHost(
+          child: StatsSyncHost(
+            child: PopScope(
             canPop: !editing && !needsClaim,
             onPopInvokedWithResult: (didPop, _) {
               if (!didPop && editing) ref.read(draftProvider.notifier).clear();
@@ -120,6 +122,7 @@ class _AppShellState extends ConsumerState<AppShell> {
           ),
         ),
       ),
+    ),
     );
   }
 

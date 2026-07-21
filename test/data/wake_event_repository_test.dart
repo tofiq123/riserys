@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/local/database.dart';
 import 'package:rise/data/local/wake_event_repository.dart';
+import 'package:rise/domain/wake_event.dart';
 
 void main() {
   late RiseDatabase db;
@@ -180,5 +181,47 @@ void main() {
     final all = await repo.all();
     expect(all.firstWhere((e) => e.isOpen).snoozeCount, 1);
     expect(all.firstWhere((e) => !e.isOpen).snoozeCount, 0);
+  });
+
+  test('insertRestored preserves every field with a fresh id', () async {
+    final restored = WakeEvent(
+      id: 999, // ignored — the DB assigns a new local id
+      alarmId: 7,
+      scheduledAt: ring,
+      firstRingAt: ring.add(const Duration(minutes: 1)),
+      dismissedAt: ring.add(const Duration(minutes: 5)),
+      method: 'mission',
+      snoozeCount: 2,
+      missionFailures: 1,
+      onTime: true,
+      label: 'Backed up',
+      alertnessScore: 91,
+    );
+    await repo.insertRestored(restored);
+
+    final all = await repo.all();
+    expect(all, hasLength(1));
+    final e = all.single;
+    expect(e.id, isNot(999)); // fresh local id
+    expect(e.alarmId, 7);
+    expect(e.scheduledAt.isAtSameMomentAs(restored.scheduledAt), isTrue);
+    expect(e.dismissedAt!.isAtSameMomentAs(restored.dismissedAt!), isTrue);
+    expect(e.method, 'mission');
+    expect(e.snoozeCount, 2);
+    expect(e.missionFailures, 1);
+    expect(e.onTime, isTrue);
+    expect(e.label, 'Backed up');
+    expect(e.alertnessScore, 91);
+  });
+
+  test('insertRestored keeps a still-open (never dismissed) event open',
+      () async {
+    await repo.insertRestored(WakeEvent(
+      id: 0,
+      alarmId: 3,
+      scheduledAt: ring,
+      firstRingAt: ring,
+    ));
+    expect((await repo.all()).single.isOpen, isTrue);
   });
 }

@@ -91,6 +91,26 @@ class WakeEventRepository {
         .write(WakeEventsCompanion(snoozeCount: Value(open.snoozeCount + 1)));
   }
 
+  /// Inserts a fully-formed event verbatim, assigning a fresh local id. Unlike
+  /// [openRing]/[finalizeDismiss] this preserves every field — including
+  /// [WakeEvent.dismissedAt] and [WakeEvent.onTime] — so a cloud restore onto an
+  /// empty device rebuilds the historical wake log (and therefore the streak).
+  /// The event's own local [WakeEvent.id] is ignored (the DB assigns a new one).
+  Future<void> insertRestored(WakeEvent e) async {
+    await _db.into(_db.wakeEvents).insert(WakeEventsCompanion.insert(
+          alarmId: e.alarmId,
+          scheduledAt: e.scheduledAt.toUtc(),
+          firstRingAt: e.firstRingAt.toUtc(),
+          dismissedAt: Value(e.dismissedAt?.toUtc()),
+          method: Value(e.method),
+          snoozeCount: Value(e.snoozeCount),
+          missionFailures: Value(e.missionFailures),
+          onTime: Value(e.onTime),
+          label: Value(e.label),
+          alertnessScore: Value(e.alertnessScore),
+        ));
+  }
+
   Stream<List<WakeEvent>> watchAll() => (_db.select(_db.wakeEvents)
         ..orderBy([(t) => OrderingTerm.desc(t.firstRingAt)]))
       .watch()
