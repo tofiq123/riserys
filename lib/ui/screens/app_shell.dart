@@ -7,6 +7,7 @@ import '../backup_sync_host.dart';
 import '../components/toast.dart';
 import '../feed_publisher.dart';
 import '../missions/mission_host.dart';
+import '../morning_departure_host.dart';
 import '../push_registrar_host.dart';
 import '../state/alarm_providers.dart';
 import '../state/auth_providers.dart';
@@ -83,6 +84,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     final toast = ref.watch(toastProvider);
 
     return PushRegistrarHost(
+      child: MorningDepartureHost(
       child: BackupSyncHost(
         child: StatusPublisherHost(
           child: StatsSyncHost(
@@ -126,6 +128,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         ),
         ),
       ),
+    ),
     ),
     );
   }

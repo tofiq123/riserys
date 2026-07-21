@@ -9,6 +9,7 @@ import '../domain/wake_event.dart';
 import '../data/status/status_service.dart';
 import 'state/alarm_providers.dart';
 import 'state/auth_providers.dart';
+import 'state/home_providers.dart';
 import 'state/settings_providers.dart';
 import 'state/status_providers.dart';
 import 'state/wake_providers.dart';
@@ -37,13 +38,6 @@ class StatusPublisher {
 
 final statusPublisherProvider = Provider<StatusPublisher>(
     (ref) => StatusPublisher(ref.watch(statusServiceProvider)));
-
-/// Whether today's wake evidence showed the user clearly beyond their home
-/// radius. Set true by the home-departure checker after a positive foreground
-/// fix (see `lib/data/home_departure_checker.dart`); reset when the next alarm
-/// starts ringing (the `WakeRecorder.openRing` hook). Device-local state: only
-/// this derived boolean — never a coordinate — feeds the published status.
-final leftHomeTodayProvider = StateProvider<bool>((_) => false);
 
 /// The signed-in user's own [CrewStatus], derived from local alarm/wake state,
 /// or [CrewStatus.unknown] when signed out. Recomputes when alarms/wake events

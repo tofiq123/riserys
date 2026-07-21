@@ -6,6 +6,7 @@ import '../../data/wake_recorder.dart';
 import '../../domain/streak.dart';
 import '../../domain/wake_event.dart';
 import 'alarm_providers.dart';
+import 'home_providers.dart';
 
 /// The wake-event store, built over the same database handle the alarm
 /// repository uses.
@@ -13,7 +14,14 @@ final wakeEventRepositoryProvider = Provider<WakeEventRepository>(
     (ref) => WakeEventRepository(ref.watch(alarmRepositoryProvider).database));
 
 final wakeRecorderProvider = Provider<WakeRecorder>((ref) => WakeRecorder(
-    ref.watch(wakeEventRepositoryProvider), ref.watch(alarmRepositoryProvider)));
+      ref.watch(wakeEventRepositoryProvider),
+      ref.watch(alarmRepositoryProvider),
+      // A new alarm ringing begins a fresh wake day: clear yesterday's
+      // "left home" evidence so a stale flag can't publish "up & out" or
+      // colour today's evidence card until a new positive fix is taken.
+      onRingOpened: () =>
+          ref.read(leftHomeTodayProvider.notifier).state = false,
+    ));
 
 final wakeEventsProvider = StreamProvider<List<WakeEvent>>(
     (ref) => ref.watch(wakeEventRepositoryProvider).watchAll());

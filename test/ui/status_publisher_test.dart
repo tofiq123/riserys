@@ -9,6 +9,7 @@ import 'package:rise/domain/rise_settings.dart';
 import 'package:rise/domain/wake_event.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
 import 'package:rise/ui/state/auth_providers.dart';
+import 'package:rise/ui/state/home_providers.dart';
 import 'package:rise/ui/state/settings_providers.dart';
 import 'package:rise/ui/state/status_providers.dart';
 import 'package:rise/ui/state/wake_providers.dart';
