@@ -1,42 +1,74 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 
-/// The dark pill toast visual.
+/// The tone of a [RiseToast]: a neutral notice, a completed action, or a
+/// failure. Drives the leading icon and its accent — the dark pill is shared.
+enum RiseToastKind { success, error, info }
+
+/// The dark pill toast visual. [kind] picks the small leading indicator: a
+/// green check for [RiseToastKind.success], a red alert for
+/// [RiseToastKind.error], and the neutral dot for [RiseToastKind.info]
+/// (the default — the original look, so single-arg call sites are unchanged).
 class RiseToast extends StatelessWidget {
-  const RiseToast(this.message, {super.key});
+  const RiseToast(this.message, {super.key, this.kind = RiseToastKind.info});
 
   final String message;
+  final RiseToastKind kind;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 11),
-      decoration: BoxDecoration(
-        color: RiseColors.primary,
-        borderRadius: BorderRadius.circular(RiseRadii.pill),
-        boxShadow: const [
-          BoxShadow(color: Color(0x47000000), offset: Offset(0, 8), blurRadius: 30),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: const BoxDecoration(color: RiseColors.primaryText, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 9),
-          Text(message,
-              style: RiseText.body.copyWith(
-                  fontSize: 13.5, fontWeight: FontWeight.w600, color: RiseColors.primaryText)),
-        ],
+    // Cap the width so a long message wraps into the pill instead of
+    // overflowing on a narrow phone; short messages stay compact and centered.
+    final width = MediaQuery.maybeOf(context)?.size.width ?? 420;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: (width - 48).clamp(160.0, 440.0)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 11),
+        decoration: BoxDecoration(
+          color: RiseColors.primary,
+          borderRadius: BorderRadius.circular(RiseRadii.pill),
+          boxShadow: const [
+            BoxShadow(color: Color(0x47000000), offset: Offset(0, 8), blurRadius: 30),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            _leading(),
+            const SizedBox(width: 9),
+            Flexible(
+              child: Text(message,
+                  style: RiseText.body.copyWith(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: RiseColors.primaryText)),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  Widget _leading() {
+    switch (kind) {
+      case RiseToastKind.success:
+        return const Icon(Icons.check_circle_rounded,
+            size: 16, color: RiseColors.positive);
+      case RiseToastKind.error:
+        return const Icon(Icons.error_rounded, size: 16, color: RiseColors.danger);
+      case RiseToastKind.info:
+        return Container(
+          width: 8,
+          height: 8,
+          decoration: const BoxDecoration(
+              color: RiseColors.primaryText, shape: BoxShape.circle),
+        );
+    }
   }
 }
 
