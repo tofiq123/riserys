@@ -75,6 +75,11 @@ class SettingsController extends StateNotifier<RiseSettings> {
     await _store.setUse24HourTime(v);
     state = state.copyWith(use24HourTime: v);
   }
+
+  Future<void> setThemeMode(RiseThemeMode v) async {
+    await _store.setThemeMode(v);
+    state = state.copyWith(themeMode: v);
+  }
 }
 
 final settingsProvider =

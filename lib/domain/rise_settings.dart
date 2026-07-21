@@ -1,3 +1,7 @@
+/// How the app resolves its colour theme. [system] follows the OS light/dark
+/// setting; [light] and [dark] force one. Default is [system].
+enum RiseThemeMode { system, light, dark }
+
 /// Immutable snapshot of the user's app-level preferences (snooze budget + the
 /// wake-up check). Persisted by `AppSettings`; edited via `settingsProvider`.
 class RiseSettings {
@@ -14,6 +18,7 @@ class RiseSettings {
     this.sunriseWake = false,
     this.realLightPrompt = false,
     this.use24HourTime = false,
+    this.themeMode = RiseThemeMode.system,
   });
 
   /// Max snoozes before the button hides (0 disables snooze).
@@ -79,6 +84,11 @@ class RiseSettings {
   /// preference — [Alarm.hour] is always stored in 24-hour form regardless.
   final bool use24HourTime;
 
+  /// The app's colour theme mode (system / light / dark). Default [system]
+  /// follows the OS. The app root resolves this to a concrete brightness and
+  /// swaps the [RiseColors] palette accordingly.
+  final RiseThemeMode themeMode;
+
   static const _shrinking = [9, 5, 3, 2, 1];
 
   /// The duration (minutes) of the [index]-th snooze (0-based): a flat value
@@ -101,6 +111,7 @@ class RiseSettings {
     bool? sunriseWake,
     bool? realLightPrompt,
     bool? use24HourTime,
+    RiseThemeMode? themeMode,
     // The `field ?? this.field` idiom cannot express "clear this nullable field
     // back to null" — passing null is indistinguishable from not passing it. A
     // sentinel flag keeps the intent explicit at the call site:
@@ -124,6 +135,7 @@ class RiseSettings {
         sunriseWake: sunriseWake ?? this.sunriseWake,
         realLightPrompt: realLightPrompt ?? this.realLightPrompt,
         use24HourTime: use24HourTime ?? this.use24HourTime,
+        themeMode: themeMode ?? this.themeMode,
       );
 
   @override
@@ -140,7 +152,8 @@ class RiseSettings {
       other.smartWakeCheck == smartWakeCheck &&
       other.sunriseWake == sunriseWake &&
       other.realLightPrompt == realLightPrompt &&
-      other.use24HourTime == use24HourTime;
+      other.use24HourTime == use24HourTime &&
+      other.themeMode == themeMode;
 
   @override
   int get hashCode => Object.hash(
@@ -155,5 +168,6 @@ class RiseSettings {
       smartWakeCheck,
       sunriseWake,
       realLightPrompt,
-      use24HourTime);
+      use24HourTime,
+      themeMode);
 }

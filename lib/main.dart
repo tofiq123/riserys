@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
@@ -12,6 +13,7 @@ import 'data/app_settings.dart';
 import 'data/iap/revenuecat_entitlement_service.dart';
 import 'data/local/alarm_repository.dart';
 import 'data/native/alarm_api.g.dart';
+import 'domain/rise_settings.dart';
 import 'ui/missions/mission_host.dart';
 import 'ui/screens/app_shell.dart';
 import 'ui/screens/onboarding_screen.dart';
@@ -115,7 +117,7 @@ Future<void> main() async {
   ));
 }
 
-class RiseApp extends StatefulWidget {
+class RiseApp extends ConsumerStatefulWidget {
   const RiseApp({super.key, required this.repository, required this.settings});
 
   /// Null when startup failed to configure the service (see main()). The app
@@ -127,10 +129,10 @@ class RiseApp extends StatefulWidget {
   final AppSettings? settings;
 
   @override
-  State<RiseApp> createState() => _RiseAppState();
+  ConsumerState<RiseApp> createState() => _RiseAppState();
 }
 
-class _RiseAppState extends State<RiseApp> with WidgetsBindingObserver {
+class _RiseAppState extends ConsumerState<RiseApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
 
   // The alarm id currently shown on a pushed RingScreen, or null if none is
@@ -164,6 +166,13 @@ class _RiseAppState extends State<RiseApp> with WidgetsBindingObserver {
     // available in both that case and the general "returned to the app while an
     // alarm rings" case.
     if (state == AppLifecycleState.resumed) _checkColdStartRing();
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    // The OS light/dark setting flipped. When themeMode is `system` the resolved
+    // brightness depends on it, so rebuild the root to re-resolve the palette.
+    if (mounted) setState(() {});
   }
 
   void _completeOnboarding() {
@@ -220,18 +229,81 @@ class _RiseAppState extends State<RiseApp> with WidgetsBindingObserver {
     });
   }
 
+  /// Resolve the user's theme choice to a concrete brightness. `system` reads
+  /// the current OS setting (kept fresh by [didChangePlatformBrightness]).
+  Brightness _resolveBrightness(RiseThemeMode mode) => switch (mode) {
+        RiseThemeMode.system =>
+          WidgetsBinding.instance.platformDispatcher.platformBrightness,
+        RiseThemeMode.light => Brightness.light,
+        RiseThemeMode.dark => Brightness.dark,
+      };
+
+  /// Match the status-bar icons to the ground: dark icons on the light theme,
+  /// light icons on the dark theme. Only the icon brightness is set (colour is
+  /// left untouched) so the light theme's status bar is unchanged.
+  void _applyStatusBarStyle(Brightness brightness) {
+    final dark = brightness == Brightness.dark;
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+      statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+      statusBarBrightness: dark ? Brightness.dark : Brightness.light,
+    ));
+  }
+
+  /// Material's own defaults (dialogs, text fields, dividers, default text
+  /// colour) for the dark theme. Reads the [RiseColors] getters, which the
+  /// build below has already switched to the dark palette before this is
+  /// consulted — MaterialApp only uses this when the resolved brightness is
+  /// dark. The light theme is left as MaterialApp's default (theme: null) so it
+  /// stays byte-identical to before dark mode.
+  ThemeData _riseDarkTheme() => ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: RiseColors.appBg,
+        canvasColor: RiseColors.appBg,
+        dividerColor: RiseColors.divider,
+        colorScheme: ColorScheme.dark(
+          surface: RiseColors.card,
+          onSurface: RiseColors.text,
+          primary: RiseColors.primary,
+          onPrimary: RiseColors.primaryText,
+          error: RiseColors.danger,
+          outline: RiseColors.border,
+        ),
+        dialogTheme: DialogThemeData(backgroundColor: RiseColors.card),
+        bottomSheetTheme:
+            BottomSheetThemeData(backgroundColor: RiseColors.card),
+        textSelectionTheme: TextSelectionThemeData(
+          cursorColor: RiseColors.primary,
+          selectionColor: RiseColors.accentSoft,
+          selectionHandleColor: RiseColors.primary,
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
-    // Set the active colour palette BEFORE the tree below builds, so every
-    // widget that reads a RiseColors/RiseText getter during its build sees the
-    // right theme. Light for now; the theme setting drives this in a follow-up.
-    RiseColors.setPalette(Brightness.light);
+    // Resolve the theme mode → brightness, then set the active RiseColors
+    // palette BEFORE the tree below builds, so every widget that reads a
+    // RiseColors/RiseText getter during its build sees the right theme. A change
+    // to the setting (watched here) or the OS brightness rebuilds this root,
+    // which re-reads the getters and re-runs setPalette.
+    final themeMode =
+        ref.watch(currentSettingsProvider.select((s) => s.themeMode));
+    final brightness = _resolveBrightness(themeMode);
+    RiseColors.setPalette(brightness);
+    _applyStatusBarStyle(brightness);
 
     final repository = widget.repository;
     return MaterialApp(
       title: 'Rise',
       navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
+      // Light stays MaterialApp's default (theme: null) so the device-verified
+      // light theme is byte-identical; darkTheme adapts Material's own defaults
+      // in dark mode. themeMode is resolved here (never `system`) so it always
+      // agrees with the palette set above.
+      darkTheme: _riseDarkTheme(),
+      themeMode:
+          brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
       // Localization infrastructure (scaffolding only). These delegates bundle
       // the global Material/Widgets/Cupertino delegates alongside the generated
       // AppLocalizations; existing UI strings are not yet migrated. See

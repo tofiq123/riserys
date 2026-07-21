@@ -248,6 +248,35 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 24),
+            const SectionLabel('Appearance'),
+            const SizedBox(height: 12),
+            RiseCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Theme', style: RiseText.body),
+                  const SizedBox(height: 8),
+                  SegmentedControl<RiseThemeMode>(
+                    key: const Key('theme-mode-segmented'),
+                    segments: const [
+                      (value: RiseThemeMode.system, label: 'System'),
+                      (value: RiseThemeMode.light, label: 'Light'),
+                      (value: RiseThemeMode.dark, label: 'Dark'),
+                    ],
+                    selected: s.themeMode,
+                    onChanged: ctrl.setThemeMode,
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                        'System follows your device\'s light or dark setting.',
+                        style: RiseText.caption),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
             const SectionLabel('Display'),
             const SizedBox(height: 12),
             RiseCard(

@@ -34,6 +34,7 @@ class AppSettings {
   static const _kSunriseWake = 'sunriseWake';
   static const _kRealLightPrompt = 'realLightPrompt';
   static const _kUse24HourTime = 'use24HourTime';
+  static const _kThemeMode = 'themeMode';
 
   int get snoozeMaxCount => _prefs.getInt(_kSnoozeMaxCount) ?? 3;
   Future<void> setSnoozeMaxCount(int v) => _prefs.setInt(_kSnoozeMaxCount, v);
@@ -97,6 +98,17 @@ class AppSettings {
   Future<void> setUse24HourTime(bool v) =>
       _prefs.setBool(_kUse24HourTime, v);
 
+  /// The colour theme mode, persisted by enum name. Default [RiseThemeMode.
+  /// system] follows the OS. Unknown/legacy values fall back to system.
+  RiseThemeMode get themeMode {
+    final name = _prefs.getString(_kThemeMode);
+    return RiseThemeMode.values
+        .firstWhere((m) => m.name == name, orElse: () => RiseThemeMode.system);
+  }
+
+  Future<void> setThemeMode(RiseThemeMode v) =>
+      _prefs.setString(_kThemeMode, v.name);
+
   /// A snapshot of the mutable settings (snooze + wake-check + wake plan +
   /// steady wake time).
   RiseSettings get settings => RiseSettings(
@@ -112,5 +124,6 @@ class AppSettings {
         sunriseWake: sunriseWake,
         realLightPrompt: realLightPrompt,
         use24HourTime: use24HourTime,
+        themeMode: themeMode,
       );
 }
