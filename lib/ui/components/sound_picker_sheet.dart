@@ -36,8 +36,10 @@ class JustAudioPreviewer implements SoundPreviewer {
       await p.stop();
       await p.setAsset(assetKey);
       await p.play();
-    } catch (_) {
-      // Best-effort preview only.
+    } catch (e) {
+      // Best-effort preview — but surface WHY it failed (codec, missing asset,
+      // plugin channel) so a device issue is diagnosable instead of silent.
+      debugPrint('Rise: sound preview failed for "$assetKey": $e');
     }
   }
 
