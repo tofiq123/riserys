@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/group.dart';
 import '../components/crew_add_sheet.dart';
 import '../components/crew_group_card.dart';
+import '../components/rise_error_card.dart';
+import '../components/rise_spinner.dart';
 import '../state/group_providers.dart';
-import '../theme/tokens.dart';
-import '../theme/typography.dart';
 import 'group_detail_screen.dart';
 import 'paywall_screen.dart';
 
@@ -41,32 +41,10 @@ class GroupsTab extends ConsumerWidget {
     return SizedBox(
       height: kCrewGroupCardHeight + 8,
       child: groups.when(
-        loading: () => const Center(
-          child: SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2)),
-        ),
-        error: (_, __) => Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Could not load your groups.', style: RiseText.caption),
-              const SizedBox(width: 10),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => ref.invalidate(myGroupsProvider),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-                  child: Text('Retry',
-                      style: RiseText.caption.copyWith(
-                          color: RiseColors.text,
-                          fontWeight: FontWeight.w600)),
-                ),
-              ),
-            ],
-          ),
+        loading: () => const Center(child: RiseSpinner()),
+        error: (_, __) => RiseErrorCard(
+          message: 'Could not load your groups.',
+          onRetry: () => ref.invalidate(myGroupsProvider),
         ),
         data: (list) => ListView.separated(
           scrollDirection: Axis.horizontal,

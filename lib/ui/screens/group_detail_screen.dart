@@ -12,7 +12,9 @@ import '../../domain/group.dart';
 import '../components/crew_avatar.dart';
 import '../components/crew_entrance.dart';
 import '../components/crew_pill.dart';
+import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
+import '../components/rise_spinner.dart';
 import '../components/section_label.dart';
 import '../components/toast.dart';
 import '../state/auth_providers.dart';
@@ -101,15 +103,22 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
           decoration: const InputDecoration(hintText: 'Group name'),
         ),
         actions: [
-          TextButton(
+          GhostButton(
+            label: 'Cancel',
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel',
-                style: RiseText.body.copyWith(color: RiseColors.textDim)),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: Text('Save',
-                style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+              child: Text('Save',
+                  style: RiseText.body.copyWith(
+                    color: RiseColors.primary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  )),
+            ),
           ),
         ],
       ),
@@ -218,24 +227,23 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
 
   Widget _spinner() => const Padding(
         padding: EdgeInsets.symmetric(vertical: 18),
-        child: Center(
-          child: SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2)),
-        ),
+        child: Center(child: RiseSpinner()),
       );
 
   Widget _header() => Row(
         children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.of(context).maybePop(),
-            child: Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.centerLeft,
-              child: Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
+          Semantics(
+            button: true,
+            label: 'Back',
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).maybePop(),
+              child: Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.centerLeft,
+                child: Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
+              ),
             ),
           ),
           const SizedBox(width: 4),
@@ -246,15 +254,19 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
                 overflow: TextOverflow.ellipsis),
           ),
           if (_group.isOwner)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _busy ? null : _rename,
-              child: Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.centerRight,
-                child: Icon(Icons.edit_outlined,
-                    color: RiseColors.textDim, size: 20),
+            Semantics(
+              button: true,
+              label: 'Rename group',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _busy ? null : _rename,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.centerRight,
+                  child: Icon(Icons.edit_outlined,
+                      color: RiseColors.textDim, size: 20),
+                ),
               ),
             ),
         ],

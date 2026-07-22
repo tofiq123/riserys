@@ -19,6 +19,7 @@ import '../../domain/streak_risk.dart';
 import '../../domain/wake_event.dart';
 import '../../domain/wake_insights.dart';
 import '../components/rise_card.dart';
+import '../components/rise_spinner.dart';
 import '../components/section_label.dart';
 import '../components/segmented.dart';
 import '../components/shareable_stats_card.dart';
@@ -113,8 +114,12 @@ List<DayWake> weekWakes(List<WakeEvent> events, DateTime now) {
 }
 
 /// "On time X of Y this week", or a no-data line.
-String consistencyLine(List<WakeEvent> events, DateTime now) {
-  final wakes = weekWakes(events, now);
+String consistencyLine(List<WakeEvent> events, DateTime now) =>
+    consistencyLineFor(weekWakes(events, now));
+
+/// As [consistencyLine] but over an already-computed [weekWakes] list, so the
+/// Stats build shares one computation between this line and the week chart.
+String consistencyLineFor(List<DayWake> wakes) {
   final rang = wakes.where((w) => w.hasEvent).length;
   final onTime = wakes.where((w) => w.onTime).length;
   if (rang == 0) return 'No wake-ups yet this week.';
@@ -163,6 +168,14 @@ class StatsScreen extends ConsumerWidget {
     // read, so it sits right under the streak. Null until there's a finished
     // wake to summarise.
     final evidence = ref.watch(wakeEvidenceProvider);
+    // Compute-once for this build: weekWakes feeds both the consistency line and
+    // the week chart, and the scored/sorted alertness list feeds both the
+    // Alertness card and its trend section.
+    final weekWakesList = weekWakes(events, now);
+    final scored = [
+      for (final e in events)
+        if (e.alertnessScore != null) e
+    ]..sort((a, b) => a.firstRingAt.compareTo(b.firstRingAt));
 
     return SafeArea(
       child: ListView(
@@ -193,9 +206,9 @@ class StatsScreen extends ConsumerWidget {
             const SizedBox(height: 24),
             const SectionLabel('This week'),
             const SizedBox(height: 6),
-            Text(consistencyLine(events, now), style: RiseText.caption),
+            Text(consistencyLineFor(weekWakesList), style: RiseText.caption),
             const SizedBox(height: 14),
-            _weekChart(weekWakes(events, now)),
+            _weekChart(weekWakesList),
             const SizedBox(height: 24),
             const SectionLabel('Consistency'),
             const SizedBox(height: 12),
@@ -206,8 +219,8 @@ class StatsScreen extends ConsumerWidget {
             const SizedBox(height: 24),
             const SectionLabel('Alertness'),
             const SizedBox(height: 12),
-            _alertnessCard(events),
-            ..._alertnessTrendWidgets(context, events, locked: !trendUnlocked),
+            _alertnessCard(scored),
+            ..._alertnessTrendWidgets(context, scored, locked: !trendUnlocked),
           ],
           const SizedBox(height: 24),
           const _LeaderboardSection(),
@@ -395,12 +408,7 @@ class StatsScreen extends ConsumerWidget {
   /// The score is honest, non-diagnostic framing of raw PVT performance — never
   /// a medical or sleep-stage claim. Shows a helper state until a PVT mission
   /// has produced at least one score.
-  Widget _alertnessCard(List<WakeEvent> events) {
-    final scored = [
-      for (final e in events)
-        if (e.alertnessScore != null) e
-    ]..sort((a, b) => a.firstRingAt.compareTo(b.firstRingAt));
-
+  Widget _alertnessCard(List<WakeEvent> scored) {
     if (scored.isEmpty) {
       return RiseCard(
         child: Padding(
@@ -548,12 +556,8 @@ class StatsScreen extends ConsumerWidget {
   /// sparkline of the recent scores plus a plain-language direction. Hidden
   /// until there are enough scores for a trend to mean anything.
   List<Widget> _alertnessTrendWidgets(BuildContext context,
-      List<WakeEvent> events,
+      List<WakeEvent> scored,
       {required bool locked}) {
-    final scored = [
-      for (final e in events)
-        if (e.alertnessScore != null) e
-    ]..sort((a, b) => a.firstRingAt.compareTo(b.firstRingAt));
     if (scored.length < kMinTrendScores) return const [];
 
     if (locked) {
@@ -830,7 +834,8 @@ class _OverviewSectionState extends ConsumerState<_OverviewSection> {
   Widget build(BuildContext context) {
     final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
     final stats = aggregatePeriod(events, DateTime.now(), _period);
-    final use24h = ref.watch(currentSettingsProvider).use24HourTime;
+    final use24h =
+        ref.watch(currentSettingsProvider.select((s) => s.use24HourTime));
     // Weekly stats are free; the Month/Year views are premium. Locked → tapping
     // them routes to the paywall and the view stays on Week.
     final periodsLocked =
@@ -919,7 +924,7 @@ class _OverviewSectionState extends ConsumerState<_OverviewSection> {
 /// A tappable "share your progress" affordance. It hosts an offscreen
 /// [ShareableStatsCard] inside a [RepaintBoundary]; on tap it rasterises that
 /// card and hands it to the OS share sheet. A capture/share hiccup only ever
-/// surfaces a gentle snackbar — sharing is a nicety, never load-bearing.
+/// surfaces a gentle toast — sharing is a nicety, never load-bearing.
 class _ShareCard extends ConsumerStatefulWidget {
   const _ShareCard({this.shareRunner});
 
@@ -968,9 +973,6 @@ class _ShareCardState extends ConsumerState<_ShareCard> {
   Widget build(BuildContext context) {
     final streak = ref.watch(streakProvider);
     final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
-    final earned = earnedAchievements(streak: streak, events: events)
-        .where((b) => b.earned)
-        .toList();
     final account = ref.watch(accountProvider).value;
     final handle = account?.username != null ? '@${account!.username}' : null;
     // The shareable card is premium; locked → tapping routes to the paywall.
@@ -1006,11 +1008,7 @@ class _ShareCardState extends ConsumerState<_ShareCard> {
                   ),
                 ),
                 if (_busy)
-                  const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                  const RiseSpinner(size: 18)
                 else if (locked)
                   Icon(Icons.lock_outline,
                       color: RiseColors.textDim, size: 18)
@@ -1036,7 +1034,9 @@ class _ShareCardState extends ConsumerState<_ShareCard> {
                 streakDays: streak.current,
                 bestStreak: streak.best,
                 consistency: consistencyScore(events),
-                badges: earned,
+                badges: earnedAchievements(streak: streak, events: events)
+                    .where((b) => b.earned)
+                    .toList(),
                 handle: handle,
               ),
             ),
@@ -1195,13 +1195,18 @@ class _LeaderboardSection extends ConsumerWidget {
           children: [
             const SectionLabel('Crew leaderboard'),
             const Spacer(),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => ref.invalidate(leaderboardProvider),
-              child: Padding(
-                padding: EdgeInsets.all(4),
-                child:
-                    Icon(Icons.refresh, size: 18, color: RiseColors.textDim),
+            Semantics(
+              button: true,
+              label: 'Refresh leaderboard',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => ref.invalidate(leaderboardProvider),
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Icon(Icons.refresh,
+                      size: 18, color: RiseColors.textDim),
+                ),
               ),
             ),
           ],
@@ -1219,12 +1224,7 @@ class _LeaderboardSection extends ConsumerWidget {
                 ]),
           loading: () => const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
-            child: Center(
-              child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
+            child: Center(child: RiseSpinner()),
           ),
           error: (_, __) => Row(
             children: [
@@ -1446,11 +1446,7 @@ class _AccountabilityPingCardState
                 ),
               ),
               if (_sending)
-                const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+                const RiseSpinner(size: 18)
               else
                 Icon(Icons.chevron_right,
                     color: RiseColors.textFaint, size: 20),

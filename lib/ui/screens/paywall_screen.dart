@@ -177,13 +177,18 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
           children: [
             Align(
               alignment: Alignment.centerLeft,
-              child: GestureDetector(
-                key: const Key('paywall-close'),
-                behavior: HitTestBehavior.opaque,
-                onTap: () => Navigator.of(context).maybePop(),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                  child: Icon(Icons.close, color: RiseColors.text, size: 22),
+              child: Semantics(
+                button: true,
+                label: 'Close',
+                child: GestureDetector(
+                  key: const Key('paywall-close'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).maybePop(),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                    child: Icon(Icons.close, color: RiseColors.text, size: 22),
+                  ),
                 ),
               ),
             ),
