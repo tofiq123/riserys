@@ -9,6 +9,7 @@ import '../../domain/clock_format.dart';
 import '../../domain/premium_feature.dart';
 import '../../domain/rise_settings.dart';
 import '../backup_sync_host.dart';
+import '../components/confirm_dialog.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/rise_switch.dart';
@@ -56,13 +57,18 @@ class SettingsScreen extends ConsumerWidget {
           children: [
             Row(
               children: [
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => Navigator.of(context).maybePop(),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                    child: Icon(Icons.arrow_back,
-                        color: RiseColors.text, size: 22),
+                Semantics(
+                  button: true,
+                  label: 'Back',
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => Navigator.of(context).maybePop(),
+                    child: Padding(
+                      padding:
+                          EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                      child: Icon(Icons.arrow_back,
+                          color: RiseColors.text, size: 22),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -411,7 +417,7 @@ class _HomeSection extends ConsumerStatefulWidget {
 class _HomeSectionState extends ConsumerState<_HomeSection> {
   bool _busy = false;
 
-  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
+  void _toast(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
     RiseToast.show(context, message, kind: kind);
   }
@@ -423,7 +429,7 @@ class _HomeSectionState extends ConsumerState<_HomeSection> {
       final granted = await widget.gateway.ensurePermission();
       if (!granted) {
         // Denied is a fine answer — degrade gracefully, never crash or nag.
-        _snack(
+        _toast(
             'Rise needs location permission for this — it\'s one fix while '
             'the app is open, nothing is tracked.',
             kind: RiseToastKind.error);
@@ -431,14 +437,14 @@ class _HomeSectionState extends ConsumerState<_HomeSection> {
       }
       final fix = await widget.gateway.currentFix();
       if (fix == null) {
-        _snack('Couldn\'t get a location fix. Try again near a window or '
+        _toast('Couldn\'t get a location fix. Try again near a window or '
             'outside.', kind: RiseToastKind.error);
         return;
       }
       await ref
           .read(settingsProvider.notifier)
           .setHome(fix.latitude, fix.longitude);
-      _snack(
+      _toast(
           'Home set — accurate to about ${fix.accuracyMeters.round()} m. '
           'It stays on this phone.',
           kind: RiseToastKind.success);
@@ -449,7 +455,7 @@ class _HomeSectionState extends ConsumerState<_HomeSection> {
 
   Future<void> _clearHome() async {
     await ref.read(settingsProvider.notifier).clearHome();
-    _snack('Home cleared.', kind: RiseToastKind.success);
+    _toast('Home cleared.', kind: RiseToastKind.success);
   }
 
   @override
@@ -891,32 +897,14 @@ class _AccountBackupSectionState extends ConsumerState<_AccountBackupSection> {
   }
 
   Future<void> _restore() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: RiseColors.card,
-        title: Text('Restore from account?', style: RiseText.title),
-        content: Text(
-            'This pulls your backed-up alarms and wake history from your '
-            'account. It only restores when this device has no alarms yet.',
-            style: RiseText.body),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text('Cancel',
-                style: RiseText.body.copyWith(color: RiseColors.textDim)),
-          ),
-          TextButton(
-            key: const Key('restore-confirm'),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text('Restore',
-                style: RiseText.body.copyWith(
-                    color: RiseColors.primary, fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Restore from account?',
+      message: 'This pulls your backed-up alarms and wake history from your '
+          'account. It only restores when this device has no alarms yet.',
+      confirmLabel: 'Restore',
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     setState(() => _restoring = true);
     RestoreOutcome outcome;
@@ -951,10 +939,10 @@ class _AccountBackupSectionState extends ConsumerState<_AccountBackupSection> {
           RiseToastKind.info
         ),
     };
-    _snack(message, kind: kind);
+    _toast(message, kind: kind);
   }
 
-  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
+  void _toast(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
     RiseToast.show(context, message, kind: kind);
   }

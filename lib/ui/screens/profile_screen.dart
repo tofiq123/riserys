@@ -6,6 +6,7 @@ import '../../data/auth/auth_service.dart';
 import '../../data/permission_gateway.dart';
 import '../../data/push/push_registrar.dart';
 import '../../domain/rise_account.dart';
+import '../components/confirm_dialog.dart';
 import '../components/permissions_section.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
@@ -215,7 +216,7 @@ class _AccountSection extends ConsumerStatefulWidget {
 class _AccountSectionState extends ConsumerState<_AccountSection> {
   bool _busy = false;
 
-  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
+  void _toast(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
     RiseToast.show(context, message, kind: kind);
   }
@@ -226,7 +227,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
     try {
       await action();
     } catch (_) {
-      if (onError != null) _snack(onError, kind: RiseToastKind.error);
+      if (onError != null) _toast(onError, kind: RiseToastKind.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -243,44 +244,17 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
     await _run(() async {
       await _unregisterPush();
       await ref.read(authServiceProvider).signOut();
-      _snack('Signed out.', kind: RiseToastKind.success);
+      _toast('Signed out.', kind: RiseToastKind.success);
     }, onError: 'Could not sign out. Try again.');
   }
 
-  Future<bool?> _confirmSignOut() {
-    return showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: RiseColors.card,
-        title: Text('Sign out?', style: RiseText.title),
-        content: Text(
-          'Your alarms and streak stay on this device. Sign back in '
-          'anytime to sync with your crew.',
-          style: RiseText.body.copyWith(color: RiseColors.textDim),
-        ),
-        actions: [
-          GhostButton(
-            label: 'Cancel',
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-          ),
-          GestureDetector(
-            key: const Key('signout-confirm-button'),
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.of(dialogContext).pop(true),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-              child: Text('Sign out',
-                  style: RiseText.body.copyWith(
-                    color: RiseColors.primary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  )),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<bool?> _confirmSignOut() => showConfirmDialog(
+        context,
+        title: 'Sign out?',
+        message: 'Your alarms and streak stay on this device. Sign back in '
+            'anytime to sync with your crew.',
+        confirmLabel: 'Sign out',
+      );
 
   /// Removes this device's FCM token while still authenticated — must run BEFORE
   /// signOut(), since the reactive host unregister fires after the session is
@@ -298,7 +272,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
     if (confirmed != true) return;
     await _run(() async {
       await ref.read(authServiceProvider).deleteAccount();
-      _snack('Your account was deleted.', kind: RiseToastKind.success);
+      _toast('Your account was deleted.', kind: RiseToastKind.success);
     }, onError: 'Could not delete your account. Try again.');
   }
 
