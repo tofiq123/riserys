@@ -53,6 +53,31 @@ Future<FakeFeedService> _pumpSignedIn(
   return feed;
 }
 
+/// A feed that fails its first load, then recovers — lets a test prove the
+/// error card's Retry actually re-runs the load.
+class _FlakyFeedService implements FeedService {
+  _FlakyFeedService(this._recovered);
+  final List<FeedItem> _recovered;
+  int calls = 0;
+
+  @override
+  Future<List<FeedItem>> crewFeed() async {
+    calls++;
+    if (calls == 1) throw Exception('feed unavailable');
+    return _recovered;
+  }
+
+  @override
+  Future<void> publishWake(
+      {required DateTime wokeAt,
+      required bool onTime,
+      required int streak}) async {}
+  @override
+  Future<void> react(String feedId, String emoji) async {}
+  @override
+  Future<void> unreact(String feedId, String emoji) async {}
+}
+
 void main() {
   testWidgets('signed out shows the sign-in prompt', (t) async {
     await t.pumpWidget(const ProviderScope(
@@ -65,6 +90,40 @@ void main() {
     await _pumpSignedIn(t);
     expect(find.textContaining('No crew activity yet'), findsOneWidget);
     expect(find.textContaining('cheer each other on'), findsOneWidget);
+  });
+
+  testWidgets('a feed error shows the error card, and Retry recovers',
+      (t) async {
+    final auth = FakeAuthService();
+    await auth.signInWithGoogle();
+    await auth.claimUsername('me', displayName: 'Me');
+    addTearDown(auth.dispose);
+    final feed = _FlakyFeedService([_item('f1')]);
+
+    t.view.physicalSize = const Size(1400, 3000);
+    t.view.devicePixelRatio = 3.0;
+    addTearDown(t.view.reset);
+
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        authServiceProvider.overrideWithValue(auth),
+        feedServiceProvider.overrideWithValue(feed),
+      ],
+      child: const MaterialApp(home: ActivityFeedScreen()),
+    ));
+    await t.pumpAndSettle();
+
+    // The error state — with a Retry — shows instead of the empty state.
+    expect(find.textContaining("Couldn't load"), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.textContaining('No crew activity yet'), findsNothing);
+
+    // Retry re-runs the load; the feed recovers and the wake renders.
+    await t.tap(find.text('Retry'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('woke on time'), findsOneWidget);
+    expect(find.text('Retry'), findsNothing);
+    expect(feed.calls, 2);
   });
 
   testWidgets('renders a crew member\'s wake with the reaction palette',

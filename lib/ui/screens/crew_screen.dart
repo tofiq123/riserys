@@ -15,6 +15,8 @@ import '../components/crew_member_chip.dart';
 import '../components/crew_requests_sheet.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
+import '../components/rise_error_card.dart';
+import '../components/rise_spinner.dart';
 import '../components/section_label.dart';
 import '../components/toast.dart';
 import '../state/auth_providers.dart';
@@ -282,14 +284,12 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
         feed.when(
           loading: () => const Padding(
             padding: EdgeInsets.symmetric(vertical: 18),
-            child: Center(
-              child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
+            child: Center(child: RiseSpinner()),
           ),
-          error: (_, __) => _quietFeedCard(),
+          error: (_, __) => RiseErrorCard(
+            message: "Couldn't load your crew's activity.",
+            onRetry: () => ref.invalidate(crewFeedProvider),
+          ),
           data: (items) => items.isEmpty
               ? _quietFeedCard()
               : Column(children: [
