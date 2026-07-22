@@ -14,6 +14,7 @@ import '../components/crew_sheet.dart';
 import '../components/crew_status_style.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
+import '../components/rise_spinner.dart';
 import '../components/section_label.dart';
 import '../components/toast.dart';
 import '../state/crew_providers.dart';
@@ -47,7 +48,7 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
 
   CrewMember get _member => widget.member;
 
-  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
+  void _toast(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
     RiseToast.show(context, message, kind: kind);
   }
@@ -58,13 +59,13 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
     try {
       await ref.read(nudgeServiceProvider).nudge(_member.id);
       if (mounted) {
-        _snack('Nudged @${_member.username} 👋', kind: RiseToastKind.success);
+        _toast('Nudged @${_member.username} 👋', kind: RiseToastKind.success);
       }
     } on NudgeException catch (e) {
-      if (mounted) _snack(e.message, kind: RiseToastKind.error);
+      if (mounted) _toast(e.message, kind: RiseToastKind.error);
     } catch (_) {
       if (mounted) {
-        _snack('Could not send the nudge.', kind: RiseToastKind.error);
+        _toast('Could not send the nudge.', kind: RiseToastKind.error);
       }
     } finally {
       if (mounted) setState(() => _nudging = false);
@@ -128,12 +129,12 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
     } on FriendshipException catch (e) {
       if (mounted) {
         setState(() => _removing = false);
-        _snack(e.message, kind: RiseToastKind.error);
+        _toast(e.message, kind: RiseToastKind.error);
       }
     } catch (_) {
       if (mounted) {
         setState(() => _removing = false);
-        _snack('Something went wrong. Try again.', kind: RiseToastKind.error);
+        _toast('Something went wrong. Try again.', kind: RiseToastKind.error);
       }
     }
   }
@@ -186,12 +187,7 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
                 },
                 loading: () => const Padding(
                   padding: EdgeInsets.symmetric(vertical: 20),
-                  child: Center(
-                    child: SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2)),
-                  ),
+                  child: Center(child: RiseSpinner()),
                 ),
                 error: (_, __) => _statsUnavailable(),
               ),
@@ -206,27 +202,35 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
 
   Widget _navBar() => Row(
         children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.of(context).maybePop(),
-            child: Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.centerLeft,
-              child: Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
+          Semantics(
+            button: true,
+            label: 'Back',
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).maybePop(),
+              child: Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.centerLeft,
+                child: Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
+              ),
             ),
           ),
           const Spacer(),
-          GestureDetector(
-            key: const Key('friend-overflow'),
-            behavior: HitTestBehavior.opaque,
-            onTap: _removing ? null : _openOverflow,
-            child: Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.centerRight,
-              child:
-                  Icon(Icons.more_horiz, color: RiseColors.textDim, size: 22),
+          Semantics(
+            button: true,
+            label: 'More options',
+            child: GestureDetector(
+              key: const Key('friend-overflow'),
+              behavior: HitTestBehavior.opaque,
+              onTap: _removing ? null : _openOverflow,
+              child: Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.centerRight,
+                child:
+                    Icon(Icons.more_horiz, color: RiseColors.textDim, size: 22),
+              ),
             ),
           ),
         ],

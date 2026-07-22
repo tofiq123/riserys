@@ -47,7 +47,8 @@ class CrewFeedTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final use24h = ref.watch(currentSettingsProvider).use24HourTime;
+    final use24h =
+        ref.watch(currentSettingsProvider.select((s) => s.use24HourTime));
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: RiseCard(

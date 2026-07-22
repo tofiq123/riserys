@@ -77,6 +77,31 @@ Future<FakeCrewService> _pumpSignedIn(
   return crew;
 }
 
+/// A crew feed that fails its first load, then recovers — for asserting the
+/// inline feed section's error card and its Retry.
+class _FlakyFeedService implements FeedService {
+  _FlakyFeedService(this._recovered);
+  final List<FeedItem> _recovered;
+  int calls = 0;
+
+  @override
+  Future<List<FeedItem>> crewFeed() async {
+    calls++;
+    if (calls == 1) throw Exception('feed unavailable');
+    return _recovered;
+  }
+
+  @override
+  Future<void> publishWake(
+      {required DateTime wokeAt,
+      required bool onTime,
+      required int streak}) async {}
+  @override
+  Future<void> react(String feedId, String emoji) async {}
+  @override
+  Future<void> unreact(String feedId, String emoji) async {}
+}
+
 void main() {
   group('signed out', () {
     testWidgets('unconfigured build shows the hero without a dead sign-in',
@@ -265,6 +290,24 @@ void main() {
         (t) async {
       await _pumpSignedIn(t, initial: CrewState(friends: [_m('u1', 'ada')]));
       expect(find.textContaining('Quiet for now'), findsOneWidget);
+    });
+
+    testWidgets(
+        'a feed error shows the error card with Retry, not the quiet card',
+        (t) async {
+      final feed = _FlakyFeedService([_feedItem('f1')]);
+      await _pumpSignedIn(t,
+          initial: CrewState(friends: [_m('u1', 'ada')]), feed: feed);
+      // The error card (with Retry) — never the "quiet" empty card, which would
+      // make a network failure look identical to "nothing has happened yet".
+      expect(find.text('Retry'), findsOneWidget);
+      expect(find.textContaining("Couldn't load"), findsOneWidget);
+      expect(find.textContaining('Quiet for now'), findsNothing);
+      // Retry re-runs the load; the feed recovers and the wake shows.
+      await t.tap(find.text('Retry'));
+      await t.pumpAndSettle();
+      expect(find.textContaining('woke on time'), findsOneWidget);
+      expect(feed.calls, 2);
     });
   });
 

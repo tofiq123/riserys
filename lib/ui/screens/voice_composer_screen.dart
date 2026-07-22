@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,7 +32,7 @@ enum _Phase { idle, recording, recorded, sending }
 
 class _VoiceComposerScreenState extends ConsumerState<VoiceComposerScreen> {
   _Phase _phase = _Phase.idle;
-  Duration _elapsed = Duration.zero;
+  final ValueNotifier<Duration> _elapsed = ValueNotifier(Duration.zero);
   Timer? _ticker;
   VoiceRecording? _recording;
   bool _previewing = false;
@@ -41,10 +42,11 @@ class _VoiceComposerScreenState extends ConsumerState<VoiceComposerScreen> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _elapsed.dispose();
     super.dispose();
   }
 
-  void _snack(String message, {RiseToastKind kind = RiseToastKind.info}) {
+  void _toast(String message, {RiseToastKind kind = RiseToastKind.info}) {
     if (!mounted) return;
     RiseToast.show(context, message, kind: kind);
   }
@@ -53,22 +55,24 @@ class _VoiceComposerScreenState extends ConsumerState<VoiceComposerScreen> {
     final recorder = ref.read(voiceRecorderProvider);
     final ok = await recorder.hasPermission();
     if (!ok) {
-      _snack('Microphone access is needed to record a clip.',
+      _toast('Microphone access is needed to record a clip.',
           kind: RiseToastKind.error);
       return;
     }
     await recorder.start();
     if (!mounted) return;
+    _elapsed.value = Duration.zero;
     setState(() {
       _phase = _Phase.recording;
-      _elapsed = Duration.zero;
       _recording = null;
     });
     _ticker?.cancel();
+    // Only the elapsed-time label listens to `_elapsed`, so these 5-per-second
+    // ticks repaint just that label — not the whole composer via setState.
     _ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (!mounted) return;
-      setState(() => _elapsed += const Duration(milliseconds: 200));
-      if (_elapsed >= kMaxVoiceClipDuration) {
+      _elapsed.value += const Duration(milliseconds: 200);
+      if (_elapsed.value >= kMaxVoiceClipDuration) {
         unawaited(_stopRecording()); // hard cap
       }
     });
@@ -82,10 +86,11 @@ class _VoiceComposerScreenState extends ConsumerState<VoiceComposerScreen> {
     if (!mounted) return;
     if (clip == null) {
       setState(() => _phase = _Phase.idle);
-      _snack('That recording came up empty — try again.',
+      _toast('That recording came up empty — try again.',
           kind: RiseToastKind.error);
       return;
     }
+    _elapsed.value = clip.duration;
     setState(() {
       _recording = clip;
       _phase = _Phase.recorded;
@@ -96,11 +101,11 @@ class _VoiceComposerScreenState extends ConsumerState<VoiceComposerScreen> {
     final player = ref.read(voicePlayerProvider);
     await player.stop();
     if (!mounted) return;
+    _elapsed.value = Duration.zero;
     setState(() {
       _recording = null;
       _previewing = false;
       _phase = _Phase.idle;
-      _elapsed = Duration.zero;
     });
   }
 
@@ -133,15 +138,15 @@ class _VoiceComposerScreenState extends ConsumerState<VoiceComposerScreen> {
           .send(targetId: _member.id, recording: clip);
       if (!mounted) return;
       Navigator.of(context).maybePop();
-      _snack('Sent to @${_member.username} 🎙️', kind: RiseToastKind.success);
+      _toast('Sent to @${_member.username} 🎙️', kind: RiseToastKind.success);
     } on VoiceClipException catch (e) {
       if (!mounted) return;
       setState(() => _phase = _Phase.recorded);
-      _snack(e.message, kind: RiseToastKind.error);
+      _toast(e.message, kind: RiseToastKind.error);
     } catch (_) {
       if (!mounted) return;
       setState(() => _phase = _Phase.recorded);
-      _snack('Something went wrong. Try again.', kind: RiseToastKind.error);
+      _toast('Something went wrong. Try again.', kind: RiseToastKind.error);
     }
   }
 
@@ -213,8 +218,7 @@ class _VoiceComposerScreenState extends ConsumerState<VoiceComposerScreen> {
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
       child: Column(
         children: [
-          Text(_timeLabel(),
-              style: RiseText.mono(size: 40, weight: FontWeight.w500)),
+          _ElapsedLabel(elapsed: _elapsed),
           const SizedBox(height: 6),
           Text(_hint(),
               textAlign: TextAlign.center,
@@ -328,19 +332,33 @@ class _VoiceComposerScreenState extends ConsumerState<VoiceComposerScreen> {
     );
   }
 
-  String _timeLabel() {
-    final shown = _phase == _Phase.recorded || _phase == _Phase.sending
-        ? (_recording?.duration ?? Duration.zero)
-        : _elapsed;
-    final capped = shown > kMaxVoiceClipDuration ? kMaxVoiceClipDuration : shown;
-    final s = capped.inSeconds;
-    return '0:${s.toString().padLeft(2, '0')}';
-  }
-
   String _hint() => switch (_phase) {
         _Phase.idle => 'Tap to record · up to 30s',
         _Phase.recording => 'Recording… tap to stop',
         _Phase.recorded => _previewing ? 'Playing…' : 'Preview, then send',
         _Phase.sending => 'Sending your clip…',
       };
+}
+
+/// The big mono readout of recording/clip length. It listens to [elapsed] on
+/// its own, so while recording the ~5-per-second ticks repaint only this label
+/// instead of rebuilding the whole composer.
+class _ElapsedLabel extends StatelessWidget {
+  const _ElapsedLabel({required this.elapsed});
+
+  final ValueListenable<Duration> elapsed;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Duration>(
+      valueListenable: elapsed,
+      builder: (_, value, __) {
+        final capped =
+            value > kMaxVoiceClipDuration ? kMaxVoiceClipDuration : value;
+        final s = capped.inSeconds;
+        return Text('0:${s.toString().padLeft(2, '0')}',
+            style: RiseText.mono(size: 40, weight: FontWeight.w500));
+      },
+    );
+  }
 }

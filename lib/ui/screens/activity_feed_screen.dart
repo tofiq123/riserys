@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../components/crew_entrance.dart';
 import '../components/crew_feed_tile.dart';
 import '../components/crew_hero.dart';
+import '../components/rise_error_card.dart';
+import '../components/rise_spinner.dart';
 import '../state/auth_providers.dart';
 import '../state/feed_providers.dart';
 import '../theme/tokens.dart';
@@ -22,20 +24,45 @@ class ActivityFeedScreen extends ConsumerWidget {
     final signedIn = ref.watch(accountProvider).value != null;
     return Scaffold(
       backgroundColor: RiseColors.appBg,
-      appBar: AppBar(
-        backgroundColor: RiseColors.appBg,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        centerTitle: false,
-        title: Text('Activity', style: RiseText.title),
-        iconTheme: IconThemeData(color: RiseColors.text),
-      ),
       body: SafeArea(
-        top: false,
-        child: signedIn ? const _FeedBody() : const _FeedSignedOut(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _header(context),
+            Expanded(
+              child: signedIn ? const _FeedBody() : const _FeedSignedOut(),
+            ),
+          ],
+        ),
       ),
     );
   }
+
+  Widget _header(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(
+            RiseSpacing.screen, 8, RiseSpacing.screen, 0),
+        child: Row(
+          children: [
+            Semantics(
+              button: true,
+              label: 'Back',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).maybePop(),
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.centerLeft,
+                  child: Icon(Icons.arrow_back,
+                      color: RiseColors.text, size: 22),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text('Activity', style: RiseText.title),
+          ],
+        ),
+      );
 }
 
 class _FeedBody extends ConsumerWidget {
@@ -45,13 +72,11 @@ class _FeedBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final feed = ref.watch(crewFeedProvider);
     return feed.when(
-      loading: () => const Center(
-        child: SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2)),
+      loading: () => const Center(child: RiseSpinner()),
+      error: (_, __) => RiseErrorCard(
+        message: "Couldn't load your crew's activity.",
+        onRetry: () => ref.invalidate(crewFeedProvider),
       ),
-      error: (_, __) => const _FeedEmpty(),
       data: (items) {
         if (items.isEmpty) return const _FeedEmpty();
         return RefreshIndicator(

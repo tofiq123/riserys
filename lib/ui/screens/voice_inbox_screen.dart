@@ -5,6 +5,8 @@ import '../../data/voice/voice_clip_service.dart';
 import '../../domain/alarm.dart';
 import '../../domain/voice_clip.dart';
 import '../components/rise_card.dart';
+import '../components/rise_error_card.dart';
+import '../components/rise_spinner.dart';
 import '../components/toast.dart';
 import '../state/alarm_providers.dart';
 import '../state/settings_providers.dart';
@@ -195,14 +197,12 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
                   ]),
               loading: () => const Padding(
                 padding: EdgeInsets.symmetric(vertical: 40),
-                child: Center(
-                  child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2)),
-                ),
+                child: Center(child: RiseSpinner()),
               ),
-              error: (_, __) => _empty(),
+              error: (_, __) => RiseErrorCard(
+                message: "Couldn't load your voice clips.",
+                onRetry: () => ref.invalidate(voiceInboxProvider),
+              ),
             ),
           ],
         ),
@@ -212,12 +212,16 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
 
   Widget _header() => Row(
         children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.of(context).maybePop(),
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
+          Semantics(
+            button: true,
+            label: 'Back',
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).maybePop(),
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                child: Icon(Icons.arrow_back, color: RiseColors.text, size: 22),
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -252,19 +256,23 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
       child: RiseCard(
         child: Row(
           children: [
-            GestureDetector(
-              key: Key('voice-play-${clip.id}'),
-              behavior: HitTestBehavior.opaque,
-              onTap: () => _play(clip),
-              child: Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                    color: avatarColorFromHex(clip.sender.avatarColor),
-                    shape: BoxShape.circle),
-                child: Icon(playing ? Icons.stop : Icons.play_arrow,
-                    color: RiseColors.primaryText, size: 24),
+            Semantics(
+              button: true,
+              label: playing ? 'Stop' : 'Play',
+              child: GestureDetector(
+                key: Key('voice-play-${clip.id}'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _play(clip),
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                      color: avatarColorFromHex(clip.sender.avatarColor),
+                      shape: BoxShape.circle),
+                  child: Icon(playing ? Icons.stop : Icons.play_arrow,
+                      color: RiseColors.primaryText, size: 24),
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -305,27 +313,41 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
             const SizedBox(width: 4),
             Opacity(
               opacity: deleting ? 0.4 : 1,
-              child: GestureDetector(
-                key: Key('voice-setalarm-${clip.id}'),
-                behavior: HitTestBehavior.opaque,
-                onTap: deleting ? null : () => _setAsAlarm(clip),
-                child: Padding(
-                  padding: EdgeInsets.all(6),
-                  child: Icon(Icons.alarm_add,
-                      color: RiseColors.textFaint, size: 20),
+              child: Semantics(
+                button: true,
+                label: 'Set as alarm sound',
+                child: GestureDetector(
+                  key: Key('voice-setalarm-${clip.id}'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: deleting ? null : () => _setAsAlarm(clip),
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Center(
+                      child: Icon(Icons.alarm_add,
+                          color: RiseColors.textFaint, size: 20),
+                    ),
+                  ),
                 ),
               ),
             ),
             Opacity(
               opacity: deleting ? 0.4 : 1,
-              child: GestureDetector(
-                key: Key('voice-delete-${clip.id}'),
-                behavior: HitTestBehavior.opaque,
-                onTap: deleting ? null : () => _delete(clip),
-                child: Padding(
-                  padding: EdgeInsets.all(6),
-                  child: Icon(Icons.delete_outline,
-                      color: RiseColors.textFaint, size: 20),
+              child: Semantics(
+                button: true,
+                label: 'Delete clip',
+                child: GestureDetector(
+                  key: Key('voice-delete-${clip.id}'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: deleting ? null : () => _delete(clip),
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Center(
+                      child: Icon(Icons.delete_outline,
+                          color: RiseColors.textFaint, size: 20),
+                    ),
+                  ),
                 ),
               ),
             ),
