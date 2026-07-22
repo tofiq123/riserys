@@ -98,7 +98,8 @@ void main() {
     await t.tap(find.text('Sign out'));
     await t.pumpAndSettle();
     expect(fake.current, isNotNull, reason: 'not signed out until confirmed');
-    await t.tap(find.byKey(const Key('signout-confirm-button')));
+    // Sign-out now uses the shared Mono confirm dialog (confirm key below).
+    await t.tap(find.byKey(const Key('confirm-dialog-confirm')));
     await t.pumpAndSettle();
     expect(fake.current, isNull);
   });

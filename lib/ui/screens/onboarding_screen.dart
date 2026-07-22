@@ -9,6 +9,7 @@ import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/sound_chips.dart';
 import '../components/time_dial.dart';
+import '../components/toast.dart';
 import '../state/alarm_providers.dart';
 import '../state/auth_providers.dart';
 import '../state/settings_providers.dart';
@@ -37,7 +38,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   /// Sign-in step (final page, configured-auth only) UI state.
   bool _signingIn = false;
-  String? _signInError;
 
   /// The optional steady wake time (24-hour), or null until the user opts in.
   int? _goalHour;
@@ -521,12 +521,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             label: 'Continue as guest',
             onPressed: _signingIn ? null : _finish,
           ),
-          if (_signInError != null) ...[
-            const SizedBox(height: 10),
-            Text(_signInError!,
-                textAlign: TextAlign.center,
-                style: RiseText.caption.copyWith(color: RiseColors.danger)),
-          ],
         ],
       ),
     );
@@ -537,17 +531,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   /// finishing is never blocked.
   Future<void> _signInAndFinish() async {
     if (_signingIn) return;
-    setState(() {
-      _signingIn = true;
-      _signInError = null;
-    });
+    setState(() => _signingIn = true);
     try {
       await ref.read(authServiceProvider).signInWithGoogle();
       _finish();
     } catch (_) {
       if (mounted) {
-        setState(() => _signInError =
-            'Sign-in didn\'t complete. Try again, or continue as guest.');
+        RiseToast.show(
+            context,
+            'Sign-in didn\'t complete. Try again, or continue as guest.',
+            kind: RiseToastKind.error);
       }
     } finally {
       if (mounted) setState(() => _signingIn = false);

@@ -6,6 +6,7 @@ import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'rise_buttons.dart';
 import 'rise_card.dart';
+import 'rise_spinner.dart';
 
 /// The four alarm-reliability permissions with live status and a Grant action.
 /// Loads on mount and refreshes on app-resume (e.g. after the user returns from
@@ -56,8 +57,8 @@ class _PermissionsSectionState extends State<PermissionsSection>
     final p = _perms;
     if (p == null) {
       return const Center(
-          child:
-              Padding(padding: EdgeInsets.all(20), child: Text('Checking…')));
+          child: Padding(
+              padding: EdgeInsets.all(20), child: RiseSpinner(size: 16)));
     }
     return Column(
       children: [

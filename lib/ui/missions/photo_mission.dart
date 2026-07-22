@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
 import '../../domain/photo_match.dart';
+import '../components/rise_spinner.dart';
 import '../components/slide_to_wake.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
@@ -178,11 +179,7 @@ class _PhotoMissionState extends State<PhotoMission> {
                   : Container(
                       color: RiseColors.surface2,
                       alignment: Alignment.center,
-                      child: const SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
+                      child: const RiseSpinner(size: 28),
                     ),
             ),
           ),
