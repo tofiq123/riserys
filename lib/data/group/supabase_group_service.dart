@@ -119,6 +119,11 @@ class SupabaseGroupService implements GroupService {
       final row = rows.first;
       return _group(row, row['owner_id'] == me ? 'owner' : 'member');
     } on PostgrestException catch (e) {
+      if (e.code == 'PT429') {
+        // Rate limit (0012_rate_limits.sql): invite-code attempts throttled.
+        throw const GroupException(
+            'Too many attempts — wait a minute and try again.');
+      }
       throw GroupException(_friendly(e.message, 'Could not join. Check the code.'));
     }
   }

@@ -126,15 +126,24 @@ class SupabaseCrewService implements CrewService {
 
   @override
   Future<CrewMember?> findByUsername(String username) async {
-    final rows = await _client.rpc(
-      'find_user_by_username',
-      params: {'name': username.toLowerCase()},
-    );
-    final list = rows as List;
-    if (list.isEmpty) return null;
-    final member = _memberFromProfile(list.first as Map<String, dynamic>);
-    if (member.id == _client.auth.currentUser?.id) return null; // not yourself
-    return member;
+    try {
+      final rows = await _client.rpc(
+        'find_user_by_username',
+        params: {'name': username.toLowerCase()},
+      );
+      final list = rows as List;
+      if (list.isEmpty) return null;
+      final member = _memberFromProfile(list.first as Map<String, dynamic>);
+      if (member.id == _client.auth.currentUser?.id) return null; // not yourself
+      return member;
+    } on PostgrestException catch (e) {
+      if (e.code == 'PT429') {
+        // Rate limit (0012_rate_limits.sql): username lookups throttled.
+        throw const FriendshipException(
+            "You're searching too fast — wait a moment and try again.");
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -169,6 +178,11 @@ class SupabaseCrewService implements CrewService {
         'status': 'pending',
       });
     } on PostgrestException catch (e) {
+      if (e.code == 'PT429') {
+        // Rate limit (0012_rate_limits.sql): too many outgoing requests.
+        throw const FriendshipException(
+            "You're sending requests too fast — take a breather and try again.");
+      }
       if (e.code == '23505') {
         // Race backstop: the same-direction unique constraint or the sorted-pair
         // unique index (see 0002_friendships.sql) fired between our check and
