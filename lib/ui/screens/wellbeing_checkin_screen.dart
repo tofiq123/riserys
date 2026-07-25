@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../domain/phq2.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
+import '../components/rise_disclaimer.dart';
 import '../components/section_label.dart';
 import '../components/toast.dart';
 import '../theme/tokens.dart';
@@ -71,7 +72,7 @@ class _WellbeingCheckinScreenState extends State<WellbeingCheckinScreen> {
             'right answers — this is just for you, and nothing is saved.',
             style: RiseText.body.copyWith(color: RiseColors.textDim)),
         const SizedBox(height: 16),
-        const _DisclaimerNote(),
+        const RiseDisclaimer(),
         const SizedBox(height: 20),
         for (var q = 0; q < phq2Questions.length; q++) ...[
           _questionCard(q),
@@ -181,7 +182,7 @@ class _WellbeingCheckinScreenState extends State<WellbeingCheckinScreen> {
       const SizedBox(height: 10),
       _ResourcesCard(onOpenHelpline: () => _openHelpline(context)),
       const SizedBox(height: 16),
-      const _DisclaimerNote(),
+      const RiseDisclaimer(),
       const SizedBox(height: 20),
       PrimaryButton(
         key: const Key('phq-done'),
@@ -222,35 +223,6 @@ class _WellbeingCheckinScreenState extends State<WellbeingCheckinScreen> {
   void _helplineFallback(BuildContext context) {
     RiseToast.show(context, 'Visit findahelpline.com to find support near you.',
         kind: RiseToastKind.info);
-  }
-}
-
-/// The always-present, non-alarming "not medical advice" note.
-class _DisclaimerNote extends StatelessWidget {
-  const _DisclaimerNote();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(RiseSpacing.cardPad),
-      decoration: BoxDecoration(
-        color: RiseColors.surface2,
-        borderRadius: BorderRadius.circular(RiseRadii.base),
-        border: Border.all(color: RiseColors.border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_outline, size: 16, color: RiseColors.textDim),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-                'This is informational only — not a diagnosis or medical advice.',
-                style: RiseText.caption),
-          ),
-        ],
-      ),
-    );
   }
 }
 

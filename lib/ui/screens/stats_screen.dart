@@ -19,6 +19,7 @@ import '../../domain/streak_risk.dart';
 import '../../domain/wake_event.dart';
 import '../../domain/wake_insights.dart';
 import '../components/rise_card.dart';
+import '../components/rise_disclaimer.dart';
 import '../components/rise_spinner.dart';
 import '../components/section_label.dart';
 import '../components/segmented.dart';
@@ -221,6 +222,10 @@ class StatsScreen extends ConsumerWidget {
             const SizedBox(height: 12),
             _alertnessCard(scored),
             ..._alertnessTrendWidgets(context, scored, locked: !trendUnlocked),
+            const SizedBox(height: 12),
+            const RiseDisclaimer(
+                text: 'Your Alertness Score is a wellness insight, not a '
+                    'medical measure.'),
           ],
           const SizedBox(height: 24),
           const _LeaderboardSection(),
