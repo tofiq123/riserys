@@ -125,6 +125,11 @@ class SettingsController extends StateNotifier<RiseSettings> {
     state = state.copyWith(homeShare: v);
   }
 
+  Future<void> setCrewSosEnabled(bool v) async {
+    await _store.setCrewSosEnabled(v);
+    state = state.copyWith(crewSosEnabled: v);
+  }
+
   Future<void> setBedtimeReminderEnabled(bool v) async {
     await _store.setBedtimeReminderEnabled(v);
     state = state.copyWith(bedtimeReminderEnabled: v);

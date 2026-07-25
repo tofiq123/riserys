@@ -41,6 +41,7 @@ class AppSettings {
   static const _kBedtimeReminderEnabled = 'bedtimeReminderEnabled';
   static const _kBedtimeHour = 'bedtimeHour';
   static const _kBedtimeMinute = 'bedtimeMinute';
+  static const _kCrewSosEnabled = 'crewSosEnabled';
 
   int get snoozeMaxCount => _prefs.getInt(_kSnoozeMaxCount) ?? 3;
   Future<void> setSnoozeMaxCount(int v) => _prefs.setInt(_kSnoozeMaxCount, v);
@@ -162,6 +163,12 @@ class AppSettings {
     await _prefs.setInt(_kBedtimeMinute, minute);
   }
 
+  /// Opt-in Crew SOS (asks the crew to help wake the user). Default off — a
+  /// real person is only pulled in with consent.
+  bool get crewSosEnabled => _prefs.getBool(_kCrewSosEnabled) ?? false;
+  Future<void> setCrewSosEnabled(bool v) =>
+      _prefs.setBool(_kCrewSosEnabled, v);
+
   /// A snapshot of the mutable settings (snooze + wake-check + wake plan +
   /// steady wake time).
   RiseSettings get settings => RiseSettings(
@@ -184,5 +191,6 @@ class AppSettings {
         homeLat: homeLat,
         homeLng: homeLng,
         homeShare: homeShare,
+        crewSosEnabled: crewSosEnabled,
       );
 }

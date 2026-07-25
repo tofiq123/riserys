@@ -74,4 +74,44 @@ void main() {
       }
     });
   });
+
+  group('pingCrew', () {
+    test('pings every member with the given kind and returns the count',
+        () async {
+      final svc = FakeNudgeService();
+      final sent = await pingCrew(svc, ['a', 'b', 'c'], NudgeKind.sos);
+      expect(sent, 3);
+      expect(svc.nudgeCount, 3);
+      expect(svc.lastKind, NudgeKind.sos);
+      expect(svc.lastNudged, 'c');
+    });
+
+    test('is a no-op for an empty crew', () async {
+      final svc = FakeNudgeService();
+      expect(await pingCrew(svc, const [], NudgeKind.sos), 0);
+      expect(svc.nudgeCount, 0);
+    });
+
+    test('swallows a per-member failure and still pings the rest', () async {
+      final svc = _FailOneNudge(failId: 'b');
+      final sent = await pingCrew(svc, ['a', 'b', 'c'], NudgeKind.sos);
+      expect(sent, 2); // b (no device token) is skipped; a and c still go out
+      expect(svc.pinged, ['a', 'c']);
+    });
+  });
+}
+
+/// A NudgeService that throws for one id (e.g. a member with no device token),
+/// proving pingCrew stays best-effort per member.
+class _FailOneNudge implements NudgeService {
+  _FailOneNudge({required this.failId});
+
+  final String failId;
+  final List<String> pinged = [];
+
+  @override
+  Future<void> nudge(String userId, {NudgeKind kind = NudgeKind.nudge}) async {
+    if (userId == failId) throw const NudgeException('no device token');
+    pinged.add(userId);
+  }
 }

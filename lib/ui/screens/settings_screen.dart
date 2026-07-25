@@ -271,6 +271,30 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 24),
+            const SectionLabel('Crew backup'),
+            const SizedBox(height: 6),
+            Text(
+                'Let your crew be your safety net. Tap to alert them while the '
+                'alarm is ringing — and if it keeps ringing and you still can\'t '
+                'get up, Rise asks them to help wake you. They\'re only ever '
+                'pulled in when you turn this on.',
+                style: RiseText.caption),
+            const SizedBox(height: 12),
+            RiseCard(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Flexible(
+                      child:
+                          Text('Let my crew wake me', style: RiseText.body)),
+                  RiseSwitch(
+                      key: const Key('crew-sos-switch'),
+                      value: s.crewSosEnabled,
+                      onChanged: ctrl.setCrewSosEnabled),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
             const SectionLabel('Bedtime reminder'),
             const SizedBox(height: 6),
             Text(

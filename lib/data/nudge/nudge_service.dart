@@ -75,3 +75,23 @@ class DisabledNudgeService implements NudgeService {
   @override
   Future<void> nudge(String userId, {NudgeKind kind = NudgeKind.nudge}) async {}
 }
+
+/// Best-effort fan-out of a [kind] push to every id in [memberIds]. Per-member
+/// failures are swallowed — one member with no device token (or a transient
+/// error) must not stop the rest, and the send-nudge function rate-limits
+/// duplicates server-side. Returns how many sends were accepted. Used by the
+/// Crew SOS (manual + auto) and reusable for any "tell the whole crew" action.
+Future<int> pingCrew(
+  NudgeService nudge,
+  Iterable<String> memberIds,
+  NudgeKind kind,
+) async {
+  var sent = 0;
+  for (final id in memberIds) {
+    try {
+      await nudge.nudge(id, kind: kind);
+      sent++;
+    } catch (_) {}
+  }
+  return sent;
+}

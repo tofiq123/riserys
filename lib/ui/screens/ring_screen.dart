@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/alarm_sync_service.dart';
 import '../../data/motion_sensor.dart';
 import '../../data/native/alarm_api.g.dart';
+import '../../data/nudge/nudge_service.dart';
 import '../../data/screen_brightness_controller.dart';
 import '../../data/snooze.dart';
 import '../../domain/adaptive_difficulty.dart';
@@ -15,7 +16,10 @@ import '../../domain/clock_format.dart';
 import '../../domain/wake_confidence.dart';
 import '../../domain/wake_event.dart';
 import '../components/slide_to_wake.dart';
+import '../components/toast.dart';
 import '../state/alarm_providers.dart';
+import '../state/crew_providers.dart';
+import '../state/nudge_providers.dart';
 import '../state/settings_providers.dart';
 import '../state/wake_providers.dart';
 import '../theme/tokens.dart';
@@ -226,6 +230,12 @@ class _RingScreenState extends ConsumerState<RingScreen>
   /// [_dismiss] can persist it. null = the mission produced no score.
   int? _pendingAlertness;
 
+  /// Seconds the alarm has been ringing — drives the auto-SOS threshold.
+  int _elapsedSec = 0;
+
+  /// One-shot guard: the crew SOS (manual or auto) has fired this ring.
+  bool _sosSent = false;
+
   @override
   void initState() {
     super.initState();
@@ -240,7 +250,9 @@ class _RingScreenState extends ConsumerState<RingScreen>
       duration: const Duration(seconds: 45),
     );
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {}); // advances the live clock
+      if (!mounted) return;
+      setState(() => _elapsedSec++); // advances the live clock + auto-SOS timer
+      _maybeAutoSos();
     });
     if (widget.record) _recordRingStart();
   }
@@ -306,6 +318,39 @@ class _RingScreenState extends ConsumerState<RingScreen>
     } catch (e) {
       debugPrint('Rise: wake-open failed for ${widget.alarmId}: $e');
     }
+  }
+
+  /// After the alarm has rung unanswered for [_autoSosAfterSec] and the user
+  /// opted in, automatically ask the crew for help — once. Fully gated: no
+  /// opt-in, no crew, or a dismiss already in flight and nothing fires.
+  static const _autoSosAfterSec = 180; // 3 min of unanswered ringing
+
+  void _maybeAutoSos() {
+    if (_sosSent || _dismissing || _elapsedSec < _autoSosAfterSec) return;
+    if (!ref.read(currentSettingsProvider).crewSosEnabled) return;
+    final crew = ref.read(crewProvider).value;
+    if (crew == null || crew.friends.isEmpty) return;
+    _sendSos();
+  }
+
+  /// Fan an SOS out to every crew member, once per ring. The notification text
+  /// is fixed server-side (NudgeKind.sos) — we only trigger it. Best-effort per
+  /// member; the send-nudge function rate-limits duplicates.
+  Future<void> _sendSos() async {
+    if (_sosSent) return;
+    final crew = ref.read(crewProvider).value;
+    if (crew == null || crew.friends.isEmpty) return;
+    setState(() => _sosSent = true);
+    final sent = await pingCrew(ref.read(nudgeServiceProvider),
+        crew.friends.map((m) => m.id), NudgeKind.sos);
+    if (!mounted) return;
+    RiseToast.show(
+      context,
+      sent > 0
+          ? 'Your crew has been alerted — help is on the way 🚨'
+          : "Couldn't reach your crew right now.",
+      kind: sent > 0 ? RiseToastKind.success : RiseToastKind.error,
+    );
   }
 
   Future<void> _dismiss(String method) async {
@@ -506,6 +551,17 @@ class _RingScreenState extends ConsumerState<RingScreen>
         ),
       );
 
+  Widget _sosButton() => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: TextButton(
+          key: const Key('crew-sos-button'),
+          onPressed: _dismissing ? null : _sendSos,
+          child: Text("Can't wake up? Alert your crew 🚨",
+              style: RiseText.body.copyWith(
+                  color: RiseColors.textDim, fontWeight: FontWeight.w600)),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final alarm = ref
@@ -513,6 +569,10 @@ class _RingScreenState extends ConsumerState<RingScreen>
         .value
         ?.firstWhereOrNull((a) => a.id == widget.alarmId);
     final settings = ref.watch(currentSettingsProvider);
+    final crew = ref.watch(crewProvider).value;
+    final showSos = settings.crewSosEnabled &&
+        !_sosSent &&
+        (crew?.friends.isNotEmpty ?? false);
     final events = ref.watch(wakeEventsProvider).value ?? const <WakeEvent>[];
     final snoozeCount = events
             .firstWhereOrNull((e) => e.alarmId == widget.alarmId && e.isOpen)
@@ -603,6 +663,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
             ],
             gate,
             if (canSnooze) _snoozeButton(snoozeMinutes),
+            if (showSos) _sosButton(),
           ],
         ),
       ),

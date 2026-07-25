@@ -34,6 +34,7 @@ class RiseSettings {
     this.homeLat,
     this.homeLng,
     this.homeShare = HomeShareTier.off,
+    this.crewSosEnabled = false,
   });
 
   /// Max snoozes before the button hides (0 disables snooze).
@@ -134,6 +135,13 @@ class RiseSettings {
   /// about this feature is opt-in.
   final HomeShareTier homeShare;
 
+  /// Opt-in Crew SOS. When on, the ring screen shows a "wake me — alert my
+  /// crew" action, and if the alarm rings unanswered past a threshold Rise
+  /// automatically asks the crew to help. The push text is 100% server-composed
+  /// (see [NudgeKind.sos]); this only governs whether/when it is sent. Default
+  /// off — a real person is only ever pulled in with the user's consent.
+  final bool crewSosEnabled;
+
   static const _shrinking = [9, 5, 3, 2, 1];
 
   /// The duration (minutes) of the [index]-th snooze (0-based): a flat value
@@ -163,6 +171,7 @@ class RiseSettings {
     double? homeLat,
     double? homeLng,
     HomeShareTier? homeShare,
+    bool? crewSosEnabled,
     // The `field ?? this.field` idiom cannot express "clear this nullable field
     // back to null" — passing null is indistinguishable from not passing it. A
     // sentinel flag keeps the intent explicit at the call site:
@@ -196,6 +205,7 @@ class RiseSettings {
         homeLat: clearHome ? null : (homeLat ?? this.homeLat),
         homeLng: clearHome ? null : (homeLng ?? this.homeLng),
         homeShare: homeShare ?? this.homeShare,
+        crewSosEnabled: crewSosEnabled ?? this.crewSosEnabled,
       );
 
   @override
@@ -219,7 +229,8 @@ class RiseSettings {
       other.themeMode == themeMode &&
       other.homeLat == homeLat &&
       other.homeLng == homeLng &&
-      other.homeShare == homeShare;
+      other.homeShare == homeShare &&
+      other.crewSosEnabled == crewSosEnabled;
 
   @override
   int get hashCode => Object.hash(
@@ -241,5 +252,6 @@ class RiseSettings {
       themeMode,
       homeLat,
       homeLng,
-      homeShare);
+      homeShare,
+      crewSosEnabled);
 }
