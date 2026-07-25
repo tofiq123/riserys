@@ -152,7 +152,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     icon: Icons.notifications_active,
                     title: 'Wake up, for real',
                     body:
-                        'Rise rings through silent mode, Focus, and a locked screen — and makes sure you actually get up.',
+                        'Riserys rings through silent mode, Focus, and a locked screen — and makes sure you actually get up.',
                   ),
                   _intro(
                     icon: Icons.psychology_alt,
@@ -177,7 +177,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               child: _signInStep && _page == _lastPage
                   ? const SizedBox(height: 44)
                   : PrimaryButton(
-                      label: _page < _lastPage ? 'Next' : 'Start using Rise',
+                      label: _page < _lastPage ? 'Next' : 'Start using Riserys',
                       onPressed: _next,
                     ),
             ),

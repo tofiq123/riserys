@@ -10,7 +10,7 @@ import '../theme/tokens.dart';
 import '../theme/typography.dart';
 
 /// Pushes the hard paywall. The single entry point used by every premium gate
-/// and by the "Rise Premium" row in Profile.
+/// and by the "Riserys Premium" row in Profile.
 void openPaywall(BuildContext context) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(builder: (_) => const PaywallScreen()),
@@ -127,7 +127,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
       final ok = await ref.read(entitlementServiceProvider).purchase(offer);
       if (!mounted) return;
       if (ok) {
-        _snack('Welcome to Rise Premium. Everything\'s unlocked.',
+        _snack('Welcome to Riserys Premium. Everything\'s unlocked.',
             kind: RiseToastKind.success);
         Navigator.of(context).maybePop();
       } else {
@@ -209,10 +209,10 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
         child: Icon(Icons.verified, size: 48, color: RiseColors.primary),
       ),
       const SizedBox(height: 16),
-      Center(child: Text('You\'re on Rise Premium', style: RiseText.display)),
+      Center(child: Text('You\'re on Riserys Premium', style: RiseText.display)),
       const SizedBox(height: 8),
       Center(
-        child: Text('Everything below is unlocked. Thanks for backing Rise.',
+        child: Text('Everything below is unlocked. Thanks for backing Riserys.',
             textAlign: TextAlign.center, style: RiseText.caption),
       ),
       const SizedBox(height: 24),
@@ -237,7 +237,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   List<Widget> _offerBody(List<PremiumOffer> offers) {
     return [
       const SizedBox(height: 8),
-      Text('Rise Premium', style: RiseText.display),
+      Text('Riserys Premium', style: RiseText.display),
       const SizedBox(height: 8),
       Text(
           'Unlock every mission, the deeper stats, and the whole crew. '

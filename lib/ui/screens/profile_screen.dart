@@ -96,7 +96,7 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 24),
           const SectionLabel('Reliability'),
           const SizedBox(height: 6),
-          Text('Make sure Rise can always reach you.', style: RiseText.caption),
+          Text('Make sure Riserys can always reach you.', style: RiseText.caption),
           const SizedBox(height: 12),
           GestureDetector(
             key: const Key('setup-guardian-entry'),
@@ -159,7 +159,7 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-/// The "Rise Premium" row: opens the paywall, or shows an "Active" state when
+/// The "Riserys Premium" row: opens the paywall, or shows an "Active" state when
 /// premium (including the unconfigured graceful-degrade default, where everyone
 /// is premium). Never gates anything itself — just the way in.
 class _PremiumEntry extends ConsumerWidget {
@@ -183,7 +183,7 @@ class _PremiumEntry extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Rise Premium',
+                  Text('Riserys Premium',
                       style:
                           RiseText.body.copyWith(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
@@ -405,7 +405,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Sign in to Rise',
+                    Text('Sign in to Riserys',
                         style: RiseText.body
                             .copyWith(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 2),
@@ -471,7 +471,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
                     Text(
                       account.displayName.isNotEmpty
                           ? account.displayName
-                          : (handle ?? 'Rise member'),
+                          : (handle ?? 'Riserys member'),
                       style:
                           RiseText.body.copyWith(fontWeight: FontWeight.w700),
                     ),

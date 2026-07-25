@@ -92,7 +92,7 @@ void main() {
     expect(find.text('Wake up, for real'), findsOneWidget);
     await _toPermissions(t);
     expect(find.text('Ring through anything'), findsOneWidget);
-    await t.tap(find.text('Start using Rise'));
+    await t.tap(find.text('Start using Riserys'));
     await t.pumpAndSettle();
     expect(done, isTrue);
   });
@@ -128,7 +128,7 @@ void main() {
       await t.tap(find.text('Next'));
       await t.pumpAndSettle();
     }
-    await t.tap(find.text('Start using Rise'));
+    await t.tap(find.text('Start using Riserys'));
     await t.pumpAndSettle();
     expect(done, isTrue);
     expect(store.wakeIntention, 'Walk to the kitchen');
@@ -150,7 +150,7 @@ void main() {
       await t.tap(find.text('Next'));
       await t.pumpAndSettle();
     }
-    await t.tap(find.text('Start using Rise'));
+    await t.tap(find.text('Start using Riserys'));
     await t.pumpAndSettle();
     expect(store.wakeIntention, 'Stand up and stretch');
   });
@@ -173,7 +173,7 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('Next'));
     await t.pumpAndSettle();
-    await t.tap(find.text('Start using Rise'));
+    await t.tap(find.text('Start using Riserys'));
     await t.pumpAndSettle();
     expect(store.targetWakeHour, 7);
     expect(store.targetWakeMinute, 0);
@@ -257,7 +257,7 @@ void main() {
     // First alarm -> Permissions -> finish.
     await t.tap(find.text('Next'));
     await t.pumpAndSettle();
-    await t.tap(find.text('Start using Rise'));
+    await t.tap(find.text('Start using Riserys'));
     await t.pumpAndSettle();
 
     expect(m.saved, hasLength(1));
@@ -286,7 +286,7 @@ void main() {
     await t.pumpWidget(_host(_FakeGateway(_perms()), store, mutations: m));
     await t.pumpAndSettle();
     await _toPermissions(t); // walks past the first-alarm step without opting in
-    await t.tap(find.text('Start using Rise'));
+    await t.tap(find.text('Start using Riserys'));
     await t.pumpAndSettle();
     expect(m.saved, isEmpty);
   });
@@ -298,7 +298,7 @@ void main() {
     await t.pumpAndSettle();
     await _toPermissions(t);
     // Six-page flow: the permissions page is the last one and finishes.
-    expect(find.text('Start using Rise'), findsOneWidget);
+    expect(find.text('Start using Riserys'), findsOneWidget);
     expect(find.text('Continue as guest'), findsNothing);
   });
 
@@ -313,7 +313,7 @@ void main() {
     await t.pumpAndSettle();
     // Seven pages now: the permissions page still says Next, not finish.
     await _toPermissions(t);
-    expect(find.text('Start using Rise'), findsNothing);
+    expect(find.text('Start using Riserys'), findsNothing);
     await t.tap(find.text('Next'));
     await t.pumpAndSettle();
     // On the appended sign-in page.

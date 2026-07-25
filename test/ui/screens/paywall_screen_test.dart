@@ -28,7 +28,7 @@ void main() {
     addTearDown(fake.dispose);
     await _pump(t, fake);
 
-    expect(find.text('Rise Premium'), findsOneWidget);
+    expect(find.text('Riserys Premium'), findsOneWidget);
     // Real offer prices win over the placeholders.
     expect(find.text(r'$29.99'), findsOneWidget);
     expect(find.text(r'$3.99'), findsOneWidget);
@@ -58,7 +58,7 @@ void main() {
 
     expect(fake.currentIsPremium, isTrue);
     // The screen flips to the premium state after the entitlement change.
-    expect(find.text('You\'re on Rise Premium'), findsOneWidget);
+    expect(find.text('You\'re on Riserys Premium'), findsOneWidget);
   });
 
   testWidgets('selecting monthly then subscribing buys monthly', (t) async {
@@ -80,7 +80,7 @@ void main() {
     addTearDown(fake.dispose);
     await _pump(t, fake);
 
-    expect(find.text('You\'re on Rise Premium'), findsOneWidget);
+    expect(find.text('You\'re on Riserys Premium'), findsOneWidget);
     expect(find.byKey(const Key('paywall-plan-annual')), findsNothing);
     expect(find.byKey(const Key('paywall-restore')), findsOneWidget);
   });

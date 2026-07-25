@@ -71,7 +71,7 @@ Future<void> main() async {
         publishableKey: SupabaseConfig.anonKey,
       );
     } catch (e) {
-      debugPrint('Rise: Supabase init failed (social disabled): $e');
+      debugPrint('Riserys: Supabase init failed (social disabled): $e');
     }
   }
 
@@ -81,7 +81,7 @@ Future<void> main() async {
   try {
     settings = await AppSettings.load();
   } catch (e) {
-    debugPrint('Rise: settings load failed: $e');
+    debugPrint('Riserys: settings load failed: $e');
   }
 
   // Open the local DB (fast) so the alarm list renders and the ring can record
@@ -92,7 +92,7 @@ Future<void> main() async {
     await AlarmSyncService.configureForApp();
     repository = AlarmSyncService.instance.repository;
   } catch (e, s) {
-    debugPrint('Rise: startup DB configure failed: $e\n$s');
+    debugPrint('Riserys: startup DB configure failed: $e\n$s');
   }
 
   runApp(ProviderScope(
@@ -114,14 +114,14 @@ Future<void> _deferredStartup() async {
   try {
     await Firebase.initializeApp();
   } catch (e) {
-    debugPrint('Rise: Firebase init skipped (push disabled): $e');
+    debugPrint('Riserys: Firebase init skipped (push disabled): $e');
   }
 
   if (RevenueCatConfig.isConfigured) {
     try {
       await RevenueCatEntitlementService.configureSdk(RevenueCatConfig.apiKey);
     } catch (e) {
-      debugPrint('Rise: RevenueCat init failed (premium gating disabled): $e');
+      debugPrint('Riserys: RevenueCat init failed (premium gating disabled): $e');
     }
   }
 
@@ -131,7 +131,7 @@ Future<void> _deferredStartup() async {
   try {
     await AlarmSyncService.instance.reconcileNow();
   } catch (e, s) {
-    debugPrint('Rise: deferred reconcile failed: $e\n$s');
+    debugPrint('Riserys: deferred reconcile failed: $e\n$s');
   }
 }
 
@@ -221,7 +221,7 @@ class _RiseAppState extends ConsumerState<RiseApp> with WidgetsBindingObserver {
     try {
       id = await AlarmHostApi().getRingingAlarmId();
     } catch (e) {
-      debugPrint('Rise: could not check for a ringing alarm: $e');
+      debugPrint('Riserys: could not check for a ringing alarm: $e');
       return;
     }
     _reconcileRingScreen(id);
@@ -292,7 +292,7 @@ class _RiseAppState extends ConsumerState<RiseApp> with WidgetsBindingObserver {
     _inviteLinks = handler;
     handler.listen(
       AppLinks().uriLinkStream,
-      onError: (e) => debugPrint('Rise: invite link stream error: $e'),
+      onError: (e) => debugPrint('Riserys: invite link stream error: $e'),
     );
   }
 
@@ -382,7 +382,7 @@ class _RiseAppState extends ConsumerState<RiseApp> with WidgetsBindingObserver {
 
     final repository = widget.repository;
     return MaterialApp(
-      title: 'Rise',
+      title: 'Riserys',
       navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       // Light stays MaterialApp's default (theme: null) so the device-verified
@@ -432,7 +432,7 @@ class _StartupFailedPage extends StatelessWidget {
               Icon(Icons.error_outline, size: 48, color: RiseColors.textFaint),
               const SizedBox(height: 16),
               Text(
-                'Rise failed to start and could not reach the database.\n'
+                'Riserys failed to start and could not reach the database.\n'
                 'Already-armed alarms will still ring. Restart the app to '
                 'try again.',
                 textAlign: TextAlign.center,

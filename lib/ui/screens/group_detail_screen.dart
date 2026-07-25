@@ -73,13 +73,13 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
   }
 
   /// Opens the OS share sheet with a tappable deep link — the recipient taps it,
-  /// Rise opens, and they join this group straight away (no code to type).
+  /// Riserys opens, and they join this group straight away (no code to type).
   Future<void> _shareLink() async {
     final link = buildInviteLink(_group.inviteCode);
     try {
       await SharePlus.instance.share(ShareParams(
-        text: 'Join my Rise group "${_group.name}" — we wake up together.\n$link',
-        subject: 'Join my Rise crew',
+        text: 'Join my Riserys group "${_group.name}" — we wake up together.\n$link',
+        subject: 'Join my Riserys crew',
       ));
     } catch (_) {
       // Share sheet unavailable → fall back to copying the code, never crash.

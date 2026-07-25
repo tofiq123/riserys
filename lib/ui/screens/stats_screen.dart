@@ -952,7 +952,7 @@ class _ShareCardState extends ConsumerState<_ShareCard> {
       // Let the offscreen card build, lay out and paint before rasterising it.
       await WidgetsBinding.instance.endOfFrame;
       final runner = widget.shareRunner ??
-          (key) => captureAndShare(key, text: 'My Rise wake-up stats');
+          (key) => captureAndShare(key, text: 'My Riserys wake-up stats');
       await runner(_boundaryKey);
     } catch (_) {
       if (mounted) {

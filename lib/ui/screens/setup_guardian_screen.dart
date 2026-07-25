@@ -148,7 +148,7 @@ class _SetupGuardianScreenState extends State<SetupGuardianScreen>
           Text('Setup Guardian', style: RiseText.title),
         const SizedBox(height: 6),
         Text(
-            'These checks decide whether your alarm actually fires. Rise '
+            'These checks decide whether your alarm actually fires. Riserys '
             're-checks them every time you open the app.',
             style: RiseText.caption),
         const SizedBox(height: 16),

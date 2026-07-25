@@ -112,7 +112,7 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: 24),
             const SectionLabel('Wake-up check'),
             const SizedBox(height: 6),
-            Text('If you don\'t confirm you\'re up, Rise re-rings.',
+            Text('If you don\'t confirm you\'re up, Riserys re-rings.',
                 style: RiseText.caption),
             const SizedBox(height: 12),
             RiseCard(
@@ -160,7 +160,7 @@ class SettingsScreen extends ConsumerWidget {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                        'If you\'re clearly up and moving, Rise skips the '
+                        'If you\'re clearly up and moving, Riserys skips the '
                         're-ring. Not sure? It gently checks in — '
                         '"Still up? Let\'s make sure."',
                         style: RiseText.caption),
@@ -172,7 +172,7 @@ class SettingsScreen extends ConsumerWidget {
             const SectionLabel('Home & wake detection'),
             const SizedBox(height: 6),
             Text(
-                'Around wake-up — and only while Rise is open — Rise can check '
+                'Around wake-up — and only while Riserys is open — Riserys can check '
                 'how far you are from home to confirm you\'re really up. Your '
                 'home location is saved only on this phone and never leaves it.',
                 style: RiseText.caption),
@@ -430,7 +430,7 @@ class _HomeSectionState extends ConsumerState<_HomeSection> {
       if (!granted) {
         // Denied is a fine answer — degrade gracefully, never crash or nag.
         _toast(
-            'Rise needs location permission for this — it\'s one fix while '
+            'Riserys needs location permission for this — it\'s one fix while '
             'the app is open, nothing is tracked.',
             kind: RiseToastKind.error);
         return;
@@ -789,7 +789,7 @@ class _BedtimeReminderCard extends ConsumerWidget {
                   Text('Wind-down time', style: RiseText.title),
                   const SizedBox(height: 6),
                   Text(
-                      'When should Rise gently remind you to start winding '
+                      'When should Riserys gently remind you to start winding '
                       'down?',
                       style: RiseText.caption),
                   const SizedBox(height: 12),
