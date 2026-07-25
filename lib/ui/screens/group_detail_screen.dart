@@ -9,6 +9,7 @@ import '../../domain/crew_member.dart';
 import '../../domain/crew_score.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/group.dart';
+import '../../domain/group_challenge.dart';
 import '../components/crew_avatar.dart';
 import '../components/crew_entrance.dart';
 import '../components/crew_pill.dart';
@@ -50,6 +51,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
     ref.invalidate(myGroupsProvider);
     ref.invalidate(groupMembersProvider(_gid));
     ref.invalidate(groupLeaderboardProvider(_gid));
+    ref.invalidate(groupChallengeProvider(_gid));
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -154,6 +156,20 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
         if (mounted) Navigator.of(context).maybePop();
       });
 
+  Future<void> _startRace() => _run(() async {
+        await ref.read(groupServiceProvider).startChallenge(_gid);
+        ref.invalidate(groupChallengeProvider(_gid));
+        if (mounted) {
+          _snack('Streak race started 🔥', kind: RiseToastKind.success);
+        }
+      });
+
+  Future<void> _endRace(GroupChallenge c) => _run(() async {
+        await ref.read(groupServiceProvider).endChallenge(c.id);
+        ref.invalidate(groupChallengeProvider(_gid));
+        if (mounted) _snack('Race ended.', kind: RiseToastKind.success);
+      });
+
   @override
   Widget build(BuildContext context) {
     final me = ref.watch(accountProvider).value?.id;
@@ -196,8 +212,10 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
               ),
             ),
             const SizedBox(height: 26),
+            CrewEntrance(index: 3, child: _streakRaceSection()),
+            const SizedBox(height: 26),
             CrewEntrance(
-              index: 3,
+              index: 4,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -218,7 +236,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
               ),
             ),
             const SizedBox(height: 30),
-            CrewEntrance(index: 4, child: _footerAction()),
+            CrewEntrance(index: 5, child: _footerAction()),
           ],
         ),
       ),
@@ -398,6 +416,103 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
                     style: RiseText.caption.copyWith(fontSize: 10)),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The "Streak race" section: start one (owner) when none runs, else the live
+  /// standings (who's still in vs out) derived from the leaderboard + start day.
+  Widget _streakRaceSection() {
+    final challenge = ref.watch(groupChallengeProvider(_gid));
+    final board = ref.watch(groupLeaderboardProvider(_gid));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionLabel('Streak race'),
+        const SizedBox(height: 12),
+        challenge.when(
+          loading: _spinner,
+          error: (_, __) =>
+              Text('Could not load the race.', style: RiseText.caption),
+          data: (c) {
+            if (c == null) {
+              if (!_group.isOwner) {
+                return Text(
+                    'No streak race running. The group owner can start one.',
+                    style: RiseText.caption);
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                      'Everyone keeps their streak alive — last one standing '
+                      'wins. Kind, not cut-throat.',
+                      style: RiseText.caption),
+                  const SizedBox(height: 10),
+                  PrimaryButton(
+                    label: 'Start a streak race',
+                    onPressed: _busy ? null : _startRace,
+                  ),
+                ],
+              );
+            }
+            final standings = board.value ?? const <CrewStanding>[];
+            final now = DateTime.now();
+            final rows = challengeStandings(
+                startedAt: c.startedAt, now: now, standings: standings);
+            final day = challengeDayCount(startedAt: c.startedAt, now: now);
+            final alive = rows.where((r) => r.inRace).length;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Day $day · $alive still standing',
+                    style:
+                        RiseText.caption.copyWith(color: RiseColors.textDim)),
+                const SizedBox(height: 10),
+                for (final r in rows) _raceRow(r),
+                if (_group.isOwner) ...[
+                  const SizedBox(height: 6),
+                  GhostButton(
+                      label: 'End race',
+                      onPressed: _busy ? null : () => _endRace(c)),
+                ],
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _raceRow(ChallengeStanding r) {
+    final s = r.standing;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: RiseCard(
+        child: Row(
+          children: [
+            Text(r.inRace ? '🔥' : '💤', style: const TextStyle(fontSize: 18)),
+            const SizedBox(width: 12),
+            CrewAvatar(
+                username: s.username, colorHex: s.avatarColor, size: 32),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                  s.displayName.isNotEmpty ? s.displayName : '@${s.username}',
+                  style: RiseText.body.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: r.inRace ? RiseColors.text : RiseColors.textDim),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+            ),
+            const SizedBox(width: 8),
+            Text(r.inRace ? '${s.stats.currentStreak}d' : 'out',
+                style: RiseText.mono(
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: r.inRace ? RiseColors.text : RiseColors.textFaint)),
           ],
         ),
       ),

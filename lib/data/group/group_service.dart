@@ -3,6 +3,7 @@ import 'package:collection/collection.dart';
 import '../../domain/crew_member.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/group.dart';
+import '../../domain/group_challenge.dart';
 
 /// Groups: create / join-by-code / leave / delete / rename / kick, plus roster
 /// and per-group leaderboard reads. Production is `SupabaseGroupService`; tests
@@ -37,6 +38,17 @@ abstract interface class GroupService {
 
   /// The group's leaderboard (members ranked by wake consistency).
   Future<List<CrewStanding>> leaderboard(String groupId);
+
+  /// The group's active streak race, or null if none is running (see
+  /// 0013_group_challenges.sql). Any member may read it.
+  Future<GroupChallenge?> activeChallenge(String groupId);
+
+  /// Owner-only: starts a streak race for the group and returns it. Throws
+  /// [GroupException] if a race is already running.
+  Future<GroupChallenge> startChallenge(String groupId);
+
+  /// Owner-only: ends the running streak race.
+  Future<void> endChallenge(String challengeId);
 }
 
 /// A group action could not be completed; [message] is user-facing.
@@ -55,16 +67,19 @@ class FakeGroupService implements GroupService {
     List<Group> groups = const [],
     Map<String, List<CrewMember>> members = const {},
     Map<String, List<CrewStanding>> standings = const {},
+    Map<String, GroupChallenge> challenges = const {},
     this.joinCode = 'RISE42',
     this.joinTarget,
   })  : _groups = [...groups],
         _members = {for (final e in members.entries) e.key: [...e.value]},
-        _standings = {for (final e in standings.entries) e.key: [...e.value]};
+        _standings = {for (final e in standings.entries) e.key: [...e.value]},
+        _challenges = {...challenges};
 
   final String selfId;
   final List<Group> _groups;
   final Map<String, List<CrewMember>> _members;
   final Map<String, List<CrewStanding>> _standings;
+  final Map<String, GroupChallenge> _challenges; // groupId -> active race
 
   /// The code [joinByCode] accepts (case-insensitive); anything else throws.
   final String joinCode;
@@ -149,6 +164,25 @@ class FakeGroupService implements GroupService {
   @override
   Future<List<CrewStanding>> leaderboard(String groupId) async =>
       rankStandings(_standings[groupId] ?? const []);
+
+  @override
+  Future<GroupChallenge?> activeChallenge(String groupId) async =>
+      _challenges[groupId];
+
+  @override
+  Future<GroupChallenge> startChallenge(String groupId) async {
+    if (_challenges.containsKey(groupId)) {
+      throw const GroupException('A streak race is already running.');
+    }
+    final c = GroupChallenge(
+        id: 'ch${_seq++}', groupId: groupId, startedAt: DateTime.now());
+    _challenges[groupId] = c;
+    return c;
+  }
+
+  @override
+  Future<void> endChallenge(String challengeId) async =>
+      _challenges.removeWhere((_, c) => c.id == challengeId);
 }
 
 /// Used when unconfigured/signed-out: no groups, reads empty, every write
@@ -189,4 +223,15 @@ class DisabledGroupService implements GroupService {
 
   @override
   Future<List<CrewStanding>> leaderboard(String groupId) async => const [];
+
+  @override
+  Future<GroupChallenge?> activeChallenge(String groupId) async => null;
+
+  @override
+  Future<GroupChallenge> startChallenge(String groupId) async =>
+      throw StateError('groups not configured');
+
+  @override
+  Future<void> endChallenge(String challengeId) async =>
+      throw StateError('groups not configured');
 }

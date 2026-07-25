@@ -105,6 +105,26 @@ void main() {
           standings: {'b': [_s('a', 2), _s('c', 5), _s('d', 3)]});
       expect((await svc.leaderboard('b')).map((s) => s.id), ['c', 'd', 'a']);
     });
+
+    test('startChallenge creates an active race; a second one throws', () async {
+      final svc = FakeGroupService(groups: [_owned('b')]);
+      expect(await svc.activeChallenge('b'), isNull);
+      final c = await svc.startChallenge('b');
+      expect(c.groupId, 'b');
+      expect(c.isActive, isTrue);
+      expect((await svc.activeChallenge('b'))?.id, c.id);
+      await expectLater(
+          svc.startChallenge('b'), throwsA(isA<GroupException>()));
+    });
+
+    test('endChallenge clears the race and a new one can start', () async {
+      final svc = FakeGroupService(groups: [_owned('b')]);
+      final c = await svc.startChallenge('b');
+      await svc.endChallenge(c.id);
+      expect(await svc.activeChallenge('b'), isNull);
+      final c2 = await svc.startChallenge('b');
+      expect(c2.id, isNot(c.id));
+    });
   });
 
   group('DisabledGroupService', () {
@@ -113,6 +133,7 @@ void main() {
       expect(await svc.myGroups(), isEmpty);
       expect(await svc.members('g'), isEmpty);
       expect(await svc.leaderboard('g'), isEmpty);
+      expect(await svc.activeChallenge('g'), isNull);
     });
     test('writes throw', () {
       expect(svc.createGroup('x'), throwsA(isA<StateError>()));
@@ -121,6 +142,8 @@ void main() {
       expect(svc.deleteGroup('g'), throwsA(isA<StateError>()));
       expect(svc.renameGroup('g', 'x'), throwsA(isA<StateError>()));
       expect(svc.removeMember('g', 'u'), throwsA(isA<StateError>()));
+      expect(svc.startChallenge('g'), throwsA(isA<StateError>()));
+      expect(svc.endChallenge('c'), throwsA(isA<StateError>()));
     });
   });
 }

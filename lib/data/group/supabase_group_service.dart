@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/crew_member.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/group.dart';
+import '../../domain/group_challenge.dart';
 import '../../domain/wake_stats.dart';
 import 'group_service.dart';
 
@@ -258,6 +259,63 @@ class SupabaseGroupService implements GroupService {
       return rankStandings(standings);
     } catch (_) {
       return const []; // best-effort
+    }
+  }
+
+  GroupChallenge _challengeRow(Map<String, dynamic> r) => GroupChallenge(
+        id: r['id'] as String,
+        groupId: r['group_id'] as String,
+        startedAt: DateTime.parse(r['started_at'] as String),
+        endedAt: r['ended_at'] == null
+            ? null
+            : DateTime.parse(r['ended_at'] as String),
+      );
+
+  @override
+  Future<GroupChallenge?> activeChallenge(String groupId) async {
+    if (_me == null) return null;
+    try {
+      final rows = await _client
+          .from('group_challenges')
+          .select('id, group_id, started_at, ended_at')
+          .eq('group_id', groupId)
+          .isFilter('ended_at', null)
+          .limit(1);
+      return rows.isEmpty ? null : _challengeRow(rows.first);
+    } catch (_) {
+      return null; // best-effort read
+    }
+  }
+
+  @override
+  Future<GroupChallenge> startChallenge(String groupId) async {
+    final me = _me;
+    if (me == null) throw const GroupException('Sign in to start a race.');
+    try {
+      final rows = await _client
+          .from('group_challenges')
+          .insert({'group_id': groupId, 'created_by': me}).select(
+              'id, group_id, started_at, ended_at');
+      final row = _firstRow(rows);
+      if (row == null) throw const GroupException('Could not start the race.');
+      return _challengeRow(row);
+    } on PostgrestException catch (e) {
+      if (e.code == '23505') {
+        // The one-active-per-group partial unique index (0013) fired.
+        throw const GroupException('A streak race is already running.');
+      }
+      throw GroupException(_friendly(e.message, 'Could not start the race.'));
+    }
+  }
+
+  @override
+  Future<void> endChallenge(String challengeId) async {
+    try {
+      await _client.from('group_challenges').update(
+          {'ended_at': DateTime.now().toUtc().toIso8601String()}).eq(
+          'id', challengeId);
+    } on PostgrestException catch (e) {
+      throw GroupException(_friendly(e.message, 'Could not end the race.'));
     }
   }
 }

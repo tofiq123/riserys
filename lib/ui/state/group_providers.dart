@@ -6,6 +6,7 @@ import '../../data/group/supabase_group_service.dart';
 import '../../domain/crew_member.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/group.dart';
+import '../../domain/group_challenge.dart';
 
 /// The app's [GroupService]. Configured → a real [SupabaseGroupService];
 /// otherwise a [DisabledGroupService] (no groups, no writes). Tests override
@@ -37,4 +38,12 @@ final groupMembersProvider =
 final groupLeaderboardProvider =
     FutureProvider.family<List<CrewStanding>, String>((ref, groupId) {
   return ref.watch(groupServiceProvider).leaderboard(groupId);
+});
+
+/// A group's active streak race, or null if none is running. Fetch-on-open;
+/// refresh with `ref.invalidate(groupChallengeProvider(groupId))`. Keyed by
+/// group id.
+final groupChallengeProvider =
+    FutureProvider.family<GroupChallenge?, String>((ref, groupId) {
+  return ref.watch(groupServiceProvider).activeChallenge(groupId);
 });
