@@ -120,6 +120,7 @@ class _VoiceInboxScreenState extends ConsumerState<VoiceInboxScreen> {
   Future<Alarm?> _pickAlarm(List<Alarm> alarms) {
     return showModalBottomSheet<Alarm>(
       context: context,
+      barrierColor: RiseColors.scrim,
       backgroundColor: RiseColors.card,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(RiseRadii.base)),

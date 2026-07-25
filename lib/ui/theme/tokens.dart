@@ -47,6 +47,13 @@ abstract final class RiseColors {
   static Color get waking => _current.waking;
   static Color get asleep => _current.asleep;
 
+  /// The modal scrim behind every bottom sheet and dialog barrier. A theme-
+  /// independent black alpha that dims correctly over both grounds, so every
+  /// `showModalBottomSheet` passes `barrierColor: RiseColors.scrim` for one
+  /// consistent focus depth. Flutter's default (`black54`) is heavier, which
+  /// made un-styled sheets darker than the three that set a value explicitly.
+  static const Color scrim = Color(0x66000000);
+
   /// Light palette — the original Mono spec values, byte-for-byte. Preserving
   /// these exactly keeps the (device-verified) light theme pixel-identical.
   static const _light = _RisePalette(

@@ -637,6 +637,7 @@ class _SleepGoalCard extends ConsumerWidget {
 
     showModalBottomSheet<void>(
       context: context,
+      barrierColor: RiseColors.scrim,
       backgroundColor: RiseColors.card,
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, setLocal) {
@@ -771,6 +772,7 @@ class _BedtimeReminderCard extends ConsumerWidget {
 
     showModalBottomSheet<void>(
       context: context,
+      barrierColor: RiseColors.scrim,
       backgroundColor: RiseColors.card,
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, setLocal) {

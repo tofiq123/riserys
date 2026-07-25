@@ -14,7 +14,7 @@ Future<T?> showCrewSheet<T>(
     context: context,
     isScrollControlled: true,
     backgroundColor: RiseColors.card,
-    barrierColor: const Color(0x66000000),
+    barrierColor: RiseColors.scrim,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(RiseRadii.lg)),
     ),

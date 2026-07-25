@@ -747,6 +747,7 @@ class _RoughNightCard extends ConsumerWidget {
       DateTime yesterday, Set<DateTime> excused) {
     showModalBottomSheet<void>(
       context: context,
+      barrierColor: RiseColors.scrim,
       backgroundColor: RiseColors.card,
       builder: (sheetContext) => SafeArea(
         child: Padding(
@@ -1460,6 +1461,7 @@ class _AccountabilityPingCardState
   void _confirm(List<CrewMember> friends, bool broke) {
     showModalBottomSheet<void>(
       context: context,
+      barrierColor: RiseColors.scrim,
       backgroundColor: RiseColors.card,
       builder: (sheetContext) => SafeArea(
         child: Padding(
