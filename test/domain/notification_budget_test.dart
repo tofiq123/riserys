@@ -104,4 +104,24 @@ void main() {
       expect(out, hasLength(4));
     });
   });
+
+  group('iOS headroom', () {
+    test('the alarm budget is the hard cap minus a positive reserve', () {
+      expect(kIosReservedHeadroom, greaterThan(0));
+      expect(kIosAlarmBudget, kIosNotificationCap - kIosReservedHeadroom);
+      expect(kIosAlarmBudget, greaterThan(0));
+    });
+
+    test('allocating against the alarm budget leaves the reserve free', () {
+      // Enough alarms to otherwise fill all 64 slots; capped at the alarm
+      // budget the total stays at/under it, leaving the reserve for the app's
+      // other pending notifications (bedtime reminder / wake-checks).
+      final many = List.generate(70, (i) => occ(i + 1, i + 1));
+      final out = allocateNotifications(
+          occurrences: many, now: now, cap: kIosAlarmBudget);
+      expect(out.length, lessThanOrEqualTo(kIosAlarmBudget));
+      expect(kIosNotificationCap - out.length,
+          greaterThanOrEqualTo(kIosReservedHeadroom));
+    });
+  });
 }

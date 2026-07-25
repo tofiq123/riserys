@@ -237,10 +237,14 @@ class AlarmSyncService {
       await _platform.reconcile(plan);
     } else {
       final now = tz.TZDateTime.now(_location);
-      final requests =
-          allocateNotifications(occurrences: plan, now: now.toUtc());
-      final dropped =
-          droppedAlarmCount(occurrences: plan, now: now.toUtc());
+      // Cap alarm notifications at the alarm budget (not the hard iOS cap) so a
+      // reserve stays free for the app's other pending notifications — the
+      // bedtime reminder and post-dismissal wake-checks — which iOS would
+      // otherwise silently drop once alarms filled all 64 slots.
+      final requests = allocateNotifications(
+          occurrences: plan, now: now.toUtc(), cap: kIosAlarmBudget);
+      final dropped = droppedAlarmCount(
+          occurrences: plan, now: now.toUtc(), cap: kIosAlarmBudget);
       if (dropped > 0) {
         debugPrint('Rise: $dropped alarm(s) exceed the iOS notification cap '
             'and will not fire until sooner alarms pass');

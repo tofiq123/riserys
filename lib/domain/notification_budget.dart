@@ -6,6 +6,19 @@ import 'scheduled_occurrence.dart';
 /// types (bedtime reminders, wake-up checks — Plan 4) must pass a reduced [cap].
 const int kIosNotificationCap = 64;
 
+/// Slots held back from [kIosNotificationCap] for the app's OTHER pending local
+/// notifications so they always fit alongside the alarm bursts: the nightly
+/// bedtime reminder (1) and post-dismissal wake-checks (a few), plus a little
+/// buffer. iOS silently drops requests past the cap, so without this reserve a
+/// user with several alarms could crowd those out entirely.
+const int kIosReservedHeadroom = 4;
+
+/// The budget the alarm allocator should actually use on iOS — the hard cap
+/// minus the reserved [kIosReservedHeadroom]. The allocator's own default stays
+/// the hard [kIosNotificationCap] (it is a generic util); the app's iOS fallback
+/// (`AlarmSyncService`) passes THIS so alarms never consume the whole cap.
+const int kIosAlarmBudget = kIosNotificationCap - kIosReservedHeadroom;
+
 /// Future occurrences, soonest first. Shared by both public functions so the
 /// allocation and the drop-count agree exactly.
 List<ScheduledOccurrence> _futureSorted(

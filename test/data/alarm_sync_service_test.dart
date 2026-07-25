@@ -7,6 +7,7 @@ import 'package:rise/data/local/alarm_repository.dart';
 import 'package:rise/data/local/database.dart';
 import 'package:rise/data/native/alarm_api.g.dart' as pigeon;
 import 'package:rise/domain/alarm.dart';
+import 'package:rise/domain/notification_budget.dart';
 import 'package:rise/domain/notification_request.dart';
 import 'package:rise/domain/scheduled_occurrence.dart';
 
@@ -275,5 +276,33 @@ void main() {
     // ...and the missed occurrence still rings via ringNow.
     expect(platform.ringNowCalls, hasLength(1));
     expect(platform.ringNowCalls.single.alarmId, upserted.id);
+  });
+
+  test(
+      'fallback (iOS) platform: alarm notifications leave headroom for the '
+      "app's other pending notifications (bedtime reminder / wake-checks)",
+      () async {
+    platform = FakeAlarmPlatform(systemAlarms: false);
+    AlarmSyncService.configure(AlarmSyncService(
+      repository: repo,
+      platform: platform,
+      location: tz.getLocation('America/New_York'),
+    ));
+
+    // Several alarms at distinct times: bursted, they would otherwise fill all
+    // 64 slots. The service must cap them at the alarm budget so the reserve
+    // stays free — otherwise iOS silently drops the bedtime/wake-check ones.
+    for (var h = 0; h < 6; h++) {
+      await repo.upsert(Alarm(id: 0, hour: h, minute: 0));
+    }
+    await AlarmSyncService.instance.reconcileNow();
+
+    expect(platform.notificationCalls, hasLength(1));
+    final requests = platform.notificationCalls.single;
+    expect(requests.length, lessThanOrEqualTo(kIosAlarmBudget),
+        reason: 'alarms must be capped at the alarm budget, not the hard cap');
+    expect(kIosNotificationCap - requests.length,
+        greaterThanOrEqualTo(kIosReservedHeadroom),
+        reason: "headroom must remain for the app's other notifications");
   });
 }
