@@ -10,6 +10,7 @@ class StreakStats {
     required this.freezesRemaining,
     required this.byDay,
     this.freezeAbsorbed = const <DateTime>{},
+    this.runByDay = const <DateTime, int>{},
   });
 
   final int current;
@@ -24,6 +25,34 @@ class StreakStats {
   /// only records that the run survived it, so the UI can say why without
   /// rewriting the outcome. Empty unless [computeStreak] produced it.
   final Set<DateTime> freezeAbsorbed;
+
+  /// The run length as it stood at the end of each folded day. Recorded by the
+  /// same pass that computes [current], so a chart of the streak over time can
+  /// never disagree with the number above it. Empty unless [computeStreak]
+  /// produced it.
+  final Map<DateTime, int> runByDay;
+
+  /// The run at the end of each of the last [days] local days, oldest first.
+  /// Days the fold skipped (no alarm, a rest day) carry the run forward, which
+  /// is what actually happened to it.
+  List<int> runSeries(DateTime now, {int days = 30}) {
+    final l = now.toLocal();
+    final today = DateTime(l.year, l.month, l.day);
+    final out = <int>[];
+    var carried = 0;
+    // Seed from before the window so the series starts at the true run, not 0.
+    for (final entry in (runByDay.keys.toList()..sort())) {
+      if (entry.isBefore(today.subtract(Duration(days: days - 1)))) {
+        carried = runByDay[entry]!;
+      }
+    }
+    for (var i = days - 1; i >= 0; i--) {
+      final day = today.subtract(Duration(days: i));
+      carried = runByDay[day] ?? carried;
+      out.add(carried);
+    }
+    return out;
+  }
 
   static const empty = StreakStats(
       current: 0, best: 0, freezesRemaining: 0, byDay: <DateTime, DayOutcome>{});
@@ -86,6 +115,7 @@ StreakStats computeStreak(
   var best = 0;
   var freezes = 0;
   final absorbed = <DateTime>{};
+  final runByDay = <DateTime, int>{};
   for (final day in foldDays) {
     switch (byDay[day]) {
       case DayOutcome.success:
@@ -107,6 +137,9 @@ StreakStats computeStreak(
       case null:
         break;
     }
+    // Recorded by the same pass, so a chart of the run can never drift from
+    // the number the fold ends on.
+    runByDay[day] = run;
   }
 
   return StreakStats(
@@ -114,5 +147,6 @@ StreakStats computeStreak(
       best: best,
       freezesRemaining: freezes,
       byDay: byDay,
-      freezeAbsorbed: absorbed);
+      freezeAbsorbed: absorbed,
+      runByDay: runByDay);
 }
