@@ -186,6 +186,38 @@ void main() {
       await _pumpSignedIn(t);
       expect(find.byType(RefreshIndicator), findsOneWidget);
     });
+
+    testWidgets('the restoring skeleton fits a narrow (360dp) phone',
+        (t) async {
+      // 360dp is the most common Android width; a fixed-width skeleton row
+      // overflows here and throws in debug. Regression guard.
+      t.view.physicalSize = const Size(1080, 2400);
+      t.view.devicePixelRatio = 3.0;
+      addTearDown(t.view.reset);
+      final auth = _RestoringAuthService();
+      await t.pumpWidget(ProviderScope(
+        overrides: [authServiceProvider.overrideWithValue(auth)],
+        child: const MaterialApp(home: Scaffold(body: CrewScreen())),
+      ));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 50));
+      expect(t.takeException(), isNull);
+      expect(find.byType(RiseSkeletonCircle), findsWidgets);
+    });
+
+    testWidgets('pull-to-refresh reloads the crew itself, not just the feed',
+        (t) async {
+      final crew = await _pumpSignedIn(t);
+      // The arm threshold scales with viewport height (25%); the tall test
+      // viewport needs a correspondingly long pull.
+      await t.drag(find.byType(ListView).first, const Offset(0, 900));
+      await t.pump(); // start the indicator
+      await t.pump(const Duration(seconds: 1)); // run onRefresh
+      await t.pumpAndSettle();
+      expect(crew.reloads, greaterThan(0),
+          reason: 'the gesture must refresh the This-morning strip and '
+              'requests banner too');
+    });
   });
 
   group('signed out', () {

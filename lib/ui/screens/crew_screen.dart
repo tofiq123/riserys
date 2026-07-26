@@ -86,8 +86,11 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
     ref.invalidate(myGroupsProvider);
     ref.invalidate(voiceInboxProvider);
     // Settle before the indicator retracts; a failed fetch just keeps the
-    // section's own error card — never breaks the gesture.
+    // section's own error card — never breaks the gesture. The crew itself
+    // reloads through its service: friendships have no Realtime, so this is
+    // the only way a peer's new request/accept becomes visible on demand.
     await Future.wait<Object?>([
+      ref.read(crewServiceProvider).reload(),
       ref.read(crewFeedProvider.future),
       ref.read(myGroupsProvider.future),
       ref.read(voiceInboxProvider.future),
@@ -439,23 +442,25 @@ class _MorningStripSkeleton extends StatelessWidget {
         const SizedBox(height: 12),
         SizedBox(
           height: 104,
-          child: Row(
-            children: [
-              for (var i = 0; i < 4; i++) ...[
-                const SizedBox(
-                  width: 78,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      RiseSkeletonCircle(size: 52),
-                      SizedBox(height: 9),
-                      RiseSkeleton(width: 44, height: 10),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 6),
-              ],
-            ],
+          // Mirrors the real strip's horizontal list so four ghosts can never
+          // overflow a narrow phone; it just clips like the content it stands
+          // in for. Non-scrollable — there is nothing to scroll to yet.
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: 4,
+            separatorBuilder: (_, __) => const SizedBox(width: 6),
+            itemBuilder: (_, __) => const SizedBox(
+              width: 78,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  RiseSkeletonCircle(size: 52),
+                  SizedBox(height: 9),
+                  RiseSkeleton(width: 44, height: 10),
+                ],
+              ),
+            ),
           ),
         ),
       ],

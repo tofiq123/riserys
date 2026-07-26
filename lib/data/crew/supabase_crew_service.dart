@@ -39,6 +39,7 @@ class SupabaseCrewService implements CrewService {
   /// (an in-flight reload can complete after dispose()).
   void _emit(CrewState state) {
     _current = state;
+    _loaded = true;
     if (!_controller.isClosed) _controller.add(state);
   }
 
@@ -50,21 +51,32 @@ class SupabaseCrewService implements CrewService {
   StreamSubscription<AuthState>? _authSub;
   CrewState _current = CrewState.empty;
 
+  /// Whether [_current] reflects a completed load (or a known signed-out
+  /// state). Until then [watch] emits nothing, so the UI can tell "still
+  /// loading" (skeleton) from "loaded and genuinely empty" (empty-state hero)
+  /// — the placeholder empty value must never masquerade as truth.
+  bool _loaded = false;
+
   @override
   CrewState get current => _current;
 
   @override
   Stream<CrewState> watch() async* {
-    yield _current;
+    if (_loaded) yield _current;
     yield* _controller.stream;
   }
+
+  @override
+  Future<void> reload() => _reload();
 
   Future<void> _reload() async {
     CrewState next;
     try {
       next = await _fetch();
     } catch (_) {
-      next = CrewState.empty; // best-effort; never throw into the stream
+      // Best-effort; never throw into the stream. Keep whatever was already
+      // loaded rather than wiping the strip to empty on a blip.
+      next = _loaded ? _current : CrewState.empty;
     }
     _emit(next);
   }

@@ -15,6 +15,12 @@ abstract interface class CrewService {
 
   CrewState get current;
 
+  /// Re-fetches the crew from the backend and re-emits on [watch] — the
+  /// pull-to-refresh path (there is no friendships Realtime, so a peer's
+  /// accept/request only becomes visible via an explicit reload). Best-effort:
+  /// never throws.
+  Future<void> reload();
+
   /// Resolves a username to a [CrewMember] (to send a request), or null.
   Future<CrewMember?> findByUsername(String username);
 
@@ -76,6 +82,15 @@ class FakeCrewService implements CrewService {
   Stream<CrewState> watch() async* {
     yield _snapshot();
     yield* _controller.stream;
+  }
+
+  /// Reloads observed by tests (the in-memory state is already current).
+  int reloads = 0;
+
+  @override
+  Future<void> reload() async {
+    reloads++;
+    _emit();
   }
 
   void _emit() => _controller.add(_snapshot());
@@ -150,6 +165,9 @@ class DisabledCrewService implements CrewService {
 
   @override
   Stream<CrewState> watch() => Stream.value(CrewState.empty);
+
+  @override
+  Future<void> reload() async {}
 
   @override
   Future<CrewMember?> findByUsername(String username) async => null;

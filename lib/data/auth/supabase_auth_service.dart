@@ -53,8 +53,13 @@ class SupabaseAuthService implements AuthService {
     _current = primed.account;
     _primed = primed.primed;
     _authSub = _client.auth.onAuthStateChange.listen((state) async {
+      // Auth events process concurrently (the handler awaits a network
+      // fetch): a slow tokenRefreshed fetch must never overwrite the result
+      // of a newer signedOut. Only the latest event may apply its result.
+      final seq = ++_authSeq;
       final user = state.session?.user;
       final acct = user == null ? null : await _accountForUser(user);
+      if (seq != _authSeq) return; // superseded by a newer auth event
       if (user == null) {
         // Signed out (locally or remotely revoked): the cached profile must
         // not resurrect this account on the next launch. Best-effort.
@@ -79,6 +84,9 @@ class SupabaseAuthService implements AuthService {
   StreamSubscription<AuthState>? _authSub;
   Future<void>? _googleInit;
   RiseAccount? _current;
+
+  /// Monotonic auth-event counter; see the onAuthStateChange handler.
+  int _authSeq = 0;
 
   /// Whether [_current] reflects known truth. False only in the narrow
   /// "session restored but profile not yet fetched and not cached" window —
@@ -161,8 +169,10 @@ class SupabaseAuthService implements AuthService {
     );
     // Persist confirmed profile knowledge (including a confirmed missing row)
     // so the next launch primes instantly. Never cache a failed fetch — that
-    // would freeze a guess. Best-effort: a storage hiccup must not break auth.
-    if (!fetchFailed) {
+    // would freeze a guess — and never for a session that ended while the
+    // fetch was in flight (a sign-out just cleared this cache; a stale write
+    // here would resurrect the account). Best-effort throughout.
+    if (!fetchFailed && _client.auth.currentUser?.id == user.id) {
       try {
         await _cache?.write(account);
       } catch (_) {}
