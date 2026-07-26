@@ -51,7 +51,8 @@ class MorningLineView extends StatelessWidget {
   final Widget? footer;
 
   /// A long crew is truncated rather than scrolled forever; the rest is one tap
-  /// away.
+  /// away. Applies to both halves of the line — a fifty-person crew must not
+  /// build fifty rows to say "everyone else is still asleep".
   final int maxUp;
   final VoidCallback? onSeeAll;
 
@@ -64,6 +65,12 @@ class MorningLineView extends StatelessWidget {
     final shownUp =
         line.up.length > maxUp ? line.up.sublist(line.up.length - maxUp) : line.up;
     final hidden = line.up.length - shownUp.length;
+    // Below the marker the interesting people are at the top (waking first, by
+    // status rank), so the tail is what gets folded away.
+    final shownPending = line.pending.length > maxUp
+        ? line.pending.sublist(0, maxUp)
+        : line.pending;
+    final stillUnder = line.pending.length - shownPending.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,7 +131,7 @@ class MorningLineView extends StatelessWidget {
                   ),
                 if (line.phase == MorningPhase.window)
                   NowMarker(now: now, use24h: use24h),
-                for (final e in line.pending)
+                for (final e in shownPending)
                   _PendingRow(
                     entry: e,
                     wrapped: line.phase == MorningPhase.wrapped,
@@ -133,6 +140,10 @@ class MorningLineView extends StatelessWidget {
                         ? null
                         : () => onOpen(e), // cheering a waking friend opens them
                   ),
+                if (stillUnder > 0)
+                  _QuietTailRow(
+                      count: stillUnder,
+                      wrapped: line.phase == MorningPhase.wrapped),
                 if (footer != null)
                   Padding(
                     padding: const EdgeInsets.only(
@@ -648,6 +659,35 @@ class _NobodyYetRow extends StatelessWidget {
           const _RailDot(_Dot.quiet),
           Expanded(
             child: Text('Nobody yet — the window just opened.',
+                style: RiseText.caption),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The tail below the marker, folded into one line. A big crew's "everyone
+/// else" is a fact, not fifty rows.
+class _QuietTailRow extends StatelessWidget {
+  const _QuietTailRow({required this.count, required this.wrapped});
+
+  final int count;
+  final bool wrapped;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          const SizedBox(width: MorningLineView.timeWidth),
+          const _RailDot(_Dot.quiet),
+          Expanded(
+            child: Text(
+                wrapped
+                    ? '$count more with no wake logged'
+                    : '$count more still under',
                 style: RiseText.caption),
           ),
         ],

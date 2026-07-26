@@ -232,6 +232,26 @@ void main() {
     expect(find.text('User 11'), findsOneWidget);
   });
 
+  testWidgets('a big crew folds its quiet tail into one line', (t) async {
+    final friends = [for (var i = 0; i < 14; i++) m('u$i', 'User $i')];
+    await pump(
+        t,
+        lineAt(now,
+            friends: friends,
+            statuses: {for (final f in friends) f.id: CrewStatus.asleep}));
+    expect(find.text('6 more still under'), findsOneWidget);
+    // Ties are broken by username, which sorts as text: u0, u1, u10 … u9.
+    expect(find.byKey(const Key('line-row-u0')), findsOneWidget);
+    expect(find.byKey(const Key('line-row-u9')), findsNothing);
+  });
+
+  testWidgets('after the window the tail says what it means', (t) async {
+    final at = DateTime(2026, 7, 26, 11);
+    final friends = [for (var i = 0; i < 12; i++) m('u$i', 'User $i')];
+    await pump(t, lineAt(at, friends: friends), at: at);
+    expect(find.text('4 more with no wake logged'), findsOneWidget);
+  });
+
   testWidgets('reduced motion keeps the marker static', (t) async {
     await pump(t, lineAt(now, friends: [m('ada', 'Ada')]),
         reduceMotion: true);
