@@ -133,6 +133,7 @@ class AlarmService : Service() {
     }
 
     private fun startAudio(soundAsset: String) {
+        Log.i(TAG, "startAudio sound='$soundAsset'")
         // USAGE_ALARM routes to the dedicated alarm volume stream, which is
         // immune to media mute and to the ringer being silenced.
         val attrs = AudioAttributes.Builder()
@@ -180,10 +181,13 @@ class AlarmService : Service() {
      * set; false means "not resolvable — caller must use the default" so the
      * alarm never goes silent. Two source kinds, in priority order:
      *  - an absolute local file (a downloaded voice clip): `/...` or `file://...`
-     *  - a bundled tone asset (`sounds/rise_sunrise.wav`) -> `R.raw.rise_sunrise`
-     *    via getIdentifier; an unknown name (id 0) returns false.
-     * A missing/empty file returns false; a corrupt file lets setDataSource
-     * throw, which startAudio catches and recovers from with the default.
+     *  - a bundled tone (`sounds/rise_sunrise.ogg`), played from the FLUTTER
+     *    ASSET BUNDLE (`flutter_assets/assets/sounds/rise_sunrise.ogg`) — the same
+     *    file the picker previews. The `res/raw` copies are NOT included in
+     *    release builds (unreferenced raw resources get dropped), so the old
+     *    `getIdentifier(..., "raw")` returned 0 there and EVERY alarm fell back to
+     *    the default. A missing/unreadable asset returns false; startAudio then
+     *    rings the guaranteed default, so the alarm is never silent.
      */
     private fun setSelectedSource(mp: MediaPlayer, soundAsset: String): Boolean {
         if (soundAsset.isBlank()) return false
@@ -196,15 +200,21 @@ class AlarmService : Service() {
             mp.setDataSource(path)
             return true
         }
-        // Bundled raw resource: "sounds/rise_sunrise.wav" -> "rise_sunrise".
-        val name = soundAsset.substringAfterLast('/').substringBeforeLast('.')
-        if (name.isEmpty()) return false
-        val resId = resources.getIdentifier(name, "raw", packageName)
-        if (resId == 0) return false
-        resources.openRawResourceFd(resId).use { afd ->
-            mp.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+        // Bundled tone from the Flutter asset bundle. The Dart soundAsset is a
+        // bundle-relative key like "sounds/rise_klaxon.ogg"; the app declares its
+        // assets under `assets/`, so inside the APK the file lives at
+        // flutter_assets/assets/sounds/rise_klaxon.ogg. The .ogg assets are stored
+        // uncompressed, so openFd hands MediaPlayer a real file descriptor.
+        val assetPath = "flutter_assets/assets/$soundAsset"
+        return try {
+            assets.openFd(assetPath).use { afd ->
+                mp.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "sound asset '$assetPath' not playable; using default", e)
+            false
         }
-        return true
     }
 
     /** VibratorManager is API 31+; minSdk is 26. */
