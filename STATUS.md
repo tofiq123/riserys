@@ -1,8 +1,59 @@
-# Rise — Status (social UX overhaul + bold redesign, 2026-07-26)
+# Rise — Status (round-3 structural redesign, 2026-07-26)
 
-**Verified:** 1106 tests passing · `flutter analyze` clean · Android APK builds and
-is INSTALLED on the test phone (built with `--dart-define-from-file=rise.env.json` —
-required for every device build, else sign-in is hidden by design).
+**Verified:** 1222 tests passing (was 1106) · `flutter analyze` clean · Android
+debug APK builds (with `--dart-define-from-file=rise.env.json` — required for
+every device build, else sign-in is hidden by design).
+
+## Shipped 2026-07-26, round 3 — the structural redesign (`feat/round3-redesign`)
+
+Rounds 1 and 2 changed states and top cards; the screen *bodies* were untouched,
+which is why neither read as a redesign. This round changes the bodies. Mockups
+were approved first: `docs/superpowers/specs/2026-07-26-round3-redesign-design.md`.
+
+- **Crew is a Morning Line.** One vertical time axis with a live marker at the
+  current minute. Wake-ups land above it at the minute they happened; everyone
+  still under sits below with their status. This replaces the status chip strip
+  AND the "Cheer them on" feed — they were the same people listed twice. The tab
+  takes three shapes: **window** (live, amber, marker), **wrapped** (a record, no
+  marker, misses stated as "no wake logged"), **tonight** (your own next alarm and
+  its countdown). Reactions collapse to a tally plus one Cheer that opens the
+  palette — six targets on a six-person morning instead of twenty-four.
+- **Stats is one summary and three lenses.** The run, one plain sentence, and the
+  four figures that used to live in four sections hundreds of pixels apart, now on
+  one row where they can be compared. Below: Rhythm / Progress / Crew, each a
+  single screenful. Nothing was deleted — every old section lives in exactly one
+  lens, and only the active lens is in the widget tree.
+- **A chart that answers the question.** The week chart plotted "minutes late",
+  which cannot say *when do I get up*. It now plots clock time against each day's
+  on-time window (`firstRingAt` → `+15 min`), so a mark inside the band is on time
+  *by construction*. The 30-day `Wrap` became a Monday-first calendar, so a
+  weekday pattern is visible at all.
+- **Group opens on the group.** Morning → race banner → podium → rows → invite
+  (was: invite first). A group of one is a share screen, not an empty leaderboard.
+- **Friend opens on today.** The wake, the run it landed, and all three actions in
+  the first card; mid-mission gets its own live treatment; shared groups link back
+  into the app instead of dead-ending.
+
+### Two crash bugs fixed on the way
+
+`AsyncValue.value` **rethrows** when the provider is in an error state. Crew read
+it for the account, crew, statuses, feed, voice inbox and next alarm — so a single
+failed provider took the whole tab down. All reads are `valueOrNull` now.
+
+The NOW marker originally used `AnimationController.repeat()`, which schedules a
+frame every 16 ms for as long as the tab is open. It beats three times per clock
+tick instead.
+
+### Needs you (round 3)
+
+1. **Device smoke test.** Open Crew at three different times — during your wake
+   window, mid-morning, and after 21:00 — and check the tab is a different screen
+   each time. The marker should sit at the current minute.
+2. **Stats.** Check the four figures read together, then switch all three lenses.
+   The rhythm chart needs about a week of wake-ups before it says much.
+3. **Group + friend.** Open a group (morning first, invite near the end) and a
+   friend (today first).
+4. No new migrations, no backend changes, no new packages.
 
 ## Shipped 2026-07-26, round 2 — the visible redesign (merged to `main`)
 
