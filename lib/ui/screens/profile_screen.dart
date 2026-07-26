@@ -133,27 +133,32 @@ class _NavRow extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Row(
-        children: [
-          Icon(icon, color: RiseColors.textDim, size: 22),
-          const SizedBox(width: 12),
-          Expanded(
-            child: caption == null
-                ? Text(title,
-                    style: RiseText.body.copyWith(fontWeight: FontWeight.w600))
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title,
-                          style: RiseText.body
-                              .copyWith(fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 2),
-                      Text(caption!, style: RiseText.caption),
-                    ],
-                  ),
-          ),
-          Icon(Icons.chevron_right, color: RiseColors.textFaint, size: 20),
-        ],
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 44),
+        alignment: Alignment.centerLeft,
+        child: Row(
+          children: [
+            Icon(icon, color: RiseColors.textDim, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: caption == null
+                  ? Text(title,
+                      style:
+                          RiseText.body.copyWith(fontWeight: FontWeight.w600))
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title,
+                            style: RiseText.body
+                                .copyWith(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 2),
+                        Text(caption!, style: RiseText.caption),
+                      ],
+                    ),
+            ),
+            Icon(Icons.chevron_right, color: RiseColors.textFaint, size: 20),
+          ],
+        ),
       ),
     );
   }
@@ -534,23 +539,27 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 12),
-          Text(label,
-              style: RiseText.body
-                  .copyWith(color: color, fontWeight: FontWeight.w600)),
-          if (busy) ...[
-            const Spacer(),
-            SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: RiseColors.textDim),
-            ),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 44),
+        alignment: Alignment.centerLeft,
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 12),
+            Text(label,
+                style: RiseText.body
+                    .copyWith(color: color, fontWeight: FontWeight.w600)),
+            if (busy) ...[
+              const Spacer(),
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: RiseColors.textDim),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
