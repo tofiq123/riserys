@@ -7,9 +7,12 @@ import '../../data/permission_gateway.dart';
 import '../../data/push/push_registrar.dart';
 import '../../domain/rise_account.dart';
 import '../components/confirm_dialog.dart';
+import '../components/crew_entrance.dart';
+import '../components/hero_card.dart';
 import '../components/permissions_section.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
+import '../components/rise_motion.dart';
 import '../components/rise_skeleton.dart';
 import '../components/section_label.dart';
 import '../components/toast.dart';
@@ -38,13 +41,15 @@ class ProfileScreen extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(
             RiseSpacing.screen, 8, RiseSpacing.screen, 40),
         children: [
-          Text('Profile', style: RiseText.display),
+          CrewEntrance(index: 0, child: Text('Profile', style: RiseText.display)),
           const SizedBox(height: 16),
-          const _AccountSection(),
+          const CrewEntrance(index: 1, child: _AccountSection()),
           const SizedBox(height: 24),
-          const _PremiumEntry(),
+          const CrewEntrance(index: 2, child: _PremiumEntry()),
           const SizedBox(height: 12),
-          RiseCard(
+          CrewEntrance(
+            index: 3,
+            child: RiseCard(
             child: Column(
               children: [
                 _NavRow(
@@ -64,6 +69,7 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ],
             ),
+          ),
           ),
           const SizedBox(height: 24),
           const SectionLabel('Reliability'),
@@ -130,8 +136,7 @@ class _NavRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return RisePressable(
       onTap: onTap,
       child: Container(
         constraints: const BoxConstraints(minHeight: 44),
@@ -173,9 +178,8 @@ class _PremiumEntry extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isPremium = ref.watch(isPremiumProvider).value ?? true;
-    return GestureDetector(
+    return RisePressable(
       key: const Key('premium-entry'),
-      behavior: HitTestBehavior.opaque,
       onTap: () => openPaywall(context),
       child: RiseCard(
         child: Row(
@@ -355,14 +359,19 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
     final accountAsync = ref.watch(accountProvider);
     final account = accountAsync.value;
 
-    if (!configured) return _guestCard();
-    if (account == null) {
+    final Widget section;
+    if (!configured) {
+      section = RiseFade.keyed('guest', _guestCard());
+    } else if (account == null) {
       // Restoring ≠ signed out: hold the account's shape until truth arrives
       // so the sign-in card can never flash for an already signed-in user.
-      if (accountAsync.isLoading) return _restoringCard();
-      return _signInCard();
+      section = accountAsync.isLoading
+          ? RiseFade.keyed('restoring', _restoringCard())
+          : RiseFade.keyed('signin', _signInCard());
+    } else {
+      section = RiseFade.keyed('account', _accountCard(account));
     }
-    return _accountCard(account);
+    return RiseFade(child: section);
   }
 
   Widget _restoringCard() {
@@ -418,45 +427,31 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
   }
 
   Widget _signInCard() {
-    return RiseCard(
+    return HeroCard(
+      eyebrow: 'YOUR ACCOUNT',
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                    color: RiseColors.accentSoft, shape: BoxShape.circle),
-                child: Icon(Icons.cloud_sync,
-                    color: RiseColors.accent, size: 26),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Sign in to Riserys',
-                        style: RiseText.body
-                            .copyWith(fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 2),
-                    Text(
-                        'Sync your streaks, wake up with your crew, and climb '
-                        'the leaderboard.',
-                        style: RiseText.caption),
-                  ],
-                ),
-              ),
-            ],
+          Text('Make it yours',
+              style: RiseText.display
+                  .copyWith(fontSize: 22, color: RiseColors.primaryText)),
+          const SizedBox(height: 8),
+          Opacity(
+            opacity: 0.75,
+            child: Text(
+                'Sync your streaks, wake up with your crew, and climb the '
+                'leaderboard.',
+                style: RiseText.body
+                    .copyWith(color: RiseColors.primaryText, height: 1.45)),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
             child: Stack(
               alignment: Alignment.center,
               children: [
-                PrimaryButton(
+                HeroButton(
                   label: 'Sign in with Google',
                   icon: Icons.login,
                   onPressed: _busy ? null : _signIn,
@@ -466,7 +461,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: RiseColors.primaryText),
+                        strokeWidth: 2, color: RiseColors.primary),
                   ),
               ],
             ),
@@ -476,48 +471,40 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
     );
   }
 
+  /// The signed-in identity, worn like a profile — centered avatar, name,
+  /// handle — instead of one more row card.
   Widget _accountCard(RiseAccount account) {
     final handle = account.username != null ? '@${account.username}' : null;
     return Column(
       children: [
-        RiseCard(
-          child: Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                    color: avatarColorFromHex(account.avatarColor),
-                    shape: BoxShape.circle),
-                child: Text(_initial(account),
-                    style: RiseText.title.copyWith(
-                        color: RiseColors.primaryText,
-                        fontWeight: FontWeight.w700)),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      account.displayName.isNotEmpty
-                          ? account.displayName
-                          : (handle ?? 'Riserys member'),
-                      style:
-                          RiseText.body.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(handle ?? account.email ?? 'Finish setting up',
-                        style: RiseText.mono(
-                            size: 12.5, color: RiseColors.textDim)),
-                  ],
-                ),
-              ),
-            ],
-          ),
+        const SizedBox(height: 6),
+        Container(
+          width: 72,
+          height: 72,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+              color: avatarColorFromHex(account.avatarColor),
+              shape: BoxShape.circle,
+              boxShadow: RiseShadows.card),
+          child: Text(_initial(account),
+              style: RiseText.display.copyWith(
+                  fontSize: 30,
+                  color: RiseColors.primaryText,
+                  fontWeight: FontWeight.w700)),
         ),
         const SizedBox(height: 12),
+        Text(
+          account.displayName.isNotEmpty
+              ? account.displayName
+              : (handle ?? 'Riserys member'),
+          style: RiseText.title.copyWith(fontSize: 19),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 3),
+        Text(handle ?? account.email ?? 'Finish setting up',
+            style: RiseText.mono(size: 13, color: RiseColors.textDim),
+            textAlign: TextAlign.center),
+        const SizedBox(height: 18),
         RiseCard(
           child: Column(
             children: [
@@ -536,8 +523,7 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
   Widget _actionRow(String label, IconData icon,
       {required VoidCallback? onTap, bool danger = false, bool busy = false}) {
     final color = danger ? RiseColors.danger : RiseColors.text;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return RisePressable(
       onTap: onTap,
       child: Container(
         constraints: const BoxConstraints(minHeight: 44),

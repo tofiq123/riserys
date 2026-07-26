@@ -5,6 +5,7 @@ import '../../domain/group.dart';
 import '../components/crew_add_sheet.dart';
 import '../components/crew_group_card.dart';
 import '../components/rise_error_card.dart';
+import '../components/rise_motion.dart';
 import '../components/rise_skeleton.dart';
 import '../state/group_providers.dart';
 import '../theme/tokens.dart';
@@ -41,8 +42,10 @@ class GroupsTab extends ConsumerWidget {
     final groups = ref.watch(myGroupsProvider);
     return SizedBox(
       height: kCrewGroupCardHeight + 8,
-      child: groups.when(
+      child: RiseFade(
+        child: groups.when(
         loading: () => ListView(
+          key: const ValueKey('groups-loading'),
           scrollDirection: Axis.horizontal,
           clipBehavior: Clip.none,
           padding: const EdgeInsets.only(bottom: 8),
@@ -55,10 +58,12 @@ class GroupsTab extends ConsumerWidget {
           ],
         ),
         error: (_, __) => RiseErrorCard(
+          key: const ValueKey('groups-error'),
           message: 'Could not load your groups.',
           onRetry: () => ref.invalidate(myGroupsProvider),
         ),
         data: (list) => ListView.separated(
+          key: const ValueKey('groups-data'),
           scrollDirection: Axis.horizontal,
           clipBehavior: Clip.none,
           padding: const EdgeInsets.only(bottom: 8),
@@ -86,6 +91,7 @@ class GroupsTab extends ConsumerWidget {
               onTap: () => _openSheet(context, ref, CrewAddMode.joinGroup),
             );
           },
+        ),
         ),
       ),
     );
