@@ -7,6 +7,7 @@ import '../state/group_providers.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'crew_avatar.dart';
+import 'rise_motion.dart';
 
 /// Card metrics shared by the Groups strip so real and dashed cards align.
 const double kCrewGroupCardWidth = 156;
@@ -25,9 +26,8 @@ class CrewGroupCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final members = ref.watch(groupMembersProvider(group.id)).value;
     final count = members?.length ?? group.memberCount;
-    return GestureDetector(
+    return RisePressable(
       key: Key('group-card-${group.id}'),
-      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         width: kCrewGroupCardWidth,
@@ -140,8 +140,7 @@ class CrewDashedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return RisePressable(
       onTap: onTap,
       child: CustomPaint(
         foregroundPainter: _DashedBorderPainter(

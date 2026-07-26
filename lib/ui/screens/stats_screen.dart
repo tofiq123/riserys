@@ -18,8 +18,12 @@ import '../../domain/streak.dart';
 import '../../domain/streak_risk.dart';
 import '../../domain/wake_event.dart';
 import '../../domain/wake_insights.dart';
+import '../components/crew_entrance.dart';
+import '../components/date_eyebrow.dart';
+import '../components/hero_card.dart';
 import '../components/rise_card.dart';
 import '../components/rise_disclaimer.dart';
+import '../components/rise_motion.dart';
 import '../components/rise_skeleton.dart';
 import '../components/rise_spinner.dart';
 import '../components/section_label.dart';
@@ -184,13 +188,27 @@ class StatsScreen extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(
             RiseSpacing.screen, 8, RiseSpacing.screen, 40),
         children: [
-          Text('Stats', style: RiseText.display),
+          CrewEntrance(
+            index: 0,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const DateEyebrow(),
+                const SizedBox(height: 3),
+                Text('Stats', style: RiseText.display),
+              ],
+            ),
+          ),
           const SizedBox(height: 16),
-          if (events.isEmpty)
-            _empty()
-          else ...[
+          if (events.isEmpty) ...[
+            // Even with no data the tab leads with its hero — a zero streak
+            // is a starting line, not a grey placeholder.
+            CrewEntrance(index: 1, child: _streakHero(streak, weekWakesList)),
+            const SizedBox(height: 12),
+            CrewEntrance(index: 2, child: _firstMorningCard()),
+          ] else ...[
             // 1 — Today: the streak headline and how this morning went.
-            _streakCard(streak),
+            CrewEntrance(index: 1, child: _streakHero(streak, weekWakesList)),
             if (evidence != null) ...[
               const SizedBox(height: 12),
               WakeEvidenceCard(evidence: evidence),
@@ -198,19 +216,22 @@ class StatsScreen extends ConsumerWidget {
             const _AccountabilityPingCard(),
             // 2 — Quick actions, one compact row instead of a stack of cards.
             const SizedBox(height: 12),
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Expanded(child: _RoughNightCard()),
-                  const SizedBox(width: 10),
-                  Expanded(child: _ShareCard(shareRunner: shareRunner)),
-                ],
+            CrewEntrance(
+              index: 2,
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Expanded(child: _RoughNightCard()),
+                    const SizedBox(width: 10),
+                    Expanded(child: _ShareCard(shareRunner: shareRunner)),
+                  ],
+                ),
               ),
             ),
             // 3 — The numbers: period overview, then your mornings in detail.
             const SizedBox(height: 24),
-            const _OverviewSection(),
+            const CrewEntrance(index: 3, child: _OverviewSection()),
             const SizedBox(height: 24),
             const SectionLabel('Your mornings'),
             const SizedBox(height: 6),
@@ -245,67 +266,116 @@ class StatsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _empty() => RiseCard(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
-          child: Column(
-            children: [
-              Icon(Icons.local_fire_department,
-                  size: 40, color: RiseColors.textFaint),
-              const SizedBox(height: 12),
-              Text('No wake data yet',
-                  style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              Text('Set an alarm and wake up on time — your streak grows from here.',
-                  textAlign: TextAlign.center, style: RiseText.caption),
-            ],
-          ),
-        ),
-      );
-
-  Widget _streakCard(StreakStats s) => RiseCard(
-        padding: const EdgeInsets.all(RiseSpacing.screen),
+  /// The tab's inverse-ground hero: the streak in display mono with the last
+  /// seven mornings as outcome dots — the whole story in one card.
+  Widget _streakHero(StreakStats s, List<DayWake> week) => HeroCard(
+        eyebrow: 'CURRENT STREAK',
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: [
-                Padding(
-                  padding: EdgeInsets.only(bottom: 6),
-                  child: Icon(Icons.local_fire_department,
-                      color: RiseColors.waking, size: 30),
+                _CountUp(
+                    value: s.current,
+                    style: RiseText.mono(
+                        size: 56,
+                        weight: FontWeight.w600,
+                        color: RiseColors.primaryText)),
+                const SizedBox(width: 10),
+                Opacity(
+                  opacity: 0.8,
+                  child: Text(s.current == 1 ? 'day' : 'days',
+                      style: RiseText.body.copyWith(
+                          color: RiseColors.primaryText, fontSize: 16)),
                 ),
-                const SizedBox(width: 8),
-                Text('${s.current}',
-                    style: RiseText.mono(size: 52, weight: FontWeight.w600)),
-                const SizedBox(width: 8),
-                Text(s.current == 1 ? 'day' : 'days',
-                    style: RiseText.body.copyWith(color: RiseColors.textDim)),
+                const Spacer(),
+                Icon(Icons.local_fire_department,
+                    color: RiseColors.waking, size: 30),
               ],
             ),
-            const SizedBox(height: 4),
-            Text('current streak', style: RiseText.caption),
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _miniStat('Best', '${s.best}'),
-                Container(width: 1, height: 32, color: RiseColors.divider),
-                _miniStat('Freezes', '${s.freezesRemaining}'),
+                _heroMini('Best', '${s.best}'),
+                const SizedBox(width: 28),
+                _heroMini('Freezes', '${s.freezesRemaining}'),
+                const Spacer(),
+                _weekDots(week),
               ],
             ),
           ],
         ),
       );
 
-  Widget _miniStat(String label, String value) => Column(
+  Widget _heroMini(String label, String value) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(value, style: RiseText.mono(size: 22, weight: FontWeight.w600)),
+          Text(value,
+              style: RiseText.mono(
+                  size: 20,
+                  weight: FontWeight.w600,
+                  color: RiseColors.primaryText)),
           const SizedBox(height: 2),
-          Text(label, style: RiseText.caption),
+          Opacity(
+            opacity: 0.65,
+            child: Text(label,
+                style:
+                    RiseText.caption.copyWith(color: RiseColors.primaryText)),
+          ),
         ],
+      );
+
+  /// The last 7 local mornings as small outcome dots on the hero: green
+  /// on-time, red missed, faint when the day had no alarm.
+  Widget _weekDots(List<DayWake> week) => Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Row(
+            children: [
+              for (final w in week)
+                Padding(
+                  padding: const EdgeInsets.only(left: 5),
+                  child: Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: !w.hasEvent
+                          ? RiseColors.primaryText.withValues(alpha: 0.18)
+                          : (w.onTime
+                              ? RiseColors.positive
+                              : RiseColors.danger),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Opacity(
+            opacity: 0.65,
+            child: Text('last 7 mornings',
+                style: RiseText.caption
+                    .copyWith(fontSize: 10.5, color: RiseColors.primaryText)),
+          ),
+        ],
+      );
+
+  /// Under the zero-streak hero: the one thing to do next.
+  Widget _firstMorningCard() => RiseCard(
+        child: Row(
+          children: [
+            Icon(Icons.alarm, size: 20, color: RiseColors.textDim),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                  'Set an alarm — your streak starts on the first on-time '
+                  'morning.',
+                  style: RiseText.body),
+            ),
+          ],
+        ),
       );
 
   /// Honest, plain-language observations from the wake log — shown only once
@@ -703,6 +773,28 @@ class StatsScreen extends ConsumerWidget {
   }
 }
 
+/// The streak number counting up on first paint — the tab's one micro-moment.
+/// Renders statically under reduced motion, and never animates on rebuilds
+/// (only when the target value itself changes).
+class _CountUp extends StatelessWidget {
+  const _CountUp({required this.value, required this.style});
+
+  final int value;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduce = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (reduce || value == 0) return Text('$value', style: style);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: value.toDouble()),
+      duration: const Duration(milliseconds: 650),
+      curve: Curves.easeOutCubic,
+      builder: (_, v, __) => Text('${v.round()}', style: style),
+    );
+  }
+}
+
 /// A compact half-width action: icon, short title, one-line caption. Two of
 /// these share the quick-action row under the streak card — same voice, less
 /// vertical noise than the full-width cards they replace.
@@ -726,8 +818,7 @@ class _ActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return RisePressable(
       onTap: onTap,
       child: RiseCard(
         child: Column(
@@ -1236,17 +1327,22 @@ class _LeaderboardSection extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 10),
-        board.when(
-          data: (standings) => standings.isEmpty
-              ? Text('No leaderboard yet — add crew and start a streak.',
-                  style: RiseText.caption)
-              : Column(children: [
-                  _crewScoreCard(computeCrewScore(standings)),
-                  const SizedBox(height: 14),
-                  for (var i = 0; i < standings.length; i++)
-                    _standingRow(context, i + 1, standings[i]),
-                ]),
-          loading: () => Column(children: [
+        RiseFade(
+          child: board.when(
+          data: (standings) => RiseFade.keyed(
+              'data',
+              standings.isEmpty
+                  ? Text('No leaderboard yet — add crew and start a streak.',
+                      style: RiseText.caption)
+                  : Column(children: [
+                      _crewScoreCard(computeCrewScore(standings)),
+                      const SizedBox(height: 14),
+                      for (var i = 0; i < standings.length; i++)
+                        _standingRow(context, i + 1, standings[i]),
+                    ])),
+          loading: () => Column(
+              key: const ValueKey('leaderboard-loading'),
+              children: [
             for (var i = 0; i < 3; i++)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -1272,6 +1368,7 @@ class _LeaderboardSection extends ConsumerWidget {
               ),
           ]),
           error: (_, __) => Row(
+            key: const ValueKey('leaderboard-error'),
             children: [
               Expanded(
                 child: Text('Could not load the leaderboard.',
@@ -1285,6 +1382,7 @@ class _LeaderboardSection extends ConsumerWidget {
                         color: RiseColors.accent, fontWeight: FontWeight.w600)),
               ),
             ],
+          ),
           ),
         ),
       ],
@@ -1412,8 +1510,7 @@ class _LeaderboardSection extends ConsumerWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: s.isMe
           ? row
-          : GestureDetector(
-              behavior: HitTestBehavior.opaque,
+          : RisePressable(
               onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => FriendDetailScreen(
                         member: CrewMember(

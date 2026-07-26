@@ -193,10 +193,13 @@ void main() {
     expect(find.byType(FriendDetailScreen), findsOneWidget);
   });
 
-  testWidgets('shows an empty state when there are no wake events', (t) async {
+  testWidgets('no wake events: the streak hero leads with 0 and a next step',
+      (t) async {
     await _pump(t, _host());
-    await t.pump();
-    expect(find.textContaining('No wake data'), findsOneWidget);
+    await t.pumpAndSettle();
+    expect(find.text('CURRENT STREAK'), findsOneWidget);
+    expect(find.textContaining('your streak starts'), findsOneWidget);
+    expect(find.textContaining('No wake data'), findsNothing);
   });
 
   testWidgets('renders the streak card and section headers with data', (t) async {
@@ -205,7 +208,7 @@ void main() {
       events: [evOn(today)],
       streak: const StreakStats(current: 4, best: 9, freezesRemaining: 1, byDay: {}),
     ));
-    await t.pump();
+    await t.pumpAndSettle();
     expect(find.text('4'), findsOneWidget); // current streak
     expect(find.text('9'), findsOneWidget); // best
     // Calendar + week chart live together under one "Your mornings" section.
@@ -219,7 +222,7 @@ void main() {
   testWidgets('rough-night and share sit side by side as one action row',
       (t) async {
     await _pump(t, _host(events: [evOn(DateTime.now())]));
-    await t.pump();
+    await t.pumpAndSettle();
     final rough = t.getCenter(find.text('Rough night?'));
     final share = t.getCenter(find.text('Share your progress'));
     expect((rough.dy - share.dy).abs(), lessThan(30),
@@ -231,7 +234,7 @@ void main() {
     // Enough regular events for every data section to render.
     final events = [for (var d = 10; d <= 25; d++) evOn(DateTime(2026, 3, d))];
     await _pump(t, _host(events: events));
-    await t.pump();
+    await t.pumpAndSettle();
     double y(String label) => t.getTopLeft(find.text(label)).dy;
     expect(y('OVERVIEW'), lessThan(y('YOUR MORNINGS')));
     expect(y('YOUR MORNINGS'), lessThan(y('CONSISTENCY')));
@@ -245,7 +248,7 @@ void main() {
       for (var d = 20; d <= 24; d++) evOn(DateTime(2026, 7, d)),
     ];
     await _pump(t, _host(events: events));
-    await t.pump();
+    await t.pumpAndSettle();
     expect(find.text('YOUR PATTERNS'), findsOneWidget); // SectionLabel uppercases
     expect(find.textContaining('woke on time on 100%'), findsOneWidget);
     expect(find.textContaining('not judgements'), findsOneWidget);
@@ -309,7 +312,7 @@ void main() {
       evScore(60, order: 1),
       evScore(84, order: 2), // latest (greatest firstRingAt)
     ]));
-    await t.pump();
+    await t.pumpAndSettle();
     expect(find.text('ALERTNESS'), findsOneWidget); // SectionLabel uppercases
     expect(find.text('84'), findsOneWidget); // latest score
     expect(find.text('72'), findsOneWidget); // average of 60 and 84
@@ -324,7 +327,7 @@ void main() {
   testWidgets('Alertness card shows a placeholder when no event carries a score',
       (t) async {
     await _pump(t, _host(events: [evOn(DateTime.now())])); // wake event, no PVT score
-    await t.pump();
+    await t.pumpAndSettle();
     expect(find.text('ALERTNESS'), findsOneWidget);
     expect(find.textContaining('No alertness scores yet'), findsOneWidget);
     expect(find.textContaining('Alertness (PVT)'), findsOneWidget);
@@ -336,7 +339,7 @@ void main() {
       (t) async {
     // One completed wake-up: First light earns; the streak badges stay locked.
     await _pump(t, _host(events: [evOn(DateTime.now())]));
-    await t.pump();
+    await t.pumpAndSettle();
     expect(find.text('ACHIEVEMENTS'), findsOneWidget); // SectionLabel uppercases
     expect(find.text('First light'), findsOneWidget); // earned
     expect(find.text('7-day streak'), findsOneWidget); // locked, still shown
@@ -348,7 +351,7 @@ void main() {
     // Six wake-ups all dismissed at 06:03 -> perfectly regular -> 100.
     final events = [for (var d = 20; d <= 25; d++) evOn(DateTime(2026, 3, d))];
     await _pump(t, _host(events: events));
-    await t.pump();
+    await t.pumpAndSettle();
     expect(find.text('CONSISTENCY'), findsOneWidget); // SectionLabel uppercases
     expect(find.text('very steady'), findsOneWidget); // band for a top score
   });
@@ -362,7 +365,7 @@ void main() {
       evScore(82, order: 4), // rising over time -> Trending up
     ];
     await _pump(t, _host(events: events));
-    await t.pump();
+    await t.pumpAndSettle();
     // One Alertness section — the trend folds under it, no second label.
     expect(find.text('ALERTNESS'), findsOneWidget);
     expect(find.text('ALERTNESS TREND'), findsNothing);
@@ -389,6 +392,7 @@ void main() {
       ],
       child: const MaterialApp(home: Scaffold(body: StatsScreen())),
     ));
+    // Skeletons pulse forever — settle would never return. Plain frames only.
     await t.pump();
     await t.pump(const Duration(milliseconds: 50));
     expect(find.byType(RiseSkeletonCircle), findsWidgets);
@@ -401,7 +405,7 @@ void main() {
       events: [evOn(DateTime.now())],
       shareRunner: (key) async => captured = key,
     ));
-    await t.pump();
+    await t.pumpAndSettle();
     expect(find.byKey(const Key('share-stats-card')), findsOneWidget);
     await t.tap(find.byKey(const Key('share-stats-card')));
     await t.pumpAndSettle();
@@ -416,7 +420,7 @@ void main() {
       events: [evOn(DateTime.now())],
       shareRunner: (key) async => throw Exception('boom'),
     ));
-    await t.pump();
+    await t.pumpAndSettle();
     await t.tap(find.byKey(const Key('share-stats-card')));
     await t.pumpAndSettle();
     expect(find.textContaining('Couldn\'t share right now'), findsOneWidget);
@@ -432,7 +436,7 @@ void main() {
       evOn(today.subtract(const Duration(days: 20))), // outside the week window
     ];
     await _pump(t, _host(events: events));
-    await t.pump();
+    await t.pumpAndSettle();
 
     expect(find.text('OVERVIEW'), findsOneWidget); // SectionLabel uppercases
     expect(find.text('Week'), findsOneWidget);

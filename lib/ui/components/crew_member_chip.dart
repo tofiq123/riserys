@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../domain/crew_member.dart';
 import '../../domain/crew_status.dart';
+import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'crew_avatar.dart';
 import 'crew_status_style.dart';
@@ -15,11 +16,16 @@ class CrewMemberChip extends StatelessWidget {
     required this.member,
     required this.status,
     required this.onTap,
+    this.onDark = false,
   });
 
   final CrewMember member;
   final CrewStatus status;
   final VoidCallback onTap;
+
+  /// True when the chip sits on the hero's inverse ground — the name flips to
+  /// the on-primary ink; the status word keeps its semantic colour.
+  final bool onDark;
 
   String get _name {
     if (member.displayName.isNotEmpty) {
@@ -52,6 +58,7 @@ class CrewMemberChip extends StatelessWidget {
               style: RiseText.body.copyWith(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
+                color: onDark ? RiseColors.primaryText : RiseColors.text,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
