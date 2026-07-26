@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/auth/auth_service.dart';
 import 'package:rise/domain/rise_account.dart';
+import 'package:rise/ui/components/morning_line_view.dart';
 import 'package:rise/ui/components/rise_skeleton.dart';
 import 'package:rise/ui/components/rise_spinner.dart';
 import 'package:rise/data/crew/crew_service.dart';
@@ -44,6 +45,21 @@ FeedItem _feedItem(String id, {String username = 'ada', int streak = 6}) =>
       streak: streak,
     );
 
+/// A wake by [userId] at a LOCAL time on the pinned test day, so it lands on
+/// the Morning Line (only today's wakes count as up).
+FeedItem _feedItemAt(String id, String userId, int hour, int minute,
+        {bool onTime = true, int streak = 6}) =>
+    FeedItem(
+      id: id,
+      userId: userId,
+      username: userId,
+      displayName: userId,
+      avatarColor: '#7C9CF4',
+      wokeAt: DateTime(2026, 7, 26, hour, minute),
+      onTime: onTime,
+      streak: streak,
+    );
+
 Future<FakeCrewService> _pumpSignedIn(
   WidgetTester t, {
   CrewState initial = CrewState.empty,
@@ -52,6 +68,7 @@ Future<FakeCrewService> _pumpSignedIn(
   NudgeService? nudge,
   FeedService? feed,
   GroupService? groups,
+  DateTime? clock,
 }) async {
   final auth = FakeAuthService();
   await auth.signInWithGoogle();
@@ -76,11 +93,18 @@ Future<FakeCrewService> _pumpSignedIn(
       if (feed != null) feedServiceProvider.overrideWithValue(feed),
       if (groups != null) groupServiceProvider.overrideWithValue(groups),
     ],
-    child: const MaterialApp(home: Scaffold(body: CrewScreen())),
+    // Pinned to mid-window unless a test asks otherwise, so a suite run at
+    // 22:00 does not silently assert against the Tonight screen.
+    child: MaterialApp(
+        home: Scaffold(
+            body: CrewScreen(clock: clock ?? _midWindow))),
   ));
   await t.pumpAndSettle();
   return crew;
 }
+
+/// 06:12 on Sunday 26 July 2026 — the wake window, three hours before it wraps.
+final _midWindow = DateTime(2026, 7, 26, 6, 12);
 
 /// A crew feed that fails its first load, then recovers — for asserting the
 /// inline feed section's error card and its Retry.
@@ -155,8 +179,8 @@ void main() {
       ));
       await t.pump();
       await t.pump(const Duration(milliseconds: 50));
-      expect(find.text('Sign in with Google'), findsNothing);
-      expect(find.text('Wake up together'), findsNothing);
+      expect(find.text('Continue with Google'), findsNothing);
+      expect(find.textContaining('Nobody wakes'), findsNothing);
       expect(find.byType(RiseSkeletonCircle), findsWidgets);
     });
 
@@ -176,7 +200,7 @@ void main() {
       ));
       await t.pump();
       await t.pump(const Duration(milliseconds: 50));
-      expect(find.text('Mornings are better with a crew'), findsNothing);
+      expect(find.text('This is where your crew shows up.'), findsNothing);
       expect(find.byType(RiseSkeletonCircle), findsWidgets);
       // No indeterminate spinners anywhere on content load.
       expect(find.byType(RiseSpinner), findsNothing);
@@ -226,8 +250,8 @@ void main() {
       await t.pumpWidget(const ProviderScope(
           child: MaterialApp(home: Scaffold(body: CrewScreen()))));
       await t.pumpAndSettle();
-      expect(find.text('Wake up together'), findsOneWidget);
-      expect(find.text('Sign in with Google'), findsNothing);
+      expect(find.textContaining('Nobody wakes'), findsOneWidget);
+      expect(find.text('Continue with Google'), findsNothing);
       expect(find.textContaining('coming soon'), findsOneWidget);
     });
 
@@ -237,25 +261,38 @@ void main() {
       addTearDown(auth.dispose);
       await t.pumpWidget(ProviderScope(
         overrides: [authServiceProvider.overrideWithValue(auth)],
-        child: const MaterialApp(home: Scaffold(body: CrewScreen())),
+        child: MaterialApp(
+            home: Scaffold(body: CrewScreen(clock: _midWindow))),
       ));
       await t.pumpAndSettle();
-      expect(find.text('Wake up together'), findsOneWidget);
-      await t.tap(find.text('Sign in with Google'));
+      expect(find.textContaining('Nobody wakes'), findsOneWidget);
+      await t.tap(find.text('Continue with Google'));
       await t.pumpAndSettle();
       expect(auth.current, isNotNull);
-      // Signed in now — the dashboard (here: its empty-crew hero) appears.
-      expect(find.text('Mornings are better with a crew'), findsOneWidget);
+      // Signed in now — the line appears, with the invitation on it.
+      expect(find.text('This is where your crew shows up.'), findsOneWidget);
+    });
+
+    testWidgets('shows the shape of the thing, labelled as an example',
+        (t) async {
+      await t.pumpWidget(const ProviderScope(
+          child: MaterialApp(home: Scaffold(body: CrewScreen()))));
+      await t.pumpAndSettle();
+      expect(find.text('EXAMPLE'), findsOneWidget);
+      expect(find.text('Two up, one waking, one still under.'), findsOneWidget);
     });
   });
 
   group('empty crew', () {
-    testWidgets('shows the hero with both next steps', (t) async {
+    testWidgets('the line renders with you on it and the invitation below',
+        (t) async {
       await _pumpSignedIn(t);
-      expect(find.text('Mornings are better with a crew'), findsOneWidget);
-      expect(find.text('Add your first friend'), findsOneWidget);
-      // In the hero — and again as a dashed card on the empty Groups strip.
-      expect(find.text('Join a group'), findsWidgets);
+      // Your own row is on the line, so the empty state teaches the component.
+      expect(find.byKey(const Key('line-row-fake-uid')), findsOneWidget);
+      expect(find.text('You'), findsOneWidget);
+      expect(find.text('This is where your crew shows up.'), findsOneWidget);
+      expect(find.byKey(const Key('crew-add-first-friend')), findsOneWidget);
+      expect(find.byKey(const Key('crew-join-group')), findsOneWidget);
     });
   });
 
@@ -331,32 +368,86 @@ void main() {
     });
   });
 
-  group('the This-morning strip', () {
-    testWidgets('a member chip shows their live status word', (t) async {
+  group('the Morning Line', () {
+    testWidgets('someone still under the marker shows their live status',
+        (t) async {
       await _pumpSignedIn(t,
           initial: CrewState(friends: [_m('u1', 'ada')]),
           statuses: {'u1': CrewStatus.waking});
-      expect(find.text('Waking'), findsOneWidget);
+      expect(find.text('waking'), findsOneWidget);
     });
 
     testWidgets('no status degrades to the quiet word', (t) async {
       await _pumpSignedIn(t, initial: CrewState(friends: [_m('u1', 'ada')]));
-      expect(find.text('Quiet'), findsOneWidget);
-      expect(find.text('Waking'), findsNothing);
+      expect(find.text('quiet'), findsWidgets);
+      expect(find.text('waking'), findsNothing);
     });
 
-    testWidgets('waking members sort ahead of sleeping ones', (t) async {
+    testWidgets('waking members sort above sleeping ones on the line',
+        (t) async {
       await _pumpSignedIn(t,
           initial: CrewState(friends: [_m('u1', 'ada'), _m('u2', 'bo')]),
           statuses: {'u1': CrewStatus.asleep, 'u2': CrewStatus.waking});
-      final adaX = t.getTopLeft(find.byKey(const Key('crew-chip-u1'))).dx;
-      final boX = t.getTopLeft(find.byKey(const Key('crew-chip-u2'))).dx;
-      expect(boX, lessThan(adaX));
+      final adaY = t.getTopLeft(find.byKey(const Key('line-row-u1'))).dy;
+      final boY = t.getTopLeft(find.byKey(const Key('line-row-u2'))).dy;
+      expect(boY, lessThan(adaY),
+          reason: 'the person you can cheer right now comes first');
     });
 
-    testWidgets('tapping a chip opens the friend detail page', (t) async {
+    testWidgets('a wake sits above the marker at the minute it happened',
+        (t) async {
+      await _pumpSignedIn(t,
+          initial: CrewState(friends: [_m('u1', 'ada'), _m('u2', 'bo')]),
+          statuses: {'u2': CrewStatus.asleep},
+          feed: FakeFeedService(
+              initial: [_feedItemAt('f1', 'u1', 5, 42)], selfId: 'me'));
+      expect(find.text('5:42 AM'), findsOneWidget);
+      expect(find.text('on time'), findsOneWidget);
+
+      final markerY = t.getTopLeft(find.byType(NowMarker)).dy;
+      expect(t.getTopLeft(find.byKey(const Key('line-row-u1'))).dy,
+          lessThan(markerY));
+      expect(t.getTopLeft(find.byKey(const Key('line-row-u2'))).dy,
+          greaterThan(markerY));
+    });
+
+    testWidgets('the hero counts what is true right now', (t) async {
+      await _pumpSignedIn(t,
+          initial: CrewState(friends: [_m('u1', 'ada'), _m('u2', 'bo')]),
+          feed: FakeFeedService(
+              initial: [_feedItemAt('f1', 'u1', 5, 42)], selfId: 'me'));
+      expect(find.byKey(const Key('crew-hero-window')), findsOneWidget);
+      expect(find.text('Wake window'), findsOneWidget);
+      // You plus two friends; one of the three is up.
+      expect(find.text('of 3 up'), findsOneWidget);
+      expect(find.textContaining('was first, 5:42 AM'), findsOneWidget);
+    });
+
+    testWidgets('after the window the page becomes a record, with no marker',
+        (t) async {
+      await _pumpSignedIn(t,
+          clock: DateTime(2026, 7, 26, 11),
+          initial: CrewState(friends: [_m('u1', 'ada'), _m('u2', 'bo')]),
+          feed: FakeFeedService(
+              initial: [_feedItemAt('f1', 'u1', 5, 42)], selfId: 'me'));
+      expect(find.text("Today's mornings"), findsOneWidget);
+      expect(find.byKey(const Key('crew-hero-wrapped')), findsOneWidget);
+      expect(find.byType(NowMarker), findsNothing);
+      expect(find.text('no wake logged'), findsWidgets);
+    });
+
+    testWidgets('at night the headline is your own alarm', (t) async {
+      await _pumpSignedIn(t,
+          clock: DateTime(2026, 7, 26, 22, 30),
+          initial: CrewState(friends: [_m('u1', 'ada')]));
+      expect(find.text('Tonight'), findsOneWidget);
+      expect(find.byKey(const Key('crew-hero-tonight')), findsOneWidget);
+      expect(find.byType(NowMarker), findsNothing);
+    });
+
+    testWidgets('tapping a row opens the friend detail page', (t) async {
       await _pumpSignedIn(t, initial: CrewState(friends: [_m('u1', 'ada')]));
-      await t.tap(find.byKey(const Key('crew-chip-u1')));
+      await t.tap(find.byKey(const Key('line-row-u1')));
       await t.pumpAndSettle();
       expect(find.byType(FriendDetailScreen), findsOneWidget);
     });
@@ -366,7 +457,7 @@ void main() {
       final nudge = FakeNudgeService();
       await _pumpSignedIn(t,
           initial: CrewState(friends: [_m('u1', 'ada')]), nudge: nudge);
-      await t.tap(find.byKey(const Key('crew-chip-u1')));
+      await t.tap(find.byKey(const Key('line-row-u1')));
       await t.pumpAndSettle();
       await t.tap(find.text('Nudge'));
       await t.pumpAndSettle();
@@ -377,7 +468,7 @@ void main() {
         (t) async {
       final crew =
           await _pumpSignedIn(t, initial: CrewState(friends: [_m('u1', 'ada')]));
-      await t.tap(find.byKey(const Key('crew-chip-u1')));
+      await t.tap(find.byKey(const Key('line-row-u1')));
       await t.pumpAndSettle();
       await t.tap(find.byKey(const Key('friend-overflow')));
       await t.pumpAndSettle();
@@ -391,39 +482,49 @@ void main() {
     });
   });
 
-  group('cheer them on (inline feed)', () {
-    testWidgets('renders the latest wakes and See all opens the full feed',
-        (t) async {
+  group('cheering', () {
+    testWidgets('See all opens the full activity screen', (t) async {
       await _pumpSignedIn(t,
           initial: CrewState(friends: [_m('u1', 'ada')]),
           feed: FakeFeedService(initial: [_feedItem('f1')], selfId: 'me'));
-      expect(find.textContaining('woke on time'), findsOneWidget);
-      await t.tap(find.byKey(const Key('crew-feed-see-all')));
+      await t.tap(find.byKey(const Key('line-see-all')));
       await t.pumpAndSettle();
       expect(find.byType(ActivityFeedScreen), findsOneWidget);
     });
 
-    testWidgets('an empty feed shows the quiet card, never dead space',
-        (t) async {
-      await _pumpSignedIn(t, initial: CrewState(friends: [_m('u1', 'ada')]));
-      expect(find.textContaining('Quiet for now'), findsOneWidget);
-    });
-
-    testWidgets(
-        'a feed error shows the error card with Retry, not the quiet card',
-        (t) async {
-      final feed = _FlakyFeedService([_feedItem('f1')]);
+    testWidgets('Cheer opens the palette and records the reaction', (t) async {
+      final feed = FakeFeedService(
+          initial: [_feedItemAt('f1', 'u1', 5, 42)], selfId: 'me');
       await _pumpSignedIn(t,
           initial: CrewState(friends: [_m('u1', 'ada')]), feed: feed);
-      // The error card (with Retry) — never the "quiet" empty card, which would
-      // make a network failure look identical to "nothing has happened yet".
+      await t.tap(find.byKey(const Key('line-cheer-u1')));
+      await t.pump();
+      await t.tap(find.byKey(const Key('line-cheer-u1-🔥')));
+      await t.pumpAndSettle();
+      final items = await feed.crewFeed();
+      expect(items.single.reactionFor('🔥').count, 1);
+      expect(items.single.reactionFor('🔥').reactedByMe, isTrue);
+      expect(find.text('🔥 1'), findsOneWidget);
+    });
+
+    testWidgets('a feed failure says what is missing and offers a retry',
+        (t) async {
+      final feed = _FlakyFeedService([_feedItemAt('f1', 'u1', 5, 42)]);
+      await _pumpSignedIn(t,
+          initial: CrewState(friends: [_m('u1', 'ada')]),
+          statuses: {'u1': CrewStatus.asleep},
+          feed: feed);
+      // Never silence: a network failure must not look identical to
+      // "nothing has happened yet".
       expect(find.text('Retry'), findsOneWidget);
       expect(find.textContaining("Couldn't load"), findsOneWidget);
-      expect(find.textContaining('Quiet for now'), findsNothing);
-      // Retry re-runs the load; the feed recovers and the wake shows.
+      // The line still renders from live status, so the screen stays useful.
+      expect(find.byKey(const Key('line-row-u1')), findsOneWidget);
+      expect(find.text('asleep'), findsOneWidget);
+
       await t.tap(find.text('Retry'));
       await t.pumpAndSettle();
-      expect(find.textContaining('woke on time'), findsOneWidget);
+      expect(find.text('5:42 AM'), findsOneWidget);
       expect(feed.calls, 2);
     });
   });

@@ -70,9 +70,30 @@ class MorningLineView extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 6),
-          child: Text(
-            line.phase == MorningPhase.window ? 'UP' : 'THE MORNING',
-            style: RiseText.sectionLabel,
+          child: Row(
+            children: [
+              Text(
+                line.phase == MorningPhase.window ? 'UP' : 'THE MORNING',
+                style: RiseText.sectionLabel,
+              ),
+              const Spacer(),
+              // The full history lives on its own screen; the line is only
+              // today. Without this the Activity screen has no door.
+              if (onSeeAll != null)
+                GestureDetector(
+                  key: const Key('line-see-all'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onSeeAll,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 8),
+                    child: Text('See all',
+                        style: RiseText.caption.copyWith(
+                            color: RiseColors.text,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ),
+            ],
           ),
         ),
         Stack(
@@ -142,18 +163,44 @@ class NowMarker extends StatefulWidget {
 
 class _NowMarkerState extends State<NowMarker>
     with SingleTickerProviderStateMixin {
+  /// A heartbeat, not a strobe: three rings on each clock tick, then quiet.
+  ///
+  /// A `repeat()` here would schedule a frame forever — which drains the
+  /// battery while the tab merely sits open, and means no test using
+  /// `pumpAndSettle` on this screen could ever settle. Finite is both cheaper
+  /// and calmer.
+  static const int _beats = 3;
+
   late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 2400));
+      vsync: this, duration: const Duration(milliseconds: 1600))
+    ..addStatusListener(_onStatus);
+  int _beat = 0;
+
+  void _onStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    if (_beat + 1 >= _beats || !mounted) return;
+    _beat++;
+    _c.forward(from: 0);
+  }
+
+  void _pulse() {
+    if (!mounted) return;
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return;
+    _beat = 0;
+    _c.forward(from: 0);
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final reduce = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    if (reduce) {
-      if (_c.isAnimating) _c.stop();
-    } else if (!_c.isAnimating) {
-      _c.repeat();
-    }
+    if (_c.status == AnimationStatus.dismissed) _pulse();
+  }
+
+  @override
+  void didUpdateWidget(NowMarker old) {
+    super.didUpdateWidget(old);
+    // A new minute on the clock restarts the heartbeat.
+    if (old.now != widget.now) _pulse();
   }
 
   @override
@@ -193,6 +240,12 @@ class _NowMarkerState extends State<NowMarker>
                       : AnimatedBuilder(
                           animation: _c,
                           builder: (_, __) {
+                            // At rest the ring sits quietly around the dot
+                            // rather than vanishing, so the marker never
+                            // looks half-drawn between beats.
+                            if (!_c.isAnimating && _c.value == 0) {
+                              return const _NowDot(scale: 1.3, opacity: 0.4);
+                            }
                             final t = Curves.easeOut.transform(_c.value);
                             return _NowDot(
                                 scale: 0.7 + t * 0.9,

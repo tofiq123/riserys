@@ -5,7 +5,6 @@ import '../../domain/wake_rhythm.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'outcome_mark.dart';
-import 'rise_card.dart';
 
 /// When you actually get up, against the window you had to do it in.
 ///
