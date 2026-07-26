@@ -1,8 +1,19 @@
-# Rise — Status (social UX overhaul, 2026-07-26)
+# Rise — Status (social UX overhaul + bold redesign, 2026-07-26)
 
-**Verified:** 1100 tests passing · `flutter analyze` clean · Android APK builds
-(`build/app/outputs/flutter-apk/app-debug.apk`). Everything below is backed by the
-suite, the analyzer, or a successful compile.
+**Verified:** 1106 tests passing · `flutter analyze` clean · Android APK builds and
+is INSTALLED on the test phone (built with `--dart-define-from-file=rise.env.json` —
+required for every device build, else sign-in is hidden by design).
+
+## Shipped 2026-07-26, round 2 — the visible redesign (merged to `main`)
+
+- **Hero cards.** One inverse-ground (near-black) card per tab: Crew leads with
+  the live morning ("2 of 4 up" + status-ringed faces — and a real hero when
+  signed out or crew-less), Stats leads with the streak in 56px mono (count-up
+  on open, last-7-mornings dots, zero state included), Profile leads with your
+  identity (avatar/name/@handle) or a "Make it yours" sign-in hero.
+- **Motion system.** Press-scale feedback on every touchable (`RisePressable`),
+  skeleton→content crossfades (`RiseFade`), staggered section entrances on all
+  tabs, date eyebrows on Crew/Stats. Reduced motion respected throughout.
 
 ## Shipped 2026-07-26 (merged to `main`)
 
