@@ -1,11 +1,50 @@
-# Rise — Status (overnight build, 2026-07-22)
+# Rise — Status (social UX overhaul, 2026-07-26)
 
-**Verified:** 1048 tests passing · `flutter analyze` clean · Android APK builds
+**Verified:** 1100 tests passing · `flutter analyze` clean · Android APK builds
 (`build/app/outputs/flutter-apk/app-debug.apk`). Everything below is backed by the
-suite, the analyzer, or a successful compile. Live report artifact: *Rise — Overnight
-Build Report*.
+suite, the analyzer, or a successful compile.
 
-## Shipped (merged to `main`)
+## Shipped 2026-07-26 (merged to `main`)
+
+- **Auth flash killed.** Crew/Profile briefly showed "sign in" for ~1s on open.
+  The auth service now primes synchronously from the restored Supabase session +
+  a persisted profile cache: a signed-in user renders signed-in on the very first
+  frame. While truth is genuinely unknown, screens show neutral skeletons — never
+  the sign-in hero, never the username-claim gate.
+- **Per-visit spinners killed.** Feed/voice/groups/leaderboard caches now live
+  for the whole session (keyed to the account id) and pre-load at app start
+  (`SocialWarmupHost`); reopening Crew renders instantly and refreshes silently
+  behind stale content. Skeleton placeholders (`RiseSkeleton`) replace all
+  content spinners; pull-to-refresh added on Crew (reloads friendships too —
+  they have no Realtime).
+- **Group page deduplicated.** Leaderboard + members roster + streak-race rows
+  (the same people three times) merged into ONE ranked member list: rank, avatar,
+  name/@handle, on-time %, streak, Owner badge, race 🔥/💤 chip; owner's remove
+  action behind a per-row "…" sheet. Score card absorbs live race status.
+- **Stats rebuilt as a narrative.** Today (streak + evidence) → compact
+  half-width action pair (Rough night · Share) → Overview → Your mornings
+  (week chart + 30-day calendar together) → Consistency → one Alertness section
+  (score + trend + disclaimer) → patterns → achievements → leaderboard (skeleton
+  first-load).
+- **Profile grouped.** Account card with restore-skeleton, grouped cards with
+  hairline dividers (Settings/Wellbeing; Guardian; Sign out/Delete), 44px row
+  targets.
+- **Hardening from adversarial review:** truthful crew loading in the Supabase
+  service (placeholder empty state withheld until the first load lands; a failed
+  refresh keeps last-known crew), auth event-race guard (a slow profile fetch
+  can no longer overwrite a newer sign-out), narrow-screen skeleton fix.
+
+### Needs you (2026-07-26 work)
+
+1. **Device smoke test** (2 min): open the app signed-in → Crew and Profile must
+   render your account instantly, no sign-in flash, no spinner storm; second
+   visit to Crew must be instant. Pull down on Crew to refresh.
+2. **Group page look-over:** open a group — one member list now; owner remove is
+   behind the "…" on each row; start/end a streak race and check the score card
+   status line.
+3. No new migrations, no backend changes, no new packages.
+
+## Shipped 2026-07-22 (merged to `main`)
 
 - **Left-home wake engine.** Home setup in Settings (set to current location, one tap;
   privacy tiers Off / Just me / My crew, default Off). Foreground-only departure
