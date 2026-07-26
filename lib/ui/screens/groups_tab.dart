@@ -5,8 +5,9 @@ import '../../domain/group.dart';
 import '../components/crew_add_sheet.dart';
 import '../components/crew_group_card.dart';
 import '../components/rise_error_card.dart';
-import '../components/rise_spinner.dart';
+import '../components/rise_skeleton.dart';
 import '../state/group_providers.dart';
+import '../theme/tokens.dart';
 import 'group_detail_screen.dart';
 import 'paywall_screen.dart';
 
@@ -41,7 +42,18 @@ class GroupsTab extends ConsumerWidget {
     return SizedBox(
       height: kCrewGroupCardHeight + 8,
       child: groups.when(
-        loading: () => const Center(child: RiseSpinner()),
+        loading: () => ListView(
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none,
+          padding: const EdgeInsets.only(bottom: 8),
+          children: const [
+            RiseSkeleton(
+                width: 150, height: kCrewGroupCardHeight, radius: RiseRadii.base),
+            SizedBox(width: 10),
+            RiseSkeleton(
+                width: 150, height: kCrewGroupCardHeight, radius: RiseRadii.base),
+          ],
+        ),
         error: (_, __) => RiseErrorCard(
           message: 'Could not load your groups.',
           onRetry: () => ref.invalidate(myGroupsProvider),
