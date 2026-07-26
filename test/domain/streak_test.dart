@@ -161,4 +161,38 @@ void main() {
     expect(s.best, 7);
     expect(s.freezesRemaining, 0);
   });
+
+  group('freezeAbsorbed', () {
+    test('names the day a banked freeze covered', () {
+      final days = [for (var i = 1; i <= 7; i++) ev(i, onTime: true)]; // earns 1
+      days.add(ev(8, onTime: false)); // absorbed — the run holds
+      days.add(ev(9, onTime: true));
+      final s = computeStreak(days, now);
+      expect(s.current, 8, reason: 'the freeze held the run through day 8');
+      expect(s.freezeAbsorbed, {d(8)});
+      expect(s.byDay[d(8)], DayOutcome.miss,
+          reason: 'the day itself stays an honest miss');
+    });
+
+    test('is empty when a miss breaks the run outright', () {
+      final s = computeStreak(
+          [ev(17, onTime: true), ev(18, onTime: false), ev(19, onTime: true)],
+          now);
+      expect(s.freezeAbsorbed, isEmpty);
+    });
+
+    test('a later break clears absorptions from the run that ended', () {
+      final days = [for (var i = 1; i <= 7; i++) ev(i, onTime: true)];
+      days.add(ev(8, onTime: false)); // absorbed
+      days.add(ev(9, onTime: false)); // breaks — day 8 belongs to a dead run
+      days.add(ev(10, onTime: true));
+      final s = computeStreak(days, now);
+      expect(s.current, 1);
+      expect(s.freezeAbsorbed, isEmpty);
+    });
+
+    test('defaults to empty on a hand-built StreakStats', () {
+      expect(StreakStats.empty.freezeAbsorbed, isEmpty);
+    });
+  });
 }

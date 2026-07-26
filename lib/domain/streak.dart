@@ -9,6 +9,7 @@ class StreakStats {
     required this.best,
     required this.freezesRemaining,
     required this.byDay,
+    this.freezeAbsorbed = const <DateTime>{},
   });
 
   final int current;
@@ -17,6 +18,12 @@ class StreakStats {
 
   /// Keyed by local-midnight day. Days absent from the map are neutral.
   final Map<DateTime, DayOutcome> byDay;
+
+  /// The local-midnight days that WOULD have broken the run but were covered by
+  /// a banked freeze. The day stays a [DayOutcome.miss] in [byDay] — this set
+  /// only records that the run survived it, so the UI can say why without
+  /// rewriting the outcome. Empty unless [computeStreak] produced it.
+  final Set<DateTime> freezeAbsorbed;
 
   static const empty = StreakStats(
       current: 0, best: 0, freezesRemaining: 0, byDay: <DateTime, DayOutcome>{});
@@ -78,6 +85,7 @@ StreakStats computeStreak(
   var run = 0;
   var best = 0;
   var freezes = 0;
+  final absorbed = <DateTime>{};
   for (final day in foldDays) {
     switch (byDay[day]) {
       case DayOutcome.success:
@@ -87,8 +95,12 @@ StreakStats computeStreak(
       case DayOutcome.miss:
         if (freezes > 0) {
           freezes--; // absorbed — the run holds
+          absorbed.add(day);
         } else {
           run = 0;
+          // A break resets the ledger: earlier absorptions belong to a run that
+          // no longer exists, so they must not be reported against this one.
+          absorbed.clear();
         }
       case DayOutcome.neutral:
       case DayOutcome.pending:
@@ -98,5 +110,9 @@ StreakStats computeStreak(
   }
 
   return StreakStats(
-      current: run, best: best, freezesRemaining: freezes, byDay: byDay);
+      current: run,
+      best: best,
+      freezesRemaining: freezes,
+      byDay: byDay,
+      freezeAbsorbed: absorbed);
 }
