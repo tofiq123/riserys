@@ -20,6 +20,7 @@ import '../../domain/wake_event.dart';
 import '../../domain/wake_insights.dart';
 import '../components/rise_card.dart';
 import '../components/rise_disclaimer.dart';
+import '../components/rise_skeleton.dart';
 import '../components/rise_spinner.dart';
 import '../components/section_label.dart';
 import '../components/segmented.dart';
@@ -188,35 +189,41 @@ class StatsScreen extends ConsumerWidget {
           if (events.isEmpty)
             _empty()
           else ...[
+            // 1 — Today: the streak headline and how this morning went.
             _streakCard(streak),
             if (evidence != null) ...[
               const SizedBox(height: 12),
               WakeEvidenceCard(evidence: evidence),
             ],
             const _AccountabilityPingCard(),
+            // 2 — Quick actions, one compact row instead of a stack of cards.
             const SizedBox(height: 12),
-            const _RoughNightCard(),
-            const SizedBox(height: 12),
-            _ShareCard(shareRunner: shareRunner),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Expanded(child: _RoughNightCard()),
+                  const SizedBox(width: 10),
+                  Expanded(child: _ShareCard(shareRunner: shareRunner)),
+                ],
+              ),
+            ),
+            // 3 — The numbers: period overview, then your mornings in detail.
             const SizedBox(height: 24),
             const _OverviewSection(),
             const SizedBox(height: 24),
-            const SectionLabel('Last 30 days'),
-            const SizedBox(height: 12),
-            _calendar(streak.byDay, now),
-            const SizedBox(height: 24),
-            const SectionLabel('This week'),
+            const SectionLabel('Your mornings'),
             const SizedBox(height: 6),
             Text(consistencyLineFor(weekWakesList), style: RiseText.caption),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             _weekChart(weekWakesList),
+            const SizedBox(height: 14),
+            _calendar(streak.byDay, now),
             const SizedBox(height: 24),
             const SectionLabel('Consistency'),
             const SizedBox(height: 12),
             _consistencyCard(events),
-            const SizedBox(height: 24),
-            const _AchievementsSection(),
-            ..._insightsWidgets(events, settings),
+            // 4 — Alertness, one section: score, trend, and its disclaimer.
             const SizedBox(height: 24),
             const SectionLabel('Alertness'),
             const SizedBox(height: 12),
@@ -226,6 +233,10 @@ class StatsScreen extends ConsumerWidget {
             const RiseDisclaimer(
                 text: 'Your Alertness Score is a wellness insight, not a '
                     'medical measure.'),
+            // 5 — Reflection and reward.
+            ..._insightsWidgets(events, settings),
+            const SizedBox(height: 24),
+            const _AchievementsSection(),
           ],
           const SizedBox(height: 24),
           const _LeaderboardSection(),
@@ -565,13 +576,10 @@ class StatsScreen extends ConsumerWidget {
       {required bool locked}) {
     if (scored.length < kMinTrendScores) return const [];
 
+    // No section label of its own: the trend reads as part of the one
+    // Alertness section, directly under the score card.
     if (locked) {
       return [
-        const SizedBox(height: 24),
-        const SectionLabel('Alertness trend'),
-        const SizedBox(height: 6),
-        Text('See how your wake-up reaction speed is trending over time.',
-            style: RiseText.caption),
         const SizedBox(height: 12),
         premiumLockCard(context, 'Alertness history & trends'),
       ];
@@ -583,9 +591,7 @@ class StatsScreen extends ConsumerWidget {
     final trend = alertnessTrendOf(scores);
 
     return [
-      const SizedBox(height: 24),
-      const SectionLabel('Alertness trend'),
-      const SizedBox(height: 6),
+      const SizedBox(height: 12),
       Text(_trendLine(trend), style: RiseText.caption),
       const SizedBox(height: 12),
       RiseCard(
@@ -697,6 +703,60 @@ class StatsScreen extends ConsumerWidget {
   }
 }
 
+/// A compact half-width action: icon, short title, one-line caption. Two of
+/// these share the quick-action row under the streak card — same voice, less
+/// vertical noise than the full-width cards they replace.
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
+    super.key,
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.caption,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String caption;
+  final VoidCallback? onTap;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: RiseCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: iconColor, size: 20),
+                const Spacer(),
+                if (trailing != null) trailing!,
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(title,
+                style: RiseText.body.copyWith(fontWeight: FontWeight.w600),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 2),
+            Text(caption,
+                style: RiseText.caption,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// A gentle, no-penalty affordance: mark a recent day as a "rough night" so it
 /// does not break the streak. Deliberately warm and matter-of-fact — rest is
 /// framed as legitimate, never as a failure. An excused day only protects the
@@ -717,34 +777,13 @@ class _RoughNightCard extends ConsumerWidget {
     final today = ExcusedDaysRepository.dayOf(DateTime.now());
     final yesterday = today.subtract(const Duration(days: 1));
 
-    return GestureDetector(
+    return _ActionTile(
       key: const Key('rough-night-card'),
-      behavior: HitTestBehavior.opaque,
+      icon: Icons.bedtime_outlined,
+      iconColor: RiseColors.asleep,
+      title: 'Rough night?',
+      caption: 'Mark it — your streak stays safe.',
       onTap: () => _showSheet(context, ref, today, yesterday, excused),
-      child: RiseCard(
-        child: Row(
-          children: [
-            Icon(Icons.bedtime_outlined,
-                color: RiseColors.asleep, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Rough night?',
-                      style:
-                          RiseText.body.copyWith(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text('Mark it — your streak stays safe. Rest counts too.',
-                      style: RiseText.caption),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right,
-                color: RiseColors.textFaint, size: 20),
-          ],
-        ),
-      ),
     );
   }
 
@@ -988,42 +1027,21 @@ class _ShareCardState extends ConsumerState<_ShareCard> {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        GestureDetector(
+        _ActionTile(
           key: const Key('share-stats-card'),
-          behavior: HitTestBehavior.opaque,
+          icon: Icons.ios_share,
+          iconColor: RiseColors.textDim,
+          title: 'Share your progress',
+          caption: 'A clean card of your streak.',
+          trailing: _busy
+              ? const RiseSpinner(size: 16)
+              : (locked
+                  ? Icon(Icons.lock_outline,
+                      color: RiseColors.textDim, size: 16)
+                  : null),
           onTap: _busy
               ? null
               : (locked ? () => openPaywall(context) : _share),
-          child: RiseCard(
-            child: Row(
-              children: [
-                Icon(Icons.ios_share,
-                    color: RiseColors.textDim, size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Share your progress',
-                          style: RiseText.body
-                              .copyWith(fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 2),
-                      Text('A clean card of your streak and badges.',
-                          style: RiseText.caption),
-                    ],
-                  ),
-                ),
-                if (_busy)
-                  const RiseSpinner(size: 18)
-                else if (locked)
-                  Icon(Icons.lock_outline,
-                      color: RiseColors.textDim, size: 18)
-                else
-                  Icon(Icons.chevron_right,
-                      color: RiseColors.textFaint, size: 20),
-              ],
-            ),
-          ),
         ),
         // Offscreen capture target: laid out and painted (so toImage works) but
         // parked far off-screen, and only present while capturing so it never
@@ -1228,10 +1246,31 @@ class _LeaderboardSection extends ConsumerWidget {
                   for (var i = 0; i < standings.length; i++)
                     _standingRow(context, i + 1, standings[i]),
                 ]),
-          loading: () => const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Center(child: RiseSpinner()),
-          ),
+          loading: () => Column(children: [
+            for (var i = 0; i < 3; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: RiseCard(
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 22),
+                      const RiseSkeletonCircle(size: 34),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            RiseSkeleton(width: 110, height: 12),
+                            SizedBox(height: 7),
+                            RiseSkeleton(width: 150, height: 10),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ]),
           error: (_, __) => Row(
             children: [
               Expanded(
