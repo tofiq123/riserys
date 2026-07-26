@@ -90,11 +90,48 @@ void main() {
           'g1': [_s('bob', 5), _s('me', 2, isMe: true)],
         });
     // ONE list: the standalone leaderboard section is gone, and each member
-    // renders exactly once (name + handle in a single row).
-    expect(find.text('MEMBERS'), findsOneWidget);
+    // appears exactly once — on the podium OR in a row, never both.
+    expect(find.text('STANDINGS'), findsOneWidget);
+    expect(find.text('MEMBERS'), findsNothing);
     expect(find.text('GROUP LEADERBOARD'), findsNothing);
-    expect(find.textContaining('@bob'), findsOneWidget);
-    expect(find.text('5'), findsWidgets); // bob's streak in his row
+    expect(find.textContaining('@bob'), findsNothing,
+        reason: 'bob leads, so he is on the podium rather than in a row');
+    expect(find.byKey(const Key('podium-bob')), findsOneWidget);
+    expect(find.byKey(const Key('group-row-bob')), findsNothing);
+    expect(find.text('🔥5'), findsOneWidget); // bob's run, on his plinth
+  });
+
+  testWidgets('the morning leads the page and the invite sits near the end',
+      (t) async {
+    await _pump(t,
+        group: _owned(),
+        members: {
+          'g1': [_m('me'), _m('bob')]
+        },
+        standings: {
+          'g1': [_s('bob', 5), _s('me', 2, isMe: true)],
+        });
+    expect(find.byKey(const Key('group-morning-hero')), findsOneWidget);
+    final morning = t.getTopLeft(find.byKey(const Key('group-morning-hero'))).dy;
+    final standings = t.getTopLeft(find.text('STANDINGS')).dy;
+    final invite = t.getTopLeft(find.text('INVITE')).dy;
+    expect(morning, lessThan(standings));
+    expect(standings, lessThan(invite),
+        reason: 'the code is needed once; the group is why you opened this');
+  });
+
+  testWidgets('a group of one reads as a share screen, not an empty board',
+      (t) async {
+    await _pump(t, group: _owned(), members: {
+      'g1': [_m('me')]
+    });
+    expect(find.byKey(const Key('group-solo-hero')), findsOneWidget);
+    expect(find.text('A group of one is a good start.'), findsOneWidget);
+    expect(find.text('RISE42'), findsOneWidget);
+    expect(find.text('Share link'), findsOneWidget);
+    // No podium, no standings, no race CTA for a group that has none of those.
+    expect(find.text('STANDINGS'), findsNothing);
+    expect(find.text('Start a streak race'), findsNothing);
   });
 
   testWidgets('a member with no wake data yet appends unranked', (t) async {
@@ -131,10 +168,30 @@ void main() {
   });
 
   testWidgets('no race: owner sees the start CTA', (t) async {
-    await _pump(t, group: _owned(), standings: {
-      'g1': [_s('me', 2, isMe: true)],
-    });
+    await _pump(t,
+        group: _owned(),
+        members: {
+          'g1': [_m('me'), _m('bob')]
+        },
+        standings: {
+          'g1': [_s('me', 2, isMe: true)],
+        });
     expect(find.text('Start a streak race'), findsOneWidget);
+  });
+
+  testWidgets('no race: a member is told who can start one, not given a dead '
+      'button', (t) async {
+    await _pump(t,
+        group: _joined(),
+        members: {
+          'g1': [_m('me'), _m('bob')]
+        },
+        standings: {
+          'g1': [_s('me', 2, isMe: true)],
+        });
+    expect(find.textContaining('the group owner can start one'),
+        findsOneWidget);
+    expect(find.text('Start a streak race'), findsNothing);
   });
 
   testWidgets('owner sees Delete group; member sees Leave group', (t) async {
@@ -169,9 +226,10 @@ void main() {
       (t) async {
     await _pump(t,
         group: _owned(),
-        members: {'g1': [_m('me')]});
+        members: {'g1': [_m('me'), _m('bob')]});
     expect(find.text('Owner'), findsOneWidget);
     expect(find.byKey(const Key('member-overflow-me')), findsNothing);
+    expect(find.byKey(const Key('member-overflow-bob')), findsOneWidget);
   });
 
   testWidgets('leaving calls the service', (t) async {

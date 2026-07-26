@@ -14,8 +14,10 @@ class WakeEventRepository {
   /// snooze re-fire or a ring-screen re-mount), not a new one.
   static const reuseWindow = Duration(hours: 6);
 
-  /// Dismissing within this of the first ring counts as on time.
-  static const grace = Duration(minutes: 15);
+  /// Dismissing within this of the first ring counts as on time. Aliases the
+  /// domain constant so the rhythm chart's target band and this stamp stay the
+  /// same number.
+  static const grace = kOnTimeGrace;
 
   static WakeEvent _toDomain(WakeEventRow r) => WakeEvent(
         id: r.id,

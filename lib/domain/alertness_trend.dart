@@ -1,5 +1,27 @@
+import 'wake_event.dart';
+
 /// Which way a run of alertness scores is heading over time.
 enum AlertnessTrend { rising, steady, easing, insufficient }
+
+/// The mean of the non-null alertness scores across [events], rounded to the
+/// nearest integer; null when no event carries a score.
+int? averageAlertness(List<WakeEvent> events) {
+  final scores = [
+    for (final e in events)
+      if (e.alertnessScore != null) e.alertnessScore!
+  ];
+  if (scores.isEmpty) return null;
+  final sum = scores.fold<int>(0, (a, b) => a + b);
+  return (sum / scores.length).round();
+}
+
+/// A neutral, non-judgemental descriptor for an alertness [score]. Purely
+/// informational — never a medical, diagnostic, or "abnormal" label.
+String alertnessBand(int score) {
+  if (score >= 80) return 'sharp';
+  if (score >= 50) return 'steady';
+  return 'groggy';
+}
 
 /// Fewest scores needed before a trend reads as anything but insufficient.
 const int kMinTrendScores = 4;

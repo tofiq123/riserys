@@ -57,6 +57,32 @@ class _RisePressableState extends State<RisePressable> {
   }
 }
 
+/// A headline numeral that counts up on first paint — the app's one micro
+/// moment, used for the streak and the live up-count.
+///
+/// Only animates when the target value itself changes, never on an unrelated
+/// rebuild (a reaction tap must not re-run the streak's count-up), and renders
+/// statically under reduced motion.
+class RiseCountUp extends StatelessWidget {
+  const RiseCountUp({super.key, required this.value, required this.style});
+
+  final int value;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduce = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (reduce || value == 0) return Text('$value', style: style);
+    return TweenAnimationBuilder<double>(
+      key: ValueKey(value),
+      tween: Tween(begin: 0, end: value.toDouble()),
+      duration: const Duration(milliseconds: 650),
+      curve: Curves.easeOutCubic,
+      builder: (_, v, __) => Text('${v.round()}', style: style),
+    );
+  }
+}
+
 /// The app's state transition: when a section swaps between loading skeleton,
 /// content, and error, the change melts (fade + a whisper of scale) instead of
 /// popping. Give each branch a distinct [ValueKey] via [keyed]. Instant under

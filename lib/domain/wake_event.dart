@@ -1,3 +1,9 @@
+/// How long after the first ring a dismissal still counts as on time. THE
+/// single source of truth for "on time" — the repository stamps [WakeEvent.onTime]
+/// with it and the rhythm chart draws it as the target band, so the chart's
+/// geometry and the flag can never disagree.
+const Duration kOnTimeGrace = Duration(minutes: 15);
+
 /// One logical firing of an alarm: opened when the ring starts, finalised on
 /// dismissal. [dismissedAt] == null means still open — and, once the day is
 /// past, a miss. All DateTimes are stored UTC; [localDay] does the only
