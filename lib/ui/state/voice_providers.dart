@@ -6,6 +6,7 @@ import '../../data/voice/voice_clip_service.dart';
 import '../../data/voice/voice_player.dart';
 import '../../data/voice/voice_recorder.dart';
 import '../../domain/voice_clip.dart';
+import 'auth_providers.dart';
 import 'nudge_providers.dart';
 
 /// The device microphone recorder. Real capture on device; tests override this
@@ -34,8 +35,11 @@ final voiceClipServiceProvider = Provider<VoiceClipService>((ref) {
   return SupabaseVoiceClipService(nudge: ref.watch(nudgeServiceProvider));
 });
 
-/// The signed-in user's received clips, newest first. Re-fetched each time the
-/// inbox opens; invalidate after play/delete to refresh.
-final voiceInboxProvider = FutureProvider.autoDispose<List<VoiceClip>>((ref) {
+/// The signed-in user's received clips, newest first. Cached for the session
+/// (keeps the Crew unread badge stable across tab switches); invalidate after
+/// play/delete, on pull-to-refresh, or on tab open to refresh. Keyed to the
+/// signed-in account id so cached clips never outlive their account.
+final voiceInboxProvider = FutureProvider<List<VoiceClip>>((ref) {
+  ref.watch(accountProvider.select((a) => a.value?.id));
   return ref.watch(voiceClipServiceProvider).inbox();
 });
