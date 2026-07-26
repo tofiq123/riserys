@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +16,8 @@ import 'package:rise/domain/crew_state.dart';
 import 'package:rise/domain/streak.dart';
 import 'package:rise/domain/wake_event.dart';
 import 'package:rise/domain/wake_stats.dart';
+import 'package:rise/ui/components/rise_skeleton.dart';
+import 'package:rise/ui/components/rise_spinner.dart';
 import 'package:rise/ui/components/sparkline.dart';
 import 'package:rise/ui/screens/friend_detail_screen.dart';
 import 'package:rise/ui/screens/stats_screen.dart';
@@ -107,6 +111,13 @@ Future<void> _pumpSignedIn(WidgetTester t, {List<CrewStanding> standings = const
 CrewMember _member(String id, String username) => CrewMember(
     id: id, username: username, displayName: username, avatarColor: '#7C9CF4');
 
+/// A leaderboard whose fetch never completes — the first-load window.
+class _PendingLeaderboardService extends FakeLeaderboardService {
+  @override
+  Future<List<CrewStanding>> fetchLeaderboard() =>
+      Completer<List<CrewStanding>>().future;
+}
+
 /// Pumps the Stats screen signed-in with a controllable streak + crew, for the
 /// accountability-ping card. Returns the [FakeNudgeService] so the ping's fan
 /// out can be asserted.
@@ -197,10 +208,35 @@ void main() {
     await t.pump();
     expect(find.text('4'), findsOneWidget); // current streak
     expect(find.text('9'), findsOneWidget); // best
-    expect(find.text('LAST 30 DAYS'), findsOneWidget); // SectionLabel uppercases
-    expect(find.text('THIS WEEK'), findsOneWidget);
+    // Calendar + week chart live together under one "Your mornings" section.
+    expect(find.text('YOUR MORNINGS'), findsOneWidget); // SectionLabel uppercases
+    expect(find.text('LAST 30 DAYS'), findsNothing);
+    expect(find.text('THIS WEEK'), findsNothing);
     // Too little data for insights — the patterns section stays hidden.
     expect(find.text('YOUR PATTERNS'), findsNothing);
+  });
+
+  testWidgets('rough-night and share sit side by side as one action row',
+      (t) async {
+    await _pump(t, _host(events: [evOn(DateTime.now())]));
+    await t.pump();
+    final rough = t.getCenter(find.text('Rough night?'));
+    final share = t.getCenter(find.text('Share your progress'));
+    expect((rough.dy - share.dy).abs(), lessThan(30),
+        reason: 'the two actions share one compact row');
+    expect(rough.dx, lessThan(share.dx));
+  });
+
+  testWidgets('data sections follow the narrative order', (t) async {
+    // Enough regular events for every data section to render.
+    final events = [for (var d = 10; d <= 25; d++) evOn(DateTime(2026, 3, d))];
+    await _pump(t, _host(events: events));
+    await t.pump();
+    double y(String label) => t.getTopLeft(find.text(label)).dy;
+    expect(y('OVERVIEW'), lessThan(y('YOUR MORNINGS')));
+    expect(y('YOUR MORNINGS'), lessThan(y('CONSISTENCY')));
+    expect(y('CONSISTENCY'), lessThan(y('ALERTNESS')));
+    expect(y('ALERTNESS'), lessThan(y('ACHIEVEMENTS')));
   });
 
   testWidgets('surfaces honest insights once there is enough data', (t) async {
@@ -327,9 +363,36 @@ void main() {
     ];
     await _pump(t, _host(events: events));
     await t.pump();
-    expect(find.text('ALERTNESS TREND'), findsOneWidget);
+    // One Alertness section — the trend folds under it, no second label.
+    expect(find.text('ALERTNESS'), findsOneWidget);
+    expect(find.text('ALERTNESS TREND'), findsNothing);
     expect(find.text('Trending up'), findsOneWidget);
     expect(find.byType(Sparkline), findsOneWidget);
+  });
+
+  testWidgets('leaderboard first load shows skeleton rows, not a spinner',
+      (t) async {
+    final auth = FakeAuthService();
+    await auth.signInWithGoogle();
+    await auth.claimUsername('me', displayName: 'Me');
+    addTearDown(auth.dispose);
+    t.view.physicalSize = const Size(1200, 4000);
+    t.view.devicePixelRatio = 1.0;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        wakeEventsProvider.overrideWith((ref) => Stream.value(const [])),
+        streakProvider.overrideWithValue(StreakStats.empty),
+        authServiceProvider.overrideWithValue(auth),
+        leaderboardServiceProvider
+            .overrideWithValue(_PendingLeaderboardService()),
+      ],
+      child: const MaterialApp(home: Scaffold(body: StatsScreen())),
+    ));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 50));
+    expect(find.byType(RiseSkeletonCircle), findsWidgets);
+    expect(find.byType(RiseSpinner), findsNothing);
   });
 
   testWidgets('share affordance runs the share step on tap', (t) async {

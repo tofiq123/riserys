@@ -1,11 +1,34 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/supabase_config.dart';
 import '../../domain/rise_account.dart';
 import 'auth_service.dart';
+import 'profile_cache.dart';
+
+/// Synchronous account priming from the locally restored Supabase session.
+/// `Supabase.initialize()` restores the session before runApp, so by the time
+/// this service is constructed the session truth is already known:
+///
+/// - no session → primed with `null`: the very first emission says signed out,
+///   and the sign-in UI may render without any flash risk;
+/// - session + cached profile for that user → primed with the cached account:
+///   the first emission is the full signed-in account (username included), so
+///   neither the sign-in hero nor the username-claim gate can flash;
+/// - session but no usable cache → NOT primed: nothing is emitted until the
+///   live profile fetch resolves, keeping consumers in a loading state (they
+///   render a neutral skeleton — never "signed out", never the claim gate).
+@visibleForTesting
+({RiseAccount? account, bool primed}) primeFromSession(
+    User? user, ProfileCache? cache) {
+  if (user == null) return (account: null, primed: true);
+  final cached = cache?.read(user.id);
+  if (cached != null) return (account: cached, primed: true);
+  return (account: null, primed: false);
+}
 
 /// Production [AuthService]: Google native sign-in → Supabase session, backed by
 /// a `profiles` row. Only constructed when the backend is configured, and only
@@ -17,13 +40,34 @@ class SupabaseAuthService implements AuthService {
   SupabaseAuthService({
     SupabaseClient? client,
     String? serverClientId,
+    ProfileCache? cache,
   })  : _client = client ?? Supabase.instance.client,
-        _serverClientId = serverClientId ?? SupabaseConfig.googleServerClientId {
-    // onAuthStateChange emits the initial session on subscribe, so this primes
-    // _current and drives every later change (sign-in/out, token refresh).
+        _serverClientId = serverClientId ?? SupabaseConfig.googleServerClientId,
+        _cache = cache {
+    // Prime from the locally restored session BEFORE subscribing, so the first
+    // account() emission never guesses "signed out" while a session exists
+    // (see primeFromSession). The onAuthStateChange listener below then
+    // refreshes/refutes that with the live profiles row and drives every later
+    // change (sign-in/out, token refresh).
+    final primed = primeFromSession(_client.auth.currentSession?.user, _cache);
+    _current = primed.account;
+    _primed = primed.primed;
     _authSub = _client.auth.onAuthStateChange.listen((state) async {
+      // Auth events process concurrently (the handler awaits a network
+      // fetch): a slow tokenRefreshed fetch must never overwrite the result
+      // of a newer signedOut. Only the latest event may apply its result.
+      final seq = ++_authSeq;
       final user = state.session?.user;
       final acct = user == null ? null : await _accountForUser(user);
+      if (seq != _authSeq) return; // superseded by a newer auth event
+      if (user == null) {
+        // Signed out (locally or remotely revoked): the cached profile must
+        // not resurrect this account on the next launch. Best-effort.
+        try {
+          await _cache?.clear();
+        } catch (_) {}
+      }
+      _primed = true;
       _current = acct;
       _accounts.add(acct);
     });
@@ -33,6 +77,7 @@ class SupabaseAuthService implements AuthService {
 
   final SupabaseClient _client;
   final String _serverClientId;
+  final ProfileCache? _cache;
 
   final StreamController<RiseAccount?> _accounts =
       StreamController<RiseAccount?>.broadcast();
@@ -40,12 +85,21 @@ class SupabaseAuthService implements AuthService {
   Future<void>? _googleInit;
   RiseAccount? _current;
 
+  /// Monotonic auth-event counter; see the onAuthStateChange handler.
+  int _authSeq = 0;
+
+  /// Whether [_current] reflects known truth. False only in the narrow
+  /// "session restored but profile not yet fetched and not cached" window —
+  /// there account() emits nothing, so providers stay in a loading state
+  /// instead of wrongly reporting signed-out.
+  bool _primed = true;
+
   @override
   RiseAccount? get current => _current;
 
   @override
   Stream<RiseAccount?> account() async* {
-    yield _current;
+    if (_primed) yield _current;
     yield* _accounts.stream;
   }
 
@@ -105,7 +159,7 @@ class SupabaseAuthService implements AuthService {
       if (prior != null && prior.id == user.id) return prior;
     }
 
-    return RiseAccount(
+    final account = RiseAccount(
       id: user.id,
       username: profile?['username'] as String?,
       displayName: (profile?['display_name'] as String?) ?? googleName ?? '',
@@ -113,6 +167,17 @@ class SupabaseAuthService implements AuthService {
           (profile?['avatar_color'] as String?) ?? _defaultAvatarColor,
       email: user.email,
     );
+    // Persist confirmed profile knowledge (including a confirmed missing row)
+    // so the next launch primes instantly. Never cache a failed fetch — that
+    // would freeze a guess — and never for a session that ended while the
+    // fetch was in flight (a sign-out just cleared this cache; a stale write
+    // here would resurrect the account). Best-effort throughout.
+    if (!fetchFailed && _client.auth.currentUser?.id == user.id) {
+      try {
+        await _cache?.write(account);
+      } catch (_) {}
+    }
+    return account;
   }
 
   @override
@@ -175,6 +240,11 @@ class SupabaseAuthService implements AuthService {
     } catch (_) {
       // best-effort; the Supabase sign-out below is what actually matters
     }
+    // Also cleared by the signedOut auth event; doing it here too covers a
+    // sign-out that never emits (e.g. the app is killed mid-call).
+    try {
+      await _cache?.clear();
+    } catch (_) {}
     await _client.auth.signOut();
   }
 

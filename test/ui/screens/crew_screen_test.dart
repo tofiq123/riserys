@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/auth/auth_service.dart';
+import 'package:rise/domain/rise_account.dart';
+import 'package:rise/ui/components/rise_skeleton.dart';
+import 'package:rise/ui/components/rise_spinner.dart';
 import 'package:rise/data/crew/crew_service.dart';
 import 'package:rise/data/feed/feed_service.dart';
 import 'package:rise/data/group/group_service.dart';
@@ -102,7 +107,119 @@ class _FlakyFeedService implements FeedService {
   Future<void> unreact(String feedId, String emoji) async {}
 }
 
+/// Auth whose account() never emits: the "session restored, profile still
+/// loading" window. The UI must show a neutral skeleton — never sign-in.
+class _RestoringAuthService implements AuthService {
+  final StreamController<RiseAccount?> _controller =
+      StreamController<RiseAccount?>.broadcast();
+
+  @override
+  Stream<RiseAccount?> account() => _controller.stream;
+
+  @override
+  RiseAccount? get current => null;
+
+  @override
+  Future<void> signInWithGoogle() async {}
+  @override
+  Future<bool> isUsernameAvailable(String username) async => true;
+  @override
+  Future<void> claimUsername(String username,
+      {required String displayName}) async {}
+  @override
+  Future<void> signOut() async {}
+  @override
+  Future<void> deleteAccount() async {}
+}
+
+/// Crew stream that never emits — the first-load window.
+class _PendingCrewService extends FakeCrewService {
+  @override
+  Stream<CrewState> watch() => const Stream.empty(broadcast: true);
+}
+
+/// Feed whose fetch never completes — the first-load window.
+class _PendingFeedService extends FakeFeedService {
+  @override
+  Future<List<FeedItem>> crewFeed() => Completer<List<FeedItem>>().future;
+}
+
 void main() {
+  group('loading truth', () {
+    testWidgets('restoring auth shows a skeleton — never the sign-in hero',
+        (t) async {
+      final auth = _RestoringAuthService();
+      await t.pumpWidget(ProviderScope(
+        overrides: [authServiceProvider.overrideWithValue(auth)],
+        child: const MaterialApp(home: Scaffold(body: CrewScreen())),
+      ));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 50));
+      expect(find.text('Sign in with Google'), findsNothing);
+      expect(find.text('Wake up together'), findsNothing);
+      expect(find.byType(RiseSkeletonCircle), findsWidgets);
+    });
+
+    testWidgets('crew still loading shows skeleton chips, not the empty hero',
+        (t) async {
+      final auth = FakeAuthService();
+      await auth.signInWithGoogle();
+      await auth.claimUsername('me', displayName: 'Me');
+      addTearDown(auth.dispose);
+      await t.pumpWidget(ProviderScope(
+        overrides: [
+          authServiceProvider.overrideWithValue(auth),
+          crewServiceProvider.overrideWithValue(_PendingCrewService()),
+          feedServiceProvider.overrideWithValue(_PendingFeedService()),
+        ],
+        child: const MaterialApp(home: Scaffold(body: CrewScreen())),
+      ));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 50));
+      expect(find.text('Mornings are better with a crew'), findsNothing);
+      expect(find.byType(RiseSkeletonCircle), findsWidgets);
+      // No indeterminate spinners anywhere on content load.
+      expect(find.byType(RiseSpinner), findsNothing);
+    });
+
+    testWidgets('signed in dashboard offers pull-to-refresh', (t) async {
+      await _pumpSignedIn(t);
+      expect(find.byType(RefreshIndicator), findsOneWidget);
+    });
+
+    testWidgets('the restoring skeleton fits a narrow (360dp) phone',
+        (t) async {
+      // 360dp is the most common Android width; a fixed-width skeleton row
+      // overflows here and throws in debug. Regression guard.
+      t.view.physicalSize = const Size(1080, 2400);
+      t.view.devicePixelRatio = 3.0;
+      addTearDown(t.view.reset);
+      final auth = _RestoringAuthService();
+      await t.pumpWidget(ProviderScope(
+        overrides: [authServiceProvider.overrideWithValue(auth)],
+        child: const MaterialApp(home: Scaffold(body: CrewScreen())),
+      ));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 50));
+      expect(t.takeException(), isNull);
+      expect(find.byType(RiseSkeletonCircle), findsWidgets);
+    });
+
+    testWidgets('pull-to-refresh reloads the crew itself, not just the feed',
+        (t) async {
+      final crew = await _pumpSignedIn(t);
+      // The arm threshold scales with viewport height (25%); the tall test
+      // viewport needs a correspondingly long pull.
+      await t.drag(find.byType(ListView).first, const Offset(0, 900));
+      await t.pump(); // start the indicator
+      await t.pump(const Duration(seconds: 1)); // run onRefresh
+      await t.pumpAndSettle();
+      expect(crew.reloads, greaterThan(0),
+          reason: 'the gesture must refresh the This-morning strip and '
+              'requests banner too');
+    });
+  });
+
   group('signed out', () {
     testWidgets('unconfigured build shows the hero without a dead sign-in',
         (t) async {

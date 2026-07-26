@@ -16,12 +16,13 @@ import '../components/crew_requests_sheet.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
 import '../components/rise_error_card.dart';
-import '../components/rise_spinner.dart';
+import '../components/rise_skeleton.dart';
 import '../components/section_label.dart';
 import '../components/toast.dart';
 import '../state/auth_providers.dart';
 import '../state/crew_providers.dart';
 import '../state/feed_providers.dart';
+import '../state/group_providers.dart';
 import '../state/status_providers.dart';
 import '../state/voice_providers.dart';
 import '../theme/tokens.dart';
@@ -51,9 +52,49 @@ class CrewScreen extends ConsumerStatefulWidget {
 }
 
 class _CrewScreenState extends ConsumerState<CrewScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Stale-while-revalidate: the session caches render instantly; a reopen
+    // quietly refreshes anything already loaded (Riverpod keeps the previous
+    // data during the refetch, so nothing flickers). First loads are left
+    // alone — the warmup host already started them.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Signed-in only: reading these while the account is still resolving
+      // would initialize them too early and double-fetch once it lands.
+      if (ref.read(accountProvider).value == null) return;
+      if (ref.read(crewFeedProvider).hasValue) {
+        ref.invalidate(crewFeedProvider);
+      }
+      if (ref.read(myGroupsProvider).hasValue) {
+        ref.invalidate(myGroupsProvider);
+      }
+      if (ref.read(voiceInboxProvider).hasValue) {
+        ref.invalidate(voiceInboxProvider);
+      }
+    });
+  }
+
   void _push(Widget screen) {
     Navigator.of(context)
         .push(MaterialPageRoute<void>(builder: (_) => screen));
+  }
+
+  Future<void> _refresh() async {
+    ref.invalidate(crewFeedProvider);
+    ref.invalidate(myGroupsProvider);
+    ref.invalidate(voiceInboxProvider);
+    // Settle before the indicator retracts; a failed fetch just keeps the
+    // section's own error card — never breaks the gesture. The crew itself
+    // reloads through its service: friendships have no Realtime, so this is
+    // the only way a peer's new request/accept becomes visible on demand.
+    await Future.wait<Object?>([
+      ref.read(crewServiceProvider).reload(),
+      ref.read(crewFeedProvider.future),
+      ref.read(myGroupsProvider.future),
+      ref.read(voiceInboxProvider.future),
+    ]).catchError((_) => const <Object?>[]);
   }
 
   Future<void> _openAddSheet(
@@ -70,46 +111,64 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final account = ref.watch(accountProvider).value;
+    final accountAsync = ref.watch(accountProvider);
+    final account = accountAsync.value;
     if (account == null) {
+      // Loading with nothing known yet is NOT signed out: render a quiet
+      // skeleton until the truth arrives, so sign-in can never flash.
+      if (accountAsync.isLoading) return const _CrewRestoringSkeleton();
       final configured =
           ref.watch(authServiceProvider) is! DisabledAuthService;
       return _CrewSignedOut(configured: configured);
     }
 
-    final crew = ref.watch(crewProvider).value ?? CrewState.empty;
+    final crewAsync = ref.watch(crewProvider);
+    final crewLoading = crewAsync.isLoading && !crewAsync.hasValue;
+    final crew = crewAsync.value ?? CrewState.empty;
     final statuses =
         ref.watch(crewStatusesProvider).value ?? const <String, CrewStatus>{};
     final feed = ref.watch(crewFeedProvider);
     final hasCrew = crew.friends.isNotEmpty;
     // With no crew the hero carries the screen; the feed section only stays
-    // if there is genuinely something to cheer (e.g. your own wakes).
-    final showFeed = hasCrew || (feed.value?.isNotEmpty ?? false);
+    // if there is genuinely something to cheer (e.g. your own wakes). While
+    // the crew is still loading the feed keeps its slot (as a skeleton) so
+    // the page doesn't reflow when data lands.
+    final showFeed =
+        crewLoading || hasCrew || (feed.value?.isNotEmpty ?? false);
 
     return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(
-            RiseSpacing.screen, 8, RiseSpacing.screen, 40),
-        children: [
-          CrewEntrance(index: 0, child: _header(crew)),
-          const SizedBox(height: 20),
-          if (crew.incoming.isNotEmpty) ...[
-            CrewEntrance(index: 1, child: _requestsBanner(crew.incoming)),
+      child: RefreshIndicator(
+        color: RiseColors.primary,
+        backgroundColor: RiseColors.card,
+        onRefresh: _refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(
+              RiseSpacing.screen, 8, RiseSpacing.screen, 40),
+          children: [
+            CrewEntrance(index: 0, child: _header(crew)),
             const SizedBox(height: 20),
+            if (crew.incoming.isNotEmpty) ...[
+              CrewEntrance(index: 1, child: _requestsBanner(crew.incoming)),
+              const SizedBox(height: 20),
+            ],
+            if (crewLoading) ...[
+              const CrewEntrance(index: 2, child: _MorningStripSkeleton()),
+              const SizedBox(height: 26),
+            ] else if (hasCrew) ...[
+              CrewEntrance(index: 2, child: _morningStrip(crew, statuses)),
+              const SizedBox(height: 26),
+            ] else ...[
+              CrewEntrance(index: 2, child: _emptyCrewHero()),
+              const SizedBox(height: 26),
+            ],
+            if (showFeed) ...[
+              CrewEntrance(index: 3, child: _feedSection(feed)),
+              const SizedBox(height: 26),
+            ],
+            CrewEntrance(index: 4, child: _groupsSection()),
           ],
-          if (hasCrew) ...[
-            CrewEntrance(index: 2, child: _morningStrip(crew, statuses)),
-            const SizedBox(height: 26),
-          ] else ...[
-            CrewEntrance(index: 2, child: _emptyCrewHero()),
-            const SizedBox(height: 26),
-          ],
-          if (showFeed) ...[
-            CrewEntrance(index: 3, child: _feedSection(feed)),
-            const SizedBox(height: 26),
-          ],
-          CrewEntrance(index: 4, child: _groupsSection()),
-        ],
+        ),
       ),
     );
   }
@@ -282,10 +341,11 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
         ),
         const SizedBox(height: 6),
         feed.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.symmetric(vertical: 18),
-            child: Center(child: RiseSpinner()),
-          ),
+          loading: () => const Column(children: [
+            _FeedRowSkeleton(),
+            SizedBox(height: 10),
+            _FeedRowSkeleton(),
+          ]),
           error: (_, __) => RiseErrorCard(
             message: "Couldn't load your crew's activity.",
             onRetry: () => ref.invalidate(crewFeedProvider),
@@ -330,6 +390,107 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
         SizedBox(height: 12),
         GroupsTab(),
       ],
+    );
+  }
+}
+
+/// Skeleton for the whole Crew page while the account itself is restoring:
+/// header bar, then the This-morning strip shape. Mirrors the signed-in
+/// layout so the real content lands without a jump.
+class _CrewRestoringSkeleton extends StatelessWidget {
+  const _CrewRestoringSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(
+            RiseSpacing.screen, 8, RiseSpacing.screen, 40),
+        children: [
+          Row(
+            children: [
+              Text('Crew', style: RiseText.display),
+              const Spacer(),
+              const RiseSkeletonCircle(size: 44),
+              const SizedBox(width: 10),
+              const RiseSkeletonCircle(size: 44),
+            ],
+          ),
+          const SizedBox(height: 32),
+          const _MorningStripSkeleton(),
+          const SizedBox(height: 26),
+          const _FeedRowSkeleton(),
+          const SizedBox(height: 10),
+          const _FeedRowSkeleton(),
+        ],
+      ),
+    );
+  }
+}
+
+/// The This-morning strip's loading shape: four avatar-and-name ghosts.
+class _MorningStripSkeleton extends StatelessWidget {
+  const _MorningStripSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionLabel('This morning'),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 104,
+          // Mirrors the real strip's horizontal list so four ghosts can never
+          // overflow a narrow phone; it just clips like the content it stands
+          // in for. Non-scrollable — there is nothing to scroll to yet.
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: 4,
+            separatorBuilder: (_, __) => const SizedBox(width: 6),
+            itemBuilder: (_, __) => const SizedBox(
+              width: 78,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  RiseSkeletonCircle(size: 52),
+                  SizedBox(height: 9),
+                  RiseSkeleton(width: 44, height: 10),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One feed tile's loading shape: avatar ghost + two text bars in a card.
+class _FeedRowSkeleton extends StatelessWidget {
+  const _FeedRowSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return RiseCard(
+      child: Row(
+        children: [
+          const RiseSkeletonCircle(size: 38),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                RiseSkeleton(width: 140, height: 12),
+                SizedBox(height: 8),
+                RiseSkeleton(width: 90, height: 10),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

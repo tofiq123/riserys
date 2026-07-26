@@ -7,6 +7,7 @@ import '../../domain/crew_member.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/group.dart';
 import '../../domain/group_challenge.dart';
+import 'auth_providers.dart';
 
 /// The app's [GroupService]. Configured → a real [SupabaseGroupService];
 /// otherwise a [DisabledGroupService] (no groups, no writes). Tests override
@@ -18,12 +19,13 @@ final groupServiceProvider = Provider<GroupService>((ref) {
   return SupabaseGroupService();
 });
 
-/// The signed-in user's groups. Fetch-on-open; refresh with
-/// `ref.invalidate(myGroupsProvider)`. Empty while loading, unconfigured, or
-/// signed out — the app is usable regardless. (Only ever read from the Groups
-/// sub-tab, which the Crew screen renders solely for a signed-in account, so it
-/// is first computed with a live session — mirroring the crew leaderboard.)
+/// The signed-in user's groups. Cached for the session (warmed at shell
+/// level); refresh with `ref.invalidate(myGroupsProvider)` after create/join/
+/// leave, on pull-to-refresh, or on tab open. Keyed to the signed-in account
+/// id so cached groups never leak across a sign-out/sign-in swap. Empty while
+/// loading, unconfigured, or signed out — the app is usable regardless.
 final myGroupsProvider = FutureProvider<List<Group>>((ref) {
+  ref.watch(accountProvider.select((a) => a.value?.id));
   return ref.watch(groupServiceProvider).myGroups();
 });
 

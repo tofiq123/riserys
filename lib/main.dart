@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 
@@ -13,6 +14,7 @@ import 'config/supabase_config.dart';
 import 'l10n/app_localizations.dart';
 import 'data/alarm_sync_service.dart';
 import 'data/app_settings.dart';
+import 'data/auth/profile_cache.dart';
 import 'data/iap/revenuecat_entitlement_service.dart';
 import 'data/invite_links.dart';
 import 'data/local/alarm_repository.dart';
@@ -76,10 +78,14 @@ Future<void> main() async {
   }
 
   // App preferences (the onboarding flag) — local + fast. A failure must not
-  // stop launch or trap the user in onboarding.
+  // stop launch or trap the user in onboarding. The same SharedPreferences
+  // instance backs the profile cache that lets the account render instantly.
   AppSettings? settings;
+  ProfileCache? profileCache;
   try {
-    settings = await AppSettings.load();
+    final prefs = await SharedPreferences.getInstance();
+    settings = AppSettings(prefs);
+    profileCache = ProfileCache(prefs);
   } catch (e) {
     debugPrint('Riserys: settings load failed: $e');
   }
@@ -98,6 +104,8 @@ Future<void> main() async {
   runApp(ProviderScope(
     overrides: [
       if (settings != null) appSettingsProvider.overrideWithValue(settings),
+      if (profileCache != null)
+        profileCacheProvider.overrideWithValue(profileCache),
     ],
     child: RiseApp(repository: repository, settings: settings),
   ));

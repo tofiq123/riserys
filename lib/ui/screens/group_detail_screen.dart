@@ -10,12 +10,14 @@ import '../../domain/crew_score.dart';
 import '../../domain/crew_standing.dart';
 import '../../domain/group.dart';
 import '../../domain/group_challenge.dart';
+import '../../domain/group_roster.dart';
 import '../components/crew_avatar.dart';
 import '../components/crew_entrance.dart';
 import '../components/crew_pill.dart';
+import '../components/crew_sheet.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
-import '../components/rise_spinner.dart';
+import '../components/rise_skeleton.dart';
 import '../components/section_label.dart';
 import '../components/toast.dart';
 import '../state/auth_providers.dart';
@@ -175,6 +177,27 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
     final me = ref.watch(accountProvider).value?.id;
     final board = ref.watch(groupLeaderboardProvider(_gid));
     final members = ref.watch(groupMembersProvider(_gid));
+    final challengeAsync = ref.watch(groupChallengeProvider(_gid));
+    final challenge = challengeAsync.value;
+
+    final standings = board.value ?? const <CrewStanding>[];
+    // First load (nothing cached yet) → skeleton rows; afterwards data renders
+    // even while a refresh is in flight.
+    final loading = (board.isLoading && !board.hasValue) ||
+        (members.isLoading && !members.hasValue);
+    final failed = board.hasError && members.hasError;
+    final roster = mergeRoster(standings, members.value ?? const []);
+    // While a race runs, each ranked row carries its in/out chip — the same
+    // list, one more column, instead of a third list of the same people.
+    final race = (challenge != null && challenge.isActive)
+        ? {
+            for (final r in challengeStandings(
+                startedAt: challenge.startedAt,
+                now: DateTime.now(),
+                standings: standings))
+              r.standing.id: r.inRace
+          }
+        : null;
 
     return Scaffold(
       backgroundColor: RiseColors.appBg,
@@ -187,54 +210,43 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
             const SizedBox(height: 18),
             CrewEntrance(index: 1, child: _inviteCard()),
             const SizedBox(height: 26),
-            CrewEntrance(
-              index: 2,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SectionLabel('Group leaderboard'),
-                  const SizedBox(height: 12),
-                  board.when(
-                    data: (standings) => standings.isEmpty
-                        ? Text('No streaks yet — start waking up together.',
-                            style: RiseText.caption)
-                        : Column(children: [
-                            _scoreCard(computeCrewScore(standings)),
-                            const SizedBox(height: 14),
-                            for (var i = 0; i < standings.length; i++)
-                              _standingRow(i + 1, standings[i]),
-                          ]),
-                    loading: _spinner,
-                    error: (_, __) => Text('Could not load the leaderboard.',
-                        style: RiseText.caption),
-                  ),
-                ],
+            if (standings.isNotEmpty) ...[
+              CrewEntrance(
+                index: 2,
+                child: _scoreCard(computeCrewScore(standings),
+                    challenge: challenge, standings: standings),
               ),
-            ),
-            const SizedBox(height: 26),
-            CrewEntrance(index: 3, child: _streakRaceSection()),
-            const SizedBox(height: 26),
+              const SizedBox(height: 14),
+            ],
             CrewEntrance(
-              index: 4,
+              index: 3,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SectionLabel('Members'),
                   const SizedBox(height: 12),
-                  members.when(
-                    data: (list) => list.isEmpty
-                        ? Text('No members to show yet.',
-                            style: RiseText.caption)
-                        : Column(children: [
-                            for (final m in list) _memberRow(m, me)
-                          ]),
-                    loading: _spinner,
-                    error: (_, __) => Text('Could not load members.',
-                        style: RiseText.caption),
-                  ),
+                  if (loading)
+                    const Column(children: [
+                      _MemberRowSkeleton(),
+                      _MemberRowSkeleton(),
+                      _MemberRowSkeleton(),
+                    ])
+                  else if (failed)
+                    Text('Could not load members.', style: RiseText.caption)
+                  else if (roster.isEmpty)
+                    Text('No members to show yet.', style: RiseText.caption)
+                  else
+                    Column(children: [
+                      for (final entry in roster)
+                        _memberRow(entry, me, race: race),
+                    ]),
                 ],
               ),
             ),
+            if (challenge == null && challengeAsync.hasValue) ...[
+              const SizedBox(height: 16),
+              CrewEntrance(index: 4, child: _raceCta()),
+            ],
             const SizedBox(height: 30),
             CrewEntrance(index: 5, child: _footerAction()),
           ],
@@ -242,11 +254,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
       ),
     );
   }
-
-  Widget _spinner() => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 18),
-        child: Center(child: RiseSpinner()),
-      );
 
   Widget _header() => Row(
         children: [
@@ -319,11 +326,24 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
         ),
       );
 
-  Widget _scoreCard(CrewScore score) {
+  Widget _scoreCard(CrewScore score,
+      {GroupChallenge? challenge, required List<CrewStanding> standings}) {
     final you = score.you;
     final sub = you == null
         ? '${score.memberCount} climbing together.'
         : 'Your part: ${you.points} pts · ${you.sharePercent}% of the group.';
+    final c = challenge;
+    final live = c != null && c.isActive;
+    String? raceLine;
+    if (live) {
+      final now = DateTime.now();
+      final day = challengeDayCount(startedAt: c.startedAt, now: now);
+      final alive = challengeStandings(
+              startedAt: c.startedAt, now: now, standings: standings)
+          .where((r) => r.inRace)
+          .length;
+      raceLine = 'Streak race · Day $day · $alive still standing';
+    }
     return Container(
       padding: const EdgeInsets.all(RiseSpacing.screen),
       decoration: BoxDecoration(
@@ -359,211 +379,228 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
                 style:
                     RiseText.caption.copyWith(color: RiseColors.primaryText)),
           ),
+          if (raceLine != null) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Text('🔥', style: TextStyle(fontSize: 14)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(raceLine,
+                      style: RiseText.caption.copyWith(
+                          color: RiseColors.primaryText,
+                          fontWeight: FontWeight.w600)),
+                ),
+                if (_group.isOwner && live)
+                  GestureDetector(
+                    key: const Key('end-race-action'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _busy ? null : () => _endRace(c),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 4),
+                      child: Opacity(
+                        opacity: 0.75,
+                        child: Text('End race',
+                            style: RiseText.caption.copyWith(
+                                color: RiseColors.primaryText,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _standingRow(int rank, CrewStanding s) {
-    final onTimePct = (s.stats.onTimeRate * 100).round();
+  /// The "start a race" affordance, shown only while no race runs: a real CTA
+  /// for the owner, a quiet explainer for members.
+  Widget _raceCta() {
+    if (!_group.isOwner) {
+      return RiseCard(
+        child: Row(
+          children: [
+            const Text('🔥', style: TextStyle(fontSize: 16)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                  'No streak race running — the group owner can start one.',
+                  style: RiseText.caption),
+            ),
+          ],
+        ),
+      );
+    }
+    return RiseCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Everyone keeps their streak alive — last one standing wins. '
+              'Kind, not cut-throat.',
+              style: RiseText.caption),
+          const SizedBox(height: 10),
+          PrimaryButton(
+            label: 'Start a streak race',
+            onPressed: _busy ? null : _startRace,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One merged member row: rank, avatar, identity, race chip (when a race
+  /// runs), streak — and the owner's remove action behind a per-row overflow.
+  /// Every person on this page appears exactly once, here.
+  Widget _memberRow(RosterEntry entry, String? me,
+      {required Map<String, bool>? race}) {
+    final m = entry.member;
+    final s = entry.standing;
+    final isOwner = m.id == _group.ownerId;
+    final isSelf = m.id == me || (s?.isMe ?? false);
+    final canRemove = _group.isOwner && !isSelf;
+    final onTimePct =
+        s == null ? null : (s.stats.onTimeRate * 100).round();
+    final inRace = race?[m.id];
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
         padding: const EdgeInsets.all(RiseSpacing.cardPad),
         decoration: BoxDecoration(
-          color: s.isMe ? RiseColors.accentSoft : RiseColors.card,
+          color: isSelf ? RiseColors.accentSoft : RiseColors.card,
           borderRadius: BorderRadius.circular(RiseRadii.base),
           border: Border.all(
-              color: s.isMe ? RiseColors.accent : RiseColors.border),
+              color: isSelf ? RiseColors.accent : RiseColors.border),
         ),
         child: Row(
           children: [
             SizedBox(
               width: 22,
-              child: Text('$rank',
-                  style: RiseText.mono(size: 15, weight: FontWeight.w600)),
+              child: Text(entry.rank == null ? '·' : '${entry.rank}',
+                  style: RiseText.mono(
+                      size: 15,
+                      weight: FontWeight.w600,
+                      color: entry.rank == null
+                          ? RiseColors.textFaint
+                          : RiseColors.text)),
             ),
             const SizedBox(width: 8),
             CrewAvatar(
-                username: s.username, colorHex: s.avatarColor, size: 34),
+                username: m.username, colorHex: m.avatarColor, size: 34),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                            m.displayName.isNotEmpty
+                                ? m.displayName
+                                : '@${m.username}',
+                            style: RiseText.body
+                                .copyWith(fontWeight: FontWeight.w600),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      if (isOwner) ...[
+                        const SizedBox(width: 6),
+                        _badge('Owner'),
+                      ],
+                    ],
+                  ),
                   Text(
-                      s.displayName.isNotEmpty
-                          ? s.displayName
-                          : '@${s.username}',
-                      style:
-                          RiseText.body.copyWith(fontWeight: FontWeight.w600),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  Text('@${s.username} · $onTimePct% on time',
+                      onTimePct == null
+                          ? '@${m.username} · no wakes yet'
+                          : '@${m.username} · $onTimePct% on time',
                       style: RiseText.caption,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text('${s.stats.currentStreak}',
-                    style: RiseText.mono(size: 18, weight: FontWeight.w600)),
-                Text('day streak',
-                    style: RiseText.caption.copyWith(fontSize: 10)),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// The "Streak race" section: start one (owner) when none runs, else the live
-  /// standings (who's still in vs out) derived from the leaderboard + start day.
-  Widget _streakRaceSection() {
-    final challenge = ref.watch(groupChallengeProvider(_gid));
-    final board = ref.watch(groupLeaderboardProvider(_gid));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionLabel('Streak race'),
-        const SizedBox(height: 12),
-        challenge.when(
-          loading: _spinner,
-          error: (_, __) =>
-              Text('Could not load the race.', style: RiseText.caption),
-          data: (c) {
-            if (c == null) {
-              if (!_group.isOwner) {
-                return Text(
-                    'No streak race running. The group owner can start one.',
-                    style: RiseText.caption);
-              }
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            if (inRace != null) ...[
+              const SizedBox(width: 6),
+              Text(inRace ? '🔥' : '💤',
+                  style: const TextStyle(fontSize: 15)),
+            ],
+            if (s != null) ...[
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                      'Everyone keeps their streak alive — last one standing '
-                      'wins. Kind, not cut-throat.',
-                      style: RiseText.caption),
-                  const SizedBox(height: 10),
-                  PrimaryButton(
-                    label: 'Start a streak race',
-                    onPressed: _busy ? null : _startRace,
-                  ),
-                ],
-              );
-            }
-            final standings = board.value ?? const <CrewStanding>[];
-            final now = DateTime.now();
-            final rows = challengeStandings(
-                startedAt: c.startedAt, now: now, standings: standings);
-            final day = challengeDayCount(startedAt: c.startedAt, now: now);
-            final alive = rows.where((r) => r.inRace).length;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Day $day · $alive still standing',
-                    style:
-                        RiseText.caption.copyWith(color: RiseColors.textDim)),
-                const SizedBox(height: 10),
-                for (final r in rows) _raceRow(r),
-                if (_group.isOwner) ...[
-                  const SizedBox(height: 6),
-                  GhostButton(
-                      label: 'End race',
-                      onPressed: _busy ? null : () => _endRace(c)),
-                ],
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _raceRow(ChallengeStanding r) {
-    final s = r.standing;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: RiseCard(
-        child: Row(
-          children: [
-            Text(r.inRace ? '🔥' : '💤', style: const TextStyle(fontSize: 18)),
-            const SizedBox(width: 12),
-            CrewAvatar(
-                username: s.username, colorHex: s.avatarColor, size: 32),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                  s.displayName.isNotEmpty ? s.displayName : '@${s.username}',
-                  style: RiseText.body.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: r.inRace ? RiseColors.text : RiseColors.textDim),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
-            ),
-            const SizedBox(width: 8),
-            Text(r.inRace ? '${s.stats.currentStreak}d' : 'out',
-                style: RiseText.mono(
-                    size: 14,
-                    weight: FontWeight.w600,
-                    color: r.inRace ? RiseColors.text : RiseColors.textFaint)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _memberRow(CrewMember m, String? me) {
-    final isOwner = m.id == _group.ownerId;
-    final isSelf = m.id == me;
-    final canRemove = _group.isOwner && !isSelf;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: RiseCard(
-        child: Row(
-          children: [
-            CrewAvatar(
-                username: m.username, colorHex: m.avatarColor, size: 38),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                      m.displayName.isNotEmpty
-                          ? m.displayName
-                          : '@${m.username}',
+                  Text('${s.stats.currentStreak}',
                       style:
-                          RiseText.body.copyWith(fontWeight: FontWeight.w600),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  Text('@${m.username}',
-                      style:
-                          RiseText.mono(size: 12, color: RiseColors.textDim),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
+                          RiseText.mono(size: 18, weight: FontWeight.w600)),
+                  Text('day streak',
+                      style: RiseText.caption.copyWith(fontSize: 10)),
                 ],
               ),
-            ),
-            if (isOwner) ...[
-              const SizedBox(width: 8),
-              _badge('Owner'),
             ],
-            if (canRemove) ...[
-              const SizedBox(width: 8),
-              CrewPill('Remove',
-                  onTap: _busy ? null : () => _removeMember(m), danger: true),
-            ],
+            if (canRemove)
+              Semantics(
+                button: true,
+                label: 'Member actions for @${m.username}',
+                child: GestureDetector(
+                  key: Key('member-overflow-${m.username}'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _busy ? null : () => _memberActions(m),
+                  child: Container(
+                    width: 36,
+                    height: 44,
+                    alignment: Alignment.centerRight,
+                    child: Icon(Icons.more_vert,
+                        size: 18, color: RiseColors.textFaint),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _memberActions(CrewMember m) async {
+    final remove = await showCrewSheet<bool>(
+      context,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(
+            RiseSpacing.screen, 6, RiseSpacing.screen, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('@${m.username}', style: RiseText.title),
+            const SizedBox(height: 10),
+            GestureDetector(
+              key: const Key('member-remove-action'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(sheetContext).pop(true),
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 52),
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  children: [
+                    Icon(Icons.person_remove_outlined,
+                        size: 20, color: RiseColors.danger),
+                    const SizedBox(width: 12),
+                    Text('Remove from group',
+                        style: RiseText.body.copyWith(
+                            color: RiseColors.danger,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (remove == true) await _removeMember(m);
   }
 
   Widget _footerAction() => _group.isOwner
@@ -604,6 +641,38 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
                   color: RiseColors.danger,
                   fontWeight: FontWeight.w600,
                   fontSize: 14)),
+        ),
+      ),
+    );
+  }
+}
+
+/// One member row's loading shape: rank dot, avatar ghost, two text bars.
+class _MemberRowSkeleton extends StatelessWidget {
+  const _MemberRowSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: RiseCard(
+        child: Row(
+          children: [
+            const SizedBox(width: 22),
+            const SizedBox(width: 8),
+            const RiseSkeletonCircle(size: 34),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  RiseSkeleton(width: 120, height: 12),
+                  SizedBox(height: 7),
+                  RiseSkeleton(width: 150, height: 10),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
