@@ -40,8 +40,9 @@ void paintOutcomeMark(
   bool freeze = false,
   bool square = false,
   bool dimmed = false,
+  Color? ink,
 }) {
-  final color = outcomeColor(outcome);
+  final color = outcomeColor(outcome, ink: ink);
   final o = dimmed ? 0.45 : 1.0;
 
   Paint fill(Color c) => Paint()
@@ -124,13 +125,20 @@ void paintOutcomeMark(
 
 /// The token each outcome wears. Late is deliberately the neutral ink, never
 /// `danger`: a late morning is information, not a failure to be shamed.
-Color outcomeColor(RhythmOutcome outcome) => switch (outcome) {
+///
+/// [ink] replaces the *neutral* tokens only, for marks drawn on the inverse
+/// ground of a hero card where `text` would be black on black. The semantic
+/// hues stay put — they read on both grounds, and changing them per surface
+/// would be exactly the drift this file exists to prevent.
+Color outcomeColor(RhythmOutcome outcome, {Color? ink}) => switch (outcome) {
       RhythmOutcome.onTime => RiseColors.positive,
-      RhythmOutcome.late => RiseColors.text,
+      RhythmOutcome.late => ink ?? RiseColors.text,
       RhythmOutcome.sleptThrough => RiseColors.danger,
-      RhythmOutcome.restDay => RiseColors.textFaint,
+      RhythmOutcome.restDay =>
+        ink?.withValues(alpha: 0.55) ?? RiseColors.textFaint,
       RhythmOutcome.pending => RiseColors.waking,
-      RhythmOutcome.noAlarm => RiseColors.border,
+      RhythmOutcome.noAlarm =>
+        ink?.withValues(alpha: 0.28) ?? RiseColors.border,
     };
 
 /// The words beside each mark. Never a judgement.
@@ -153,6 +161,7 @@ class OutcomeMark extends StatelessWidget {
     this.freeze = false,
     this.square = false,
     this.surface,
+    this.ink,
   });
 
   final RhythmOutcome outcome;
@@ -163,6 +172,9 @@ class OutcomeMark extends StatelessWidget {
   /// The ground behind the mark — a hollow ring is filled with it so nothing
   /// shows through. Defaults to the card surface.
   final Color? surface;
+
+  /// Replaces the neutral tokens, for marks on an inverse-ground hero.
+  final Color? ink;
 
   @override
   Widget build(BuildContext context) {
@@ -175,6 +187,7 @@ class OutcomeMark extends StatelessWidget {
           freeze: freeze,
           square: square,
           surface: surface ?? RiseColors.card,
+          ink: ink,
         ),
       ),
     );
@@ -187,12 +200,14 @@ class _MarkPainter extends CustomPainter {
     required this.freeze,
     required this.square,
     required this.surface,
+    this.ink,
   });
 
   final RhythmOutcome outcome;
   final bool freeze;
   final bool square;
   final Color surface;
+  final Color? ink;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -204,6 +219,7 @@ class _MarkPainter extends CustomPainter {
       surface: surface,
       freeze: freeze,
       square: square,
+      ink: ink,
     );
   }
 
@@ -212,7 +228,8 @@ class _MarkPainter extends CustomPainter {
       old.outcome != outcome ||
       old.freeze != freeze ||
       old.square != square ||
-      old.surface != surface;
+      old.surface != surface ||
+      old.ink != ink;
 }
 
 /// The legend that must accompany any surface drawing outcomes. Always present,
