@@ -10,6 +10,7 @@ import '../components/confirm_dialog.dart';
 import '../components/permissions_section.dart';
 import '../components/rise_buttons.dart';
 import '../components/rise_card.dart';
+import '../components/rise_skeleton.dart';
 import '../components/section_label.dart';
 import '../components/toast.dart';
 import '../state/auth_providers.dart';
@@ -43,54 +44,25 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 24),
           const _PremiumEntry(),
           const SizedBox(height: 12),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onSettings,
-            child: RiseCard(
-              child: Row(
-                children: [
-                  Icon(Icons.tune, color: RiseColors.textDim, size: 22),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text('Settings',
-                        style:
-                            RiseText.body.copyWith(fontWeight: FontWeight.w600)),
-                  ),
-                  Icon(Icons.chevron_right,
-                      color: RiseColors.textFaint, size: 20),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          GestureDetector(
-            key: const Key('wellbeing-checkin-entry'),
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => const WellbeingCheckinScreen())),
-            child: RiseCard(
-              child: Row(
-                children: [
-                  Icon(Icons.favorite_outline,
-                      color: RiseColors.textDim, size: 22),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('How you\'ve been feeling',
-                            style: RiseText.body
-                                .copyWith(fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 2),
-                        Text('A quick, private check-in — optional, anytime',
-                            style: RiseText.caption),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.chevron_right,
-                      color: RiseColors.textFaint, size: 20),
-                ],
-              ),
+          RiseCard(
+            child: Column(
+              children: [
+                _NavRow(
+                  icon: Icons.tune,
+                  title: 'Settings',
+                  onTap: onSettings,
+                ),
+                Divider(height: 24, color: RiseColors.divider),
+                _NavRow(
+                  key: const Key('wellbeing-checkin-entry'),
+                  icon: Icons.favorite_outline,
+                  title: 'How you\'ve been feeling',
+                  caption: 'A quick, private check-in — optional, anytime',
+                  onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                          builder: (_) => const WellbeingCheckinScreen())),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 24),
@@ -98,35 +70,15 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 6),
           Text('Make sure Riserys can always reach you.', style: RiseText.caption),
           const SizedBox(height: 12),
-          GestureDetector(
-            key: const Key('setup-guardian-entry'),
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) =>
-                    SetupGuardianScreen(permissions: permissions))),
-            child: RiseCard(
-              child: Row(
-                children: [
-                  Icon(Icons.shield_outlined,
-                      color: RiseColors.textDim, size: 22),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Setup Guardian',
-                            style: RiseText.body
-                                .copyWith(fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 2),
-                        Text('Check everything that keeps your alarm firing',
-                            style: RiseText.caption),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.chevron_right,
-                      color: RiseColors.textFaint, size: 20),
-                ],
-              ),
+          RiseCard(
+            child: _NavRow(
+              key: const Key('setup-guardian-entry'),
+              icon: Icons.shield_outlined,
+              title: 'Setup Guardian',
+              caption: 'Check everything that keeps your alarm firing',
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) =>
+                      SetupGuardianScreen(permissions: permissions))),
             ),
           ),
           const SizedBox(height: 12),
@@ -155,6 +107,54 @@ class ProfileScreen extends ConsumerWidget {
         Text(label, style: RiseText.body.copyWith(color: RiseColors.textDim)),
         Text(value, style: RiseText.body.copyWith(fontWeight: FontWeight.w600)),
       ],
+    );
+  }
+}
+
+/// One row of a grouped Profile card: icon, title (+ optional caption),
+/// chevron. Rows sharing a card are separated by a hairline divider — one
+/// surface per group instead of a stack of identical single-row cards.
+class _NavRow extends StatelessWidget {
+  const _NavRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.caption,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? caption;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Row(
+        children: [
+          Icon(icon, color: RiseColors.textDim, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: caption == null
+                ? Text(title,
+                    style: RiseText.body.copyWith(fontWeight: FontWeight.w600))
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                          style: RiseText.body
+                              .copyWith(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(caption!, style: RiseText.caption),
+                    ],
+                  ),
+          ),
+          Icon(Icons.chevron_right, color: RiseColors.textFaint, size: 20),
+        ],
+      ),
     );
   }
 }
@@ -347,11 +347,38 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
   @override
   Widget build(BuildContext context) {
     final configured = ref.watch(authServiceProvider) is! DisabledAuthService;
-    final account = ref.watch(accountProvider).value;
+    final accountAsync = ref.watch(accountProvider);
+    final account = accountAsync.value;
 
     if (!configured) return _guestCard();
-    if (account == null) return _signInCard();
+    if (account == null) {
+      // Restoring ≠ signed out: hold the account's shape until truth arrives
+      // so the sign-in card can never flash for an already signed-in user.
+      if (accountAsync.isLoading) return _restoringCard();
+      return _signInCard();
+    }
     return _accountCard(account);
+  }
+
+  Widget _restoringCard() {
+    return RiseCard(
+      child: Row(
+        children: [
+          const RiseSkeletonCircle(size: 52),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                RiseSkeleton(width: 120, height: 13),
+                SizedBox(height: 8),
+                RiseSkeleton(width: 80, height: 11),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _guestCard() {
@@ -486,11 +513,17 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
           ),
         ),
         const SizedBox(height: 12),
-        _actionRow('Sign out', Icons.logout,
-            onTap: _busy ? null : _signOut, busy: _busy),
-        const SizedBox(height: 8),
-        _actionRow('Delete account', Icons.delete_outline,
-            danger: true, onTap: _busy ? null : _delete),
+        RiseCard(
+          child: Column(
+            children: [
+              _actionRow('Sign out', Icons.logout,
+                  onTap: _busy ? null : _signOut, busy: _busy),
+              Divider(height: 24, color: RiseColors.divider),
+              _actionRow('Delete account', Icons.delete_outline,
+                  danger: true, onTap: _busy ? null : _delete),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -501,25 +534,23 @@ class _AccountSectionState extends ConsumerState<_AccountSection> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: RiseCard(
-        child: Row(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(width: 12),
-            Text(label,
-                style: RiseText.body
-                    .copyWith(color: color, fontWeight: FontWeight.w600)),
-            if (busy) ...[
-              const Spacer(),
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: RiseColors.textDim),
-              ),
-            ],
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 12),
+          Text(label,
+              style: RiseText.body
+                  .copyWith(color: color, fontWeight: FontWeight.w600)),
+          if (busy) ...[
+            const Spacer(),
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: RiseColors.textDim),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

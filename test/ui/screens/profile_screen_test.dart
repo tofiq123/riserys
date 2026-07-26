@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/auth/auth_service.dart';
 import 'package:rise/data/native/alarm_api.g.dart';
 import 'package:rise/data/permission_gateway.dart';
+import 'package:rise/domain/rise_account.dart';
+import 'package:rise/ui/components/rise_card.dart';
+import 'package:rise/ui/components/rise_skeleton.dart';
 import 'package:rise/ui/screens/profile_screen.dart';
 import 'package:rise/ui/state/auth_providers.dart';
 
@@ -52,7 +57,63 @@ Future<void> _pump(
   await t.pumpAndSettle();
 }
 
+/// Auth whose account() never emits — the "restoring" window.
+class _RestoringAuthService implements AuthService {
+  final StreamController<RiseAccount?> _controller =
+      StreamController<RiseAccount?>.broadcast();
+
+  @override
+  Stream<RiseAccount?> account() => _controller.stream;
+  @override
+  RiseAccount? get current => null;
+  @override
+  Future<void> signInWithGoogle() async {}
+  @override
+  Future<bool> isUsernameAvailable(String username) async => true;
+  @override
+  Future<void> claimUsername(String username,
+      {required String displayName}) async {}
+  @override
+  Future<void> signOut() async {}
+  @override
+  Future<void> deleteAccount() async {}
+}
+
 void main() {
+  testWidgets('restoring auth shows a skeleton — never the sign-in card',
+      (t) async {
+    t.view.physicalSize = const Size(2400, 8000);
+    t.view.devicePixelRatio = 3.0;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(ProviderScope(
+      overrides: [
+        authServiceProvider.overrideWithValue(_RestoringAuthService()),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+            body: ProfileScreen(permissions: _FakeGateway(_perms()))),
+      ),
+    ));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 50));
+    expect(find.text('Sign in to Riserys'), findsNothing);
+    expect(find.text('Sign in with Google'), findsNothing);
+    expect(find.byType(RiseSkeleton), findsWidgets);
+  });
+
+  testWidgets('Settings and the wellbeing check-in share one grouped card',
+      (t) async {
+    await _pump(t);
+    final settingsCard = find.ancestor(
+        of: find.text('Settings'), matching: find.byType(RiseCard));
+    final wellbeingCard = find.ancestor(
+        of: find.text("How you've been feeling"),
+        matching: find.byType(RiseCard));
+    expect(settingsCard, findsOneWidget);
+    expect(t.widget(settingsCard), same(t.widget(wellbeingCard)),
+        reason: 'both rows live in one grouped card');
+  });
+
   testWidgets('unconfigured: shows the guest card, permissions, and about',
       (t) async {
     // No override → default authServiceProvider is DisabledAuthService.
