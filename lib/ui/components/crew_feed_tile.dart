@@ -11,6 +11,7 @@ import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'crew_avatar.dart';
 import 'rise_card.dart';
+import 'toast.dart';
 
 /// "2h ago"-style relative time for feed items. Pure; a future [wokeAt]
 /// (clock skew) degrades to "just now".
@@ -24,10 +25,11 @@ String crewRelativeTime(DateTime wokeAt, DateTime now) {
 }
 
 /// One celebrated wake: avatar, "Ada woke on time", when, the streak it
-/// landed (flame + mono numeral), and the emoji reaction row. Shared by the
-/// Crew dashboard's inline "Cheer them on" section and the full Activity
-/// screen so both stay pixel-identical. Reacting toggles through the existing
-/// feed service and refreshes [crewFeedProvider].
+/// landed (flame + mono numeral), and the emoji reaction row. Used by the
+/// full Activity screen (the Crew tab's own morning view renders its own row
+/// via MorningLineView instead — see crew_screen.dart). Reacting goes
+/// through [CrewFeedNotifier.setReaction], which updates instantly rather
+/// than waiting on a network round trip.
 class CrewFeedTile extends ConsumerWidget {
   const CrewFeedTile({super.key, required this.item});
 
@@ -138,15 +140,20 @@ class _ReactionChip extends ConsumerWidget {
   final FeedItem item;
   final String emoji;
 
-  Future<void> _toggle(WidgetRef ref) async {
-    final service = ref.read(feedServiceProvider);
+  /// Genuinely optimistic (see [CrewFeedNotifier.setReaction]): the tally
+  /// flips the instant this is tapped, before the network write starts.
+  Future<void> _toggle(BuildContext context, WidgetRef ref) async {
     final reacted = item.reactionFor(emoji).reactedByMe;
-    if (reacted) {
-      await service.unreact(item.id, emoji);
-    } else {
-      await service.react(item.id, emoji);
+    try {
+      await ref
+          .read(crewFeedProvider.notifier)
+          .setReaction(item.id, emoji, !reacted);
+    } catch (_) {
+      if (context.mounted) {
+        RiseToast.show(context, 'Could not send that cheer.',
+            kind: RiseToastKind.error);
+      }
     }
-    ref.invalidate(crewFeedProvider);
   }
 
   @override
@@ -156,7 +163,7 @@ class _ReactionChip extends ConsumerWidget {
     return GestureDetector(
       key: Key('reaction-${item.id}-$emoji'),
       behavior: HitTestBehavior.opaque,
-      onTap: () => unawaited(_toggle(ref)),
+      onTap: () => unawaited(_toggle(context, ref)),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Container(

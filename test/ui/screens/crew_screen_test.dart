@@ -131,6 +131,35 @@ class _FlakyFeedService implements FeedService {
   Future<void> unreact(String feedId, String emoji) async {}
 }
 
+/// Wraps a real [FeedService], but runs [onWrite] (and awaits it) before
+/// delegating react/unreact — lets a test hold the write open to prove the UI
+/// updates before it resolves.
+class _GatedReactionFeedService implements FeedService {
+  _GatedReactionFeedService(this._inner, this.onWrite);
+  final FeedService _inner;
+  final Future<void> Function() onWrite;
+
+  @override
+  Future<List<FeedItem>> crewFeed() => _inner.crewFeed();
+  @override
+  Future<void> publishWake(
+          {required DateTime wokeAt,
+          required bool onTime,
+          required int streak}) =>
+      _inner.publishWake(wokeAt: wokeAt, onTime: onTime, streak: streak);
+  @override
+  Future<void> react(String feedId, String emoji) async {
+    await onWrite();
+    await _inner.react(feedId, emoji);
+  }
+
+  @override
+  Future<void> unreact(String feedId, String emoji) async {
+    await onWrite();
+    await _inner.unreact(feedId, emoji);
+  }
+}
+
 /// Auth whose account() never emits: the "session restored, profile still
 /// loading" window. The UI must show a neutral skeleton — never sign-in.
 class _RestoringAuthService implements AuthService {
@@ -505,6 +534,51 @@ void main() {
       expect(items.single.reactionFor('🔥').count, 1);
       expect(items.single.reactionFor('🔥').reactedByMe, isTrue);
       expect(find.text('🔥 1'), findsOneWidget);
+    });
+
+    testWidgets(
+        'a failed cheer write reverts the tally and tells the user',
+        (t) async {
+      final feed = FakeFeedService(
+          initial: [_feedItemAt('f1', 'u1', 5, 42)], selfId: 'me');
+      final failingFeed = _GatedReactionFeedService(
+          feed, () async => throw StateError('offline'));
+      await _pumpSignedIn(t,
+          initial: CrewState(friends: [_m('u1', 'ada')]), feed: failingFeed);
+      await t.tap(find.byKey(const Key('line-cheer-u1')));
+      await t.pump();
+      await t.tap(find.byKey(const Key('line-cheer-u1-🔥')));
+      await t.pumpAndSettle();
+
+      // Reverted — the failed write never actually happened.
+      expect(find.text('🔥 1'), findsNothing);
+      expect(find.text('Could not send that cheer.'), findsOneWidget);
+    });
+
+    testWidgets(
+        'Cheer updates the tally instantly, before the write resolves',
+        (t) async {
+      final gate = Completer<void>();
+      var wrote = false;
+      final feed = FakeFeedService(
+          initial: [_feedItemAt('f1', 'u1', 5, 42)], selfId: 'me');
+      final gatedFeed = _GatedReactionFeedService(feed, () async {
+        await gate.future;
+        wrote = true;
+      });
+      await _pumpSignedIn(t,
+          initial: CrewState(friends: [_m('u1', 'ada')]), feed: gatedFeed);
+      await t.tap(find.byKey(const Key('line-cheer-u1')));
+      await t.pump();
+      await t.tap(find.byKey(const Key('line-cheer-u1-🔥')));
+      await t.pump(); // one frame — the write is still gated, unresolved
+
+      expect(wrote, isFalse);
+      expect(find.text('🔥 1'), findsOneWidget);
+
+      gate.complete();
+      await t.pumpAndSettle();
+      expect(wrote, isTrue);
     });
 
     testWidgets('a feed failure says what is missing and offers a retry',
