@@ -60,6 +60,9 @@ Future<void> dismissRingingAlarm(int alarmId) async {
   }
 }
 
+/// Peeks the next alarm queued behind the one currently ringing.
+Future<int?> defaultGetQueuedAlarmId() => AlarmHostApi().getQueuedAlarmId();
+
 /// Arms the post-dismissal wake-up check for [alarm] at now + [delay]. The
 /// re-fire time (checkAt + 100s) is computed natively, so [NativeAlarm.fireAtEpochMs]
 /// is unused here; the label/sound/vibrate carry so the re-fire rings correctly.
@@ -159,6 +162,7 @@ class RingScreen extends ConsumerStatefulWidget {
     this.cancelWakeCheck = defaultCancelWakeCheck,
     this.stayUpDecision = defaultStayUpDecision,
     this.brightness = const ScreenBrightnessController(),
+    this.getQueuedAlarmId = defaultGetQueuedAlarmId,
   });
 
   final int alarmId;
@@ -203,6 +207,11 @@ class RingScreen extends ConsumerStatefulWidget {
   /// call is best-effort, so a plugin failure can never crash or block the ring.
   final BrightnessController brightness;
 
+  /// The alarm waiting behind this one, if any. Injectable for tests;
+  /// defaults to [defaultGetQueuedAlarmId]. Polled, not pushed — see the
+  /// Pigeon doc comment on `getQueuedAlarmId`.
+  final Future<int?> Function() getQueuedAlarmId;
+
   @override
   ConsumerState<RingScreen> createState() => _RingScreenState();
 }
@@ -236,6 +245,9 @@ class _RingScreenState extends ConsumerState<RingScreen>
   /// One-shot guard: the crew SOS (manual or auto) has fired this ring.
   bool _sosSent = false;
 
+  /// The alarm queued behind this one, if any — polled, not pushed.
+  int? _queuedAlarmId;
+
   @override
   void initState() {
     super.initState();
@@ -253,8 +265,25 @@ class _RingScreenState extends ConsumerState<RingScreen>
       if (!mounted) return;
       setState(() => _elapsedSec++); // advances the live clock + auto-SOS timer
       _maybeAutoSos();
+      _pollQueuedAlarm();
     });
     if (widget.record) _recordRingStart();
+    _pollQueuedAlarm();
+  }
+
+  /// A thrown PlatformException must not go unhandled here, or a single
+  /// failed poll would crash the ring screen — the chip is a nice-to-have,
+  /// never load-bearing for dismissing the alarm.
+  Future<void> _pollQueuedAlarm() async {
+    int? id;
+    try {
+      id = await widget.getQueuedAlarmId();
+    } catch (e) {
+      debugPrint('Rise: could not check for a queued alarm: $e');
+      return;
+    }
+    if (!mounted || id == _queuedAlarmId) return;
+    setState(() => _queuedAlarmId = id);
   }
 
   @override
@@ -581,6 +610,14 @@ class _RingScreenState extends ConsumerState<RingScreen>
     final canSnooze = snoozeCount < settings.snoozeMaxCount;
     final snoozeMinutes = settings.snoozeDurationMinutes(snoozeCount);
     final label = alarm?.label ?? 'Alarm';
+    final queuedLabel = _queuedAlarmId == null
+        ? null
+        : (ref
+                .watch(alarmsProvider)
+                .value
+                ?.firstWhereOrNull((a) => a.id == _queuedAlarmId)
+                ?.label ??
+            'Alarm');
     final now = DateTime.now();
     final clock =
         formatClockParts(now.hour, now.minute, use24h: settings.use24HourTime);
@@ -647,6 +684,11 @@ class _RingScreenState extends ConsumerState<RingScreen>
             const SizedBox(height: 10),
             Text(label,
                 style: RiseText.title.copyWith(color: RiseColors.textDim)),
+            if (_queuedAlarmId != null) ...[
+              const SizedBox(height: 8),
+              Text('Next: $queuedLabel queued',
+                  style: RiseText.body.copyWith(color: RiseColors.textDim)),
+            ],
             if (settings.wakeIntention.isNotEmpty) ...[
               const SizedBox(height: 18),
               _planReminder(settings.wakeIntention),

@@ -48,6 +48,7 @@ Widget _host({
   Future<void> Function(int)? cancelWakeCheck,
   StayUpDecider? stayUpDecision,
   BrightnessController? brightness,
+  Future<int?> Function()? getQueuedAlarmId,
 }) {
   return ProviderScope(
     overrides: [
@@ -68,6 +69,7 @@ Widget _host({
         cancelWakeCheck: cancelWakeCheck ?? (_) async {},
         stayUpDecision: stayUpDecision ?? defaultStayUpDecision,
         brightness: brightness ?? const NoopBrightnessController(),
+        getQueuedAlarmId: getQueuedAlarmId ?? () async => null,
       ),
     ),
   );
@@ -112,6 +114,50 @@ class _ThrowingRecorder implements WakeRecorder {
 }
 
 void main() {
+  testWidgets('shows a queued-alarm chip when another alarm is waiting',
+      (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [
+        Alarm(id: 5, hour: 6, minute: 30, label: 'Run'),
+        Alarm(id: 9, hour: 6, minute: 32, label: 'Backup'),
+      ],
+      alarmId: 5,
+      getQueuedAlarmId: () async => 9,
+    ));
+    await t.pump();
+    expect(find.text('Next: Backup queued'), findsOneWidget);
+  });
+
+  testWidgets('shows no chip when nothing is queued', (t) async {
+    await t.pumpWidget(_host(
+      alarms: const [Alarm(id: 5, hour: 6, minute: 30, label: 'Run')],
+      alarmId: 5,
+      getQueuedAlarmId: () async => null,
+    ));
+    await t.pump();
+    expect(find.textContaining('queued'), findsNothing);
+  });
+
+  testWidgets('chip appears once a second alarm queues while ringing',
+      (t) async {
+    int? queued;
+    await t.pumpWidget(_host(
+      alarms: const [
+        Alarm(id: 5, hour: 6, minute: 30, label: 'Run'),
+        Alarm(id: 9, hour: 6, minute: 32, label: 'Backup'),
+      ],
+      alarmId: 5,
+      getQueuedAlarmId: () async => queued,
+    ));
+    await t.pump();
+    expect(find.textContaining('queued'), findsNothing);
+
+    queued = 9;
+    await t.pump(const Duration(seconds: 1));
+    await t.pump();
+    expect(find.text('Next: Backup queued'), findsOneWidget);
+  });
+
   testWidgets('no-mission alarm shows slide-to-wake; sliding dismisses', (t) async {
     int? dismissed;
     var doneCalled = false;
