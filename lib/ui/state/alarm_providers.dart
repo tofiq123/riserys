@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/alarm_sync_service.dart';
 import '../../data/local/alarm_repository.dart';
+import '../../data/native/alarm_api.g.dart';
 import '../../domain/alarm.dart';
 import '../../domain/scheduled_occurrence.dart';
 
@@ -21,13 +23,26 @@ final alarmsProvider = StreamProvider<List<Alarm>>((ref) {
   return ref.watch(alarmRepositoryProvider).watchAll();
 });
 
+/// Cancels any pending wake-check (notification + re-fire) for [alarmId].
+Future<void> defaultCancelWakeCheck(int alarmId) =>
+    AlarmHostApi().cancelWakeCheck(alarmId);
+
 /// Every alarm write persists locally AND re-arms the platform scheduler, so
 /// the OS never drifts out of sync with the database (the source of truth).
 class AlarmMutations {
-  AlarmMutations(this._repo, this._sync);
+  AlarmMutations(this._repo, this._sync,
+      {this.cancelWakeCheck = defaultCancelWakeCheck});
 
   final AlarmRepository _repo;
   final AlarmSyncService _sync;
+
+  /// Cancels a pending wake-check when an alarm is deleted or disabled — the
+  /// wake-check is armed on dismissal on an entirely separate native
+  /// schedule from the one `reconcileNow` manages, so nothing else would
+  /// stop it from still sending its "Still up?" notification and re-ring
+  /// after the alarm it belongs to is gone. Injectable for tests; defaults
+  /// to [defaultCancelWakeCheck].
+  final Future<void> Function(int alarmId) cancelWakeCheck;
 
   Future<void> save(Alarm alarm) async {
     await _repo.upsert(alarm);
@@ -36,12 +51,25 @@ class AlarmMutations {
 
   Future<void> delete(int id) async {
     await _repo.delete(id);
+    await _cancelWakeCheckBestEffort(id);
     await _sync.reconcileNow();
   }
 
   Future<void> setEnabled(int id, bool enabled) async {
     await _repo.setEnabled(id, enabled);
+    if (!enabled) await _cancelWakeCheckBestEffort(id);
     await _sync.reconcileNow();
+  }
+
+  /// Best-effort, matching this codebase's treatment of other post-write
+  /// native calls (e.g. the ring screen's dismiss/snooze): a failure here
+  /// must never block removing or disabling the alarm itself.
+  Future<void> _cancelWakeCheckBestEffort(int id) async {
+    try {
+      await cancelWakeCheck(id);
+    } catch (e) {
+      debugPrint('Rise: could not cancel wake-check for alarm $id: $e');
+    }
   }
 }
 

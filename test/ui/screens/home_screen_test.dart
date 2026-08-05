@@ -21,6 +21,8 @@ class _RecordingMutations implements AlarmMutations {
   Future<void> save(Alarm alarm) async => savedAlarm = alarm;
   @override
   Future<void> delete(int id) async {}
+  @override
+  Future<void> Function(int alarmId) get cancelWakeCheck => (_) async {};
 }
 
 Widget _host({

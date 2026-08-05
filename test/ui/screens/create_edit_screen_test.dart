@@ -16,6 +16,8 @@ class _RecordingMutations implements AlarmMutations {
   Future<void> delete(int id) async => deleted.add(id);
   @override
   Future<void> setEnabled(int id, bool enabled) async {}
+  @override
+  Future<void> Function(int alarmId) get cancelWakeCheck => (_) async {};
 }
 
 ProviderContainer _container(_RecordingMutations m) {

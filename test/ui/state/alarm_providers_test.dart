@@ -120,6 +120,113 @@ void main() {
     expect(platform.reconcileCount, greaterThan(reconcileCountBefore));
   });
 
+  test('delete cancels a pending wake-check for that alarm', () async {
+    final db = RiseDatabase(NativeDatabase.memory());
+    final platform = _FakePlatform();
+    final service = AlarmSyncService(
+      repository: AlarmRepository(db),
+      platform: platform,
+      location: tz.getLocation('America/New_York'),
+    );
+    addTearDown(db.close);
+    final cancelled = <int>[];
+    final c = ProviderContainer(overrides: [
+      alarmSyncServiceProvider.overrideWithValue(service),
+      alarmMutationsProvider.overrideWith((ref) => AlarmMutations(
+            ref.watch(alarmRepositoryProvider),
+            ref.watch(alarmSyncServiceProvider),
+            cancelWakeCheck: (id) async => cancelled.add(id),
+          )),
+    ]);
+    addTearDown(c.dispose);
+
+    final sub = c.listen(alarmsProvider, (_, __) {});
+    addTearDown(sub.close);
+
+    await c
+        .read(alarmMutationsProvider)
+        .save(const Alarm(id: 0, hour: 6, minute: 30, label: 'Run'));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final id = (c.read(alarmsProvider).value ?? const []).single.id;
+
+    await c.read(alarmMutationsProvider).delete(id);
+
+    expect(cancelled, [id]);
+  });
+
+  test(
+      'disabling an alarm cancels a pending wake-check; enabling one does not',
+      () async {
+    final db = RiseDatabase(NativeDatabase.memory());
+    final platform = _FakePlatform();
+    final service = AlarmSyncService(
+      repository: AlarmRepository(db),
+      platform: platform,
+      location: tz.getLocation('America/New_York'),
+    );
+    addTearDown(db.close);
+    final cancelled = <int>[];
+    final c = ProviderContainer(overrides: [
+      alarmSyncServiceProvider.overrideWithValue(service),
+      alarmMutationsProvider.overrideWith((ref) => AlarmMutations(
+            ref.watch(alarmRepositoryProvider),
+            ref.watch(alarmSyncServiceProvider),
+            cancelWakeCheck: (id) async => cancelled.add(id),
+          )),
+    ]);
+    addTearDown(c.dispose);
+
+    final sub = c.listen(alarmsProvider, (_, __) {});
+    addTearDown(sub.close);
+
+    await c.read(alarmMutationsProvider).save(
+        const Alarm(id: 0, hour: 6, minute: 30, label: 'Run', enabled: true));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final id = (c.read(alarmsProvider).value ?? const []).single.id;
+
+    await c.read(alarmMutationsProvider).setEnabled(id, false);
+    expect(cancelled, [id]);
+
+    await c.read(alarmMutationsProvider).setEnabled(id, true);
+    expect(cancelled, [id]); // re-enabling must not cancel anything new
+  });
+
+  test('a failing wake-check cancel never blocks delete or setEnabled',
+      () async {
+    final db = RiseDatabase(NativeDatabase.memory());
+    final platform = _FakePlatform();
+    final service = AlarmSyncService(
+      repository: AlarmRepository(db),
+      platform: platform,
+      location: tz.getLocation('America/New_York'),
+    );
+    addTearDown(db.close);
+    final c = ProviderContainer(overrides: [
+      alarmSyncServiceProvider.overrideWithValue(service),
+      alarmMutationsProvider.overrideWith((ref) => AlarmMutations(
+            ref.watch(alarmRepositoryProvider),
+            ref.watch(alarmSyncServiceProvider),
+            cancelWakeCheck: (_) async => throw StateError('channel down'),
+          )),
+    ]);
+    addTearDown(c.dispose);
+
+    final sub = c.listen(alarmsProvider, (_, __) {});
+    addTearDown(sub.close);
+
+    await c
+        .read(alarmMutationsProvider)
+        .save(const Alarm(id: 0, hour: 6, minute: 30, label: 'Run'));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final id = (c.read(alarmsProvider).value ?? const []).single.id;
+
+    await c.read(alarmMutationsProvider).setEnabled(id, false);
+    await c.read(alarmMutationsProvider).delete(id);
+
+    final alarms = c.read(alarmsProvider).value ?? const [];
+    expect(alarms, hasLength(0));
+  });
+
   test('draftProvider starts, edits, and clears', () {
     final (:container, :platform) = makeContainer();
     final c = container;
