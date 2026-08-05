@@ -46,6 +46,14 @@ class _MemoryMissionState extends State<MemoryMission> {
   bool _accepting = false;
   final _timers = <Timer>[];
 
+  /// Which pad was just tapped during recall, and whether it was correct —
+  /// drives a brief color flash so every tap visibly registers, right or
+  /// wrong. null = no pending feedback.
+  int? _tapFeedback;
+  bool _tapCorrect = false;
+
+  static const _tapFeedbackDuration = Duration(milliseconds: 350);
+
   @override
   void initState() {
     super.initState();
@@ -64,8 +72,8 @@ class _MemoryMissionState extends State<MemoryMission> {
   void _play() {
     _accepting = false;
     _inputPos = 0;
-    const on = Duration(milliseconds: 420);
-    const gap = Duration(milliseconds: 180);
+    const on = Duration(milliseconds: 650);
+    const gap = Duration(milliseconds: 280);
     var t = Duration.zero;
     for (var i = 0; i < _seq.length; i++) {
       final lit = _seq[i];
@@ -92,17 +100,34 @@ class _MemoryMissionState extends State<MemoryMission> {
       _flashIndex = -1;
       _accepting = false;
       _inputPos = 0;
+      _tapFeedback = null;
     });
     _play();
   }
 
   void _tap(int pad) {
     if (!_accepting || _inputPos >= _seq.length) return;
-    if (pad == _seq[_inputPos]) {
+    final correct = pad == _seq[_inputPos];
+    setState(() {
+      _tapFeedback = pad;
+      _tapCorrect = correct;
+    });
+    if (correct) {
       _inputPos++;
-      if (_inputPos >= _seq.length) widget.onSolved();
+      if (_inputPos >= _seq.length) {
+        widget.onSolved();
+        return;
+      }
+      // Clear the flash before the next tap's own feedback would show —
+      // the mission isn't done yet, so leave time to see it registered.
+      _timers.add(Timer(_tapFeedbackDuration, () {
+        if (mounted) setState(() => _tapFeedback = null);
+      }));
     } else {
-      _replay(); // wrong — show it again
+      // Let the red flash actually be seen before the sequence replays.
+      _timers.add(Timer(_tapFeedbackDuration, () {
+        if (mounted) _replay();
+      }));
     }
   }
 
@@ -125,9 +150,7 @@ class _MemoryMissionState extends State<MemoryMission> {
                 onTap: () => _tap(i),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: _flashIndex == i
-                        ? RiseColors.accent
-                        : RiseColors.surface2,
+                    color: _tileColor(i),
                     borderRadius: BorderRadius.circular(RiseRadii.base),
                     border: Border.all(color: RiseColors.border),
                   ),
@@ -137,5 +160,15 @@ class _MemoryMissionState extends State<MemoryMission> {
         ),
       ),
     );
+  }
+
+  /// Playback lit pad wins over tap feedback (they never overlap in
+  /// practice — feedback only shows during recall, playback only before it).
+  Color _tileColor(int i) {
+    if (_flashIndex == i) return RiseColors.accent;
+    if (_tapFeedback == i) {
+      return _tapCorrect ? RiseColors.positive : RiseColors.danger;
+    }
+    return RiseColors.surface2;
   }
 }

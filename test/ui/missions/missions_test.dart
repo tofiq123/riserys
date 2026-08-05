@@ -16,6 +16,15 @@ import 'package:rise/ui/screens/ring_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
 import 'package:rise/ui/state/settings_providers.dart';
 import 'package:rise/ui/state/wake_providers.dart';
+import 'package:rise/ui/theme/tokens.dart';
+
+Color? _padColor(WidgetTester t, int i) {
+  final container = t.widget<Container>(find.descendant(
+    of: find.byKey(ValueKey('mem-pad-$i')),
+    matching: find.byType(Container),
+  ));
+  return (container.decoration as BoxDecoration?)?.color;
+}
 
 Widget _wrap(Widget child) =>
     MaterialApp(home: Scaffold(body: Center(child: child)));
@@ -102,7 +111,7 @@ void main() {
         sequence: const [0, 1, 2],
       )));
       await t.pump(); // start playback
-      await t.pump(const Duration(seconds: 2)); // playback done, input opens
+      await t.pump(const Duration(seconds: 3)); // playback done, input opens
       await t.tap(find.byKey(const ValueKey('mem-pad-0')));
       await t.tap(find.byKey(const ValueKey('mem-pad-1')));
       await t.tap(find.byKey(const ValueKey('mem-pad-2')));
@@ -118,7 +127,7 @@ void main() {
         sequence: const [0, 1, 2],
       )));
       await t.pump();
-      await t.pump(const Duration(seconds: 2));
+      await t.pump(const Duration(seconds: 3));
       await t.tap(find.byKey(const ValueKey('mem-pad-3'))); // wrong first pad
       await t.pump();
       expect(solved, isFalse);
@@ -132,7 +141,7 @@ void main() {
         sequence: const [0, 1, 2],
       )));
       await t.pump();
-      await t.pump(const Duration(seconds: 2));
+      await t.pump(const Duration(seconds: 3));
       await t.tap(find.byKey(const ValueKey('mem-pad-0')));
       await t.tap(find.byKey(const ValueKey('mem-pad-1')));
       await t.tap(find.byKey(const ValueKey('mem-pad-2')));
@@ -142,6 +151,44 @@ void main() {
       await t.pump();
       expect(t.takeException(), isNull); // no RangeError
       expect(solves, 1);
+    });
+
+    testWidgets('a correct tap flashes green, then clears', (t) async {
+      await t.pumpWidget(_wrap(MemoryMission(
+        diff: 'easy',
+        onSolved: () {},
+        sequence: const [0, 1, 2],
+      )));
+      await t.pump();
+      await t.pump(const Duration(seconds: 3));
+
+      await t.tap(find.byKey(const ValueKey('mem-pad-0')));
+      await t.pump();
+      expect(_padColor(t, 0), RiseColors.positive);
+
+      await t.pump(const Duration(milliseconds: 400));
+      expect(_padColor(t, 0), RiseColors.surface2);
+    });
+
+    testWidgets('a wrong tap flashes red, then the sequence replays',
+        (t) async {
+      await t.pumpWidget(_wrap(MemoryMission(
+        diff: 'easy',
+        onSolved: () {},
+        sequence: const [0, 1, 2],
+      )));
+      await t.pump();
+      await t.pump(const Duration(seconds: 3));
+
+      await t.tap(find.byKey(const ValueKey('mem-pad-3'))); // wrong first pad
+      await t.pump();
+      expect(_padColor(t, 3), RiseColors.danger);
+      expect(find.text('Repeat the sequence'), findsOneWidget);
+
+      await t.pump(const Duration(milliseconds: 400));
+      // Replay restarted: back to watching, feedback cleared.
+      expect(find.text('Watch carefully…'), findsOneWidget);
+      expect(_padColor(t, 3), isNot(RiseColors.danger));
     });
   });
 
