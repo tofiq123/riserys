@@ -594,6 +594,27 @@ class AlarmHostApi {
     return pigeonVar_replyValue as int?;
   }
 
+  /// The next alarm waiting behind the one currently ringing, or null.
+  /// Peeks like [getRingingAlarmId] — does not clear state, poll it.
+  Future<int?> getQueuedAlarmId() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.getQueuedAlarmId$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+    return pigeonVar_replyValue as int?;
+  }
+
   Future<void> stopRinging(int alarmId) async {
     final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.stopRinging$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(

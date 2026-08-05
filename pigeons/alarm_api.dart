@@ -127,6 +127,10 @@ abstract class AlarmHostApi {
   /// that reaches Dart on its own).
   int? getRingingAlarmId();
 
+  /// The next alarm waiting behind the one currently ringing, or null.
+  /// Peeks like [getRingingAlarmId] — does not clear state, poll it.
+  int? getQueuedAlarmId();
+
   void stopRinging(int alarmId);
 
   /// Signals that a headless reconcile (boot, app update, clock change) has

@@ -204,6 +204,13 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
     return ringingAlarmId
   }
 
+  // iOS has no single-service ring model to queue behind — each alarm is
+  // its own local notification and the OS delivers them independently, so
+  // there is nothing to report as "queued." Always nil.
+  func getQueuedAlarmId() throws -> Int64? {
+    return nil
+  }
+
   func stopRinging(alarmId: Int64) throws {
     if ringingAlarmId == alarmId {
       ringingAlarmId = nil

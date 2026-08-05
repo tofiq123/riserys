@@ -511,6 +511,11 @@ interface AlarmHostApi {
    * that reaches Dart on its own).
    */
   fun getRingingAlarmId(): Long?
+  /**
+   * The next alarm waiting behind the one currently ringing, or null.
+   * Peeks like [getRingingAlarmId] — does not clear state, poll it.
+   */
+  fun getQueuedAlarmId(): Long?
   fun stopRinging(alarmId: Long)
   /**
    * Signals that a headless reconcile (boot, app update, clock change) has
@@ -694,6 +699,21 @@ interface AlarmHostApi {
           channel.setMessageHandler { _, reply ->
             val wrapped: List<Any?> = try {
               listOf(api.getRingingAlarmId())
+            } catch (exception: Throwable) {
+              AlarmApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.getQueuedAlarmId$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.getQueuedAlarmId())
             } catch (exception: Throwable) {
               AlarmApiPigeonUtils.wrapError(exception)
             }

@@ -20,10 +20,55 @@ import android.os.VibratorManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.io.File
+import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * One alarm's ringing payload: everything needed to start or resume playing
+ * it, captured off the triggering [Intent] so it can be replayed later
+ * (queued behind another alarm, or restored after a process restart)
+ * without the original Intent still being around.
+ */
+data class RingRequest(
+    val id: Int,
+    val label: String,
+    val sound: String,
+    val vibrate: Boolean,
+    val vibrationPattern: String,
+) {
+    companion object {
+        fun fromIntent(intent: Intent?): RingRequest = RingRequest(
+            id = intent?.getIntExtra(AlarmScheduler.EXTRA_ALARM_ID, -1) ?: -1,
+            label = intent?.getStringExtra(AlarmScheduler.EXTRA_LABEL) ?: "Alarm",
+            sound = intent?.getStringExtra(AlarmScheduler.EXTRA_SOUND) ?: "",
+            vibrate = intent?.getBooleanExtra(AlarmScheduler.EXTRA_VIBRATE, true) ?: true,
+            vibrationPattern = intent?.getStringExtra(AlarmScheduler.EXTRA_VIBRATION_PATTERN)
+                ?: "standard",
+        )
+
+        fun toJson(request: RingRequest): JSONObject = JSONObject().apply {
+            put("id", request.id)
+            put("label", request.label)
+            put("sound", request.sound)
+            put("vibrate", request.vibrate)
+            put("vibrationPattern", request.vibrationPattern)
+        }
+
+        fun fromJson(json: JSONObject): RingRequest = RingRequest(
+            id = json.getInt("id"),
+            label = json.getString("label"),
+            sound = json.getString("sound"),
+            vibrate = json.getBoolean("vibrate"),
+            vibrationPattern = json.getString("vibrationPattern"),
+        )
+    }
+}
 
 /**
  * Owns the ringing lifetime: audio on the alarm stream, vibration, wake lock,
- * and the full-screen notification that launches [RingActivity].
+ * and the full-screen notification that launches [RingActivity]. Also owns a
+ * FIFO queue of alarms that fired while another was already ringing — see
+ * docs/superpowers/specs/2026-08-05-alarm-ring-queue-design.md.
  */
 class AlarmService : Service() {
 
@@ -31,50 +76,124 @@ class AlarmService : Service() {
         private const val TAG = "AlarmService"
         private const val CHANNEL_ID = "rise_alarms"
         private const val NOTIF_ID = 4242
+        private const val PREFS = "rise_ring_queue"
+        private const val KEY_QUEUE = "queue"
+        private const val KEY_SAVED_AT = "savedAt"
+
+        /**
+         * An overlapping-ring queue only ever needs to live for the minutes
+         * it takes a person to deal with the first alarm. Anything older than
+         * this on load is leftover from a session that never came back
+         * naturally (a kill with no restart, or a reboot) — too stale to
+         * trust, and dangerous to keep: replaying it into a later, unrelated
+         * ring session could resurrect an alarm the user has since deleted.
+         */
+        private const val STALE_QUEUE_MS = 30 * 60 * 1000L
 
         /** Which alarm is ringing right now, if any. Read on cold start. */
         var ringingAlarmId: Int? = null
             private set
 
+        /** Alarms that fired while another was already ringing, oldest first. */
+        val ringQueue: MutableList<RingRequest> = mutableListOf()
+
+        /** The next queued alarm's id, or null. Peeks — does not dequeue. */
+        val queuedAlarmId: Int?
+            get() = ringQueue.firstOrNull()?.id
+
+        private var runningInstance: AlarmService? = null
+
+        /**
+         * Ends the current ring. If another alarm is queued behind it, hands
+         * off to that one directly instead of tearing the service down — no
+         * stopService/startForegroundService round trip, so there is no gap
+         * where the OS could reap the service between the two.
+         */
         fun stop(context: Context) {
-            context.stopService(Intent(context, AlarmService::class.java))
+            val svc = runningInstance
+            if (svc != null && ringQueue.isNotEmpty()) {
+                svc.advanceToNext()
+            } else {
+                context.stopService(Intent(context, AlarmService::class.java))
+            }
+        }
+
+        /**
+         * Restores the queue after a process restart. `ringingAlarmId` itself
+         * is deliberately NOT persisted: `START_REDELIVER_INTENT` already
+         * redelivers the currently-ringing alarm's own Intent, which drives
+         * [onStartCommand]'s normal `ringingAlarmId == null` → [beginRinging]
+         * path. Only the alarms waiting *behind* it would otherwise be lost.
+         *
+         * Discards (and clears) anything older than [STALE_QUEUE_MS] — see
+         * its doc comment for why an old queue must never be trusted.
+         */
+        private fun loadQueue(context: Context): MutableList<RingRequest> {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val raw = prefs.getString(KEY_QUEUE, null) ?: return mutableListOf()
+            val savedAt = prefs.getLong(KEY_SAVED_AT, 0L)
+            if (System.currentTimeMillis() - savedAt > STALE_QUEUE_MS) {
+                prefs.edit().remove(KEY_QUEUE).remove(KEY_SAVED_AT).apply()
+                return mutableListOf()
+            }
+            return try {
+                val array = JSONArray(raw)
+                MutableList(array.length()) { i -> RingRequest.fromJson(array.getJSONObject(i)) }
+            } catch (e: Exception) {
+                Log.w(TAG, "could not restore ring queue", e)
+                mutableListOf()
+            }
+        }
+
+        private fun saveQueue(context: Context) {
+            val array = JSONArray()
+            ringQueue.forEach { array.put(RingRequest.toJson(it)) }
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_QUEUE, array.toString())
+                .putLong(KEY_SAVED_AT, System.currentTimeMillis())
+                .apply()
         }
     }
 
+    /** The request currently ringing (mirrors [ringingAlarmId], plus label/sound/etc). */
+    private var current: RingRequest? = null
     private var player: MediaPlayer? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val handler = Handler(Looper.getMainLooper())
     private var rampStep = 0
 
+    override fun onCreate() {
+        super.onCreate()
+        runningInstance = this
+        ringQueue.clear()
+        ringQueue.addAll(loadQueue(this))
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Tear down any previously ringing alarm's resources first. Without
-        // this, a second onStartCommand on a still-live service (e.g. another
-        // alarm firing while one is already ringing) would overwrite `player`
-        // and `wakeLock` with new instances, orphaning the old MediaPlayer —
-        // which loops forever with no reference left to stop it — and
-        // leaking the old WakeLock until its 10-minute timeout. This is not
-        // deletable as "redundant": on the very first start there is nothing
-        // held yet, and releaseResources() is safe to call in that case.
-        releaseResources()
+        val request = RingRequest.fromIntent(intent)
+        Log.i(TAG, "onStartCommand alarm ${request.id}, currently ringing $ringingAlarmId")
 
-        val id = intent?.getIntExtra(AlarmScheduler.EXTRA_ALARM_ID, -1) ?: -1
-        val label = intent?.getStringExtra(AlarmScheduler.EXTRA_LABEL) ?: "Alarm"
-        val sound = intent?.getStringExtra(AlarmScheduler.EXTRA_SOUND) ?: ""
-        val vibrate = intent?.getBooleanExtra(AlarmScheduler.EXTRA_VIBRATE, true) ?: true
-        val vibrationPattern =
-            intent?.getStringExtra(AlarmScheduler.EXTRA_VIBRATION_PATTERN) ?: "standard"
-        Log.i(TAG, "ringing alarm $id")
-
-        ringingAlarmId = id
-        createChannel()
-        startForeground(NOTIF_ID, buildNotification(id, label))
-
-        acquireWakeLock()
-        startAudio(sound)
-        if (vibrate) startVibration(vibrationPattern)
-
+        when {
+            ringingAlarmId == null -> beginRinging(request)
+            request.id == ringingAlarmId -> {
+                // Redelivery of the alarm already ringing (e.g. a process
+                // restart via START_REDELIVER_INTENT) — nothing to do.
+            }
+            else -> {
+                // Another alarm is already ringing: queue this one rather
+                // than interrupting it. Still must call startForeground()
+                // for THIS startForegroundService() call to satisfy the
+                // platform contract, reusing the currently-ringing alarm's
+                // own notification content so nothing about its active ring
+                // changes.
+                ringQueue.add(request)
+                saveQueue(this)
+                current?.let { startForeground(NOTIF_ID, buildNotification(it.id, it.label)) }
+            }
+        }
         // START_REDELIVER_INTENT: if the system kills us under memory
         // pressure while an alarm is ringing, come back with the *same*
         // Intent we were last started with, so the restarted service still
@@ -82,6 +201,24 @@ class AlarmService : Service() {
         // would restart us with a null Intent instead, losing that identity
         // and falling back to the id=-1 sentinel throughout the pipeline.
         return START_REDELIVER_INTENT
+    }
+
+    private fun beginRinging(request: RingRequest) {
+        Log.i(TAG, "ringing alarm ${request.id}")
+        releaseResources()
+        current = request
+        ringingAlarmId = request.id
+        createChannel()
+        startForeground(NOTIF_ID, buildNotification(request.id, request.label))
+        acquireWakeLock()
+        startAudio(request.sound)
+        if (request.vibrate) startVibration(request.vibrationPattern)
+    }
+
+    private fun advanceToNext() {
+        val next = ringQueue.removeAt(0)
+        saveQueue(this)
+        beginRinging(next)
     }
 
     private fun createChannel() {
@@ -273,6 +410,8 @@ class AlarmService : Service() {
         Log.i(TAG, "stopping alarm ${ringingAlarmId}")
         releaseResources()
         ringingAlarmId = null
+        current = null
+        runningInstance = null
         super.onDestroy()
     }
 }

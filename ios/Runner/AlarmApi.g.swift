@@ -482,6 +482,9 @@ protocol AlarmHostApi {
   /// already-running engine delivers onNewIntent natively with no signal
   /// that reaches Dart on its own).
   func getRingingAlarmId() throws -> Int64?
+  /// The next alarm waiting behind the one currently ringing, or null.
+  /// Peeks like [getRingingAlarmId] — does not clear state, poll it.
+  func getQueuedAlarmId() throws -> Int64?
   func stopRinging(alarmId: Int64) throws
   /// Signals that a headless reconcile (boot, app update, clock change) has
   /// finished, so the platform can tear down the engine that ran it.
@@ -653,6 +656,21 @@ class AlarmHostApiSetup {
       }
     } else {
       getRingingAlarmIdChannel.setMessageHandler(nil)
+    }
+    /// The next alarm waiting behind the one currently ringing, or null.
+    /// Peeks like [getRingingAlarmId] — does not clear state, poll it.
+    let getQueuedAlarmIdChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.getQueuedAlarmId\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getQueuedAlarmIdChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.getQueuedAlarmId()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      getQueuedAlarmIdChannel.setMessageHandler(nil)
     }
     let stopRingingChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.stopRinging\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

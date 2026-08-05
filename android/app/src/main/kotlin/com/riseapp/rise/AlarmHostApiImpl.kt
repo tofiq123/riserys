@@ -103,6 +103,13 @@ class AlarmHostApiImpl(
         return id.toLong()
     }
 
+    // Peeks at the next queued alarm; does not dequeue. See the Pigeon doc
+    // comment on getQueuedAlarmId.
+    override fun getQueuedAlarmId(): Long? {
+        val id = AlarmService.queuedAlarmId ?: return null
+        return id.toLong()
+    }
+
     override fun stopRinging(alarmId: Long) {
         // Stop only if this is still the alarm that's ringing. A second alarm can
         // take over the service between Dart deciding to dismiss and this call
