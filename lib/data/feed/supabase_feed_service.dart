@@ -49,95 +49,90 @@ class SupabaseFeedService implements FeedService {
   @override
   Future<List<FeedItem>> crewFeed() async {
     final me = _client.auth.currentUser?.id;
-    if (me == null) return const [];
-    try {
-      final rows = await _client
-          .from('wake_feed')
-          .select('id, user_id, woke_at, on_time, streak')
-          .order('created_at', ascending: false)
-          .limit(_feedLimit);
-      if (rows.isEmpty) return const [];
+    if (me == null) return const []; // signed out — not a failure
 
-      final feedIds = <String>[for (final r in rows) r['id'] as String];
-      final userIds =
-          <String>{for (final r in rows) r['user_id'] as String}.toList();
+    final rows = await _client
+        .from('wake_feed')
+        .select('id, user_id, woke_at, on_time, streak')
+        .order('created_at', ascending: false)
+        .limit(_feedLimit);
+    if (rows.isEmpty) return const [];
 
-      // Profiles for the authors (RLS: own + friends are readable).
-      final profiles = await _client
-          .from('profiles')
-          .select('id, username, display_name, avatar_color')
-          .inFilter('id', userIds);
-      final byId = {for (final p in profiles) p['id'] as String: p};
+    final feedIds = <String>[for (final r in rows) r['id'] as String];
+    final userIds =
+        <String>{for (final r in rows) r['user_id'] as String}.toList();
 
-      // Reactions on those items (RLS returns only reactions on visible items).
-      final reactionRows = await _client
-          .from('feed_reactions')
-          .select('feed_id, reactor_id, emoji')
-          .inFilter('feed_id', feedIds);
-      final byFeed = <String, List<RawReaction>>{};
-      for (final r in reactionRows) {
-        final fid = r['feed_id'] as String;
-        (byFeed[fid] ??= []).add((
-          emoji: (r['emoji'] as String?) ?? '',
-          reactorId: (r['reactor_id'] as String?) ?? '',
-        ));
-      }
+    // Profiles for the authors (RLS: own + friends are readable).
+    final profiles = await _client
+        .from('profiles')
+        .select('id, username, display_name, avatar_color')
+        .inFilter('id', userIds);
+    final byId = {for (final p in profiles) p['id'] as String: p};
 
-      final items = <FeedItem>[];
-      for (final r in rows) {
-        final id = r['id'] as String;
-        final userId = r['user_id'] as String;
-        final p = byId[userId];
-        if (p == null) continue; // author profile not readable — skip
-        items.add(FeedItem(
-          id: id,
-          userId: userId,
-          username: (p['username'] as String?) ?? '',
-          displayName: (p['display_name'] as String?) ?? '',
-          avatarColor: (p['avatar_color'] as String?) ?? _defaultAvatarColor,
-          wokeAt: DateTime.parse(r['woke_at'] as String),
-          onTime: (r['on_time'] as bool?) ?? false,
-          streak: _int(r['streak']),
-          isMe: userId == me,
-          reactions: summarizeReactions(byFeed[id] ?? const [], myId: me),
-        ));
-      }
-      return items;
-    } catch (_) {
-      return const []; // best-effort
+    // Reactions on those items (RLS returns only reactions on visible items).
+    final reactionRows = await _client
+        .from('feed_reactions')
+        .select('feed_id, reactor_id, emoji')
+        .inFilter('feed_id', feedIds);
+    final byFeed = <String, List<RawReaction>>{};
+    for (final r in reactionRows) {
+      final fid = r['feed_id'] as String;
+      (byFeed[fid] ??= []).add((
+        emoji: (r['emoji'] as String?) ?? '',
+        reactorId: (r['reactor_id'] as String?) ?? '',
+      ));
     }
+
+    final items = <FeedItem>[];
+    for (final r in rows) {
+      final id = r['id'] as String;
+      final userId = r['user_id'] as String;
+      final p = byId[userId];
+      if (p == null) continue; // author profile not readable — skip
+      items.add(FeedItem(
+        id: id,
+        userId: userId,
+        username: (p['username'] as String?) ?? '',
+        displayName: (p['display_name'] as String?) ?? '',
+        avatarColor: (p['avatar_color'] as String?) ?? _defaultAvatarColor,
+        wokeAt: DateTime.parse(r['woke_at'] as String),
+        onTime: (r['on_time'] as bool?) ?? false,
+        streak: _int(r['streak']),
+        isMe: userId == me,
+        reactions: summarizeReactions(byFeed[id] ?? const [], myId: me),
+      ));
+    }
+    return items;
+    // A genuine fetch failure propagates (not masked to an empty list): the
+    // crew feed provider surfaces it as AsyncError, and crew_screen's
+    // _FeedErrorNotice + Retry already exists specifically for this — masking
+    // it here made that UI unreachable and let a failed refetch after a
+    // reaction look identical to "nobody's up yet".
   }
 
   @override
   Future<void> react(String feedId, String emoji) async {
     final me = _client.auth.currentUser?.id;
-    if (me == null) return;
-    try {
-      // Idempotent: the unique(feed_id, reactor_id, emoji) constraint turns a
-      // double-tap into a no-op instead of a duplicate row.
-      await _client.from('feed_reactions').upsert({
-        'feed_id': feedId,
-        'reactor_id': me,
-        'emoji': emoji,
-      }, onConflict: 'feed_id, reactor_id, emoji', ignoreDuplicates: true);
-    } catch (_) {
-      // best-effort; the UI refetches and reconciles the true state
-    }
+    if (me == null) return; // signed out — not a failure
+    // Idempotent: the unique(feed_id, reactor_id, emoji) constraint turns a
+    // double-tap into a no-op instead of a duplicate row. Failures propagate
+    // so an optimistic UI update can detect them and revert.
+    await _client.from('feed_reactions').upsert({
+      'feed_id': feedId,
+      'reactor_id': me,
+      'emoji': emoji,
+    }, onConflict: 'feed_id, reactor_id, emoji', ignoreDuplicates: true);
   }
 
   @override
   Future<void> unreact(String feedId, String emoji) async {
     final me = _client.auth.currentUser?.id;
-    if (me == null) return;
-    try {
-      await _client
-          .from('feed_reactions')
-          .delete()
-          .eq('feed_id', feedId)
-          .eq('reactor_id', me)
-          .eq('emoji', emoji);
-    } catch (_) {
-      // best-effort; the UI refetches and reconciles the true state
-    }
+    if (me == null) return; // signed out — not a failure
+    await _client
+        .from('feed_reactions')
+        .delete()
+        .eq('feed_id', feedId)
+        .eq('reactor_id', me)
+        .eq('emoji', emoji);
   }
 }

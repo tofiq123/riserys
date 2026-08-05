@@ -136,25 +136,25 @@ class _CrewScreenState extends ConsumerState<CrewScreen> {
   void _openEntry(MorningEntry e) =>
       _push(FriendDetailScreen(member: e.toMember()));
 
-  /// Leaving a cheer. Optimistic by design: the tally is a nicety, so a failure
-  /// only ever refreshes the feed back to the truth.
+  /// Leaving a cheer. Genuinely optimistic (see [CrewFeedNotifier.setReaction]):
+  /// the tally flips the instant you tap, before the network write even
+  /// starts. Only a real failure gets a toast — success is the tally
+  /// updating, not a notification on top of it.
   Future<void> _cheer(MorningEntry entry, String emoji) async {
     final feedId = entry.feedId;
     if (feedId == null) return;
     final already =
         entry.reactions.any((r) => r.emoji == emoji && r.reactedByMe);
     try {
-      final service = ref.read(feedServiceProvider);
-      if (already) {
-        await service.unreact(feedId, emoji);
-      } else {
-        await service.react(feedId, emoji);
-        if (mounted) RiseToast.show(context, 'Cheered $emoji');
-      }
+      await ref
+          .read(crewFeedProvider.notifier)
+          .setReaction(feedId, emoji, !already);
     } catch (_) {
-      // Best-effort — the invalidate below restores the true tally.
+      if (mounted) {
+        RiseToast.show(context, 'Could not send that cheer.',
+            kind: RiseToastKind.error);
+      }
     }
-    ref.invalidate(crewFeedProvider);
   }
 
   @override
