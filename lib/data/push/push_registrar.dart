@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -35,8 +36,9 @@ class PushRegistrar {
         _lastToken = t;
         unawaited(_upsert(userId, t));
       });
-    } catch (_) {
+    } catch (e) {
       // best-effort; nudges just won't reach this device
+      debugPrint('Rise: push registration failed for $userId: $e');
     }
   }
 
@@ -48,7 +50,9 @@ class PushRegistrar {
         'platform': 'android',
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       }, onConflict: 'user_id,token');
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Rise: could not upsert device token for $userId: $e');
+    }
   }
 
   /// Removes this device's token (on sign-out). Best-effort.

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/supabase_config.dart';
+import '../data/firebase_ready.dart';
 import '../data/push/push_registrar.dart';
 import 'state/auth_providers.dart';
 
@@ -25,18 +26,18 @@ class _PushRegistrarHostState extends ConsumerState<PushRegistrarHost> {
   @override
   Widget build(BuildContext context) {
     if (SupabaseConfig.isConfigured) {
-      final account = ref.watch(accountProvider).value;
+      // .valueOrNull, not .value: .value rethrows while accountProvider is in
+      // an error state, and this widget wraps the entire app shell below —
+      // unlike the Crew-tab-only version of this bug, a throw here would
+      // blank the whole app.
+      final account = ref.watch(accountProvider).valueOrNull;
       if (account != null && !_registered) {
         _registered = true;
         final id = account.id;
+        final registrar = ref.read(pushRegistrarProvider);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          try {
-            unawaited(ref.read(pushRegistrarProvider).register(id));
-          } catch (_) {
-            // constructing the registrar can throw if Supabase/Firebase init
-            // failed despite being configured — best-effort, never crash.
-          }
+          unawaited(_registerAfterFirebaseReady(registrar, id));
         });
       } else if (account == null && _registered) {
         _registered = false;
@@ -44,10 +45,28 @@ class _PushRegistrarHostState extends ConsumerState<PushRegistrarHost> {
           if (!mounted) return;
           try {
             unawaited(ref.read(pushRegistrarProvider).unregister());
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('Rise: could not unregister push token: $e');
+          }
         });
       }
     }
     return widget.child;
+  }
+
+  /// Waits for the deferred `Firebase.initializeApp()` in main() to settle
+  /// before registering — without this, a signed-in account rendering on the
+  /// first frame reaches here before Firebase has, and `FirebaseMessaging`
+  /// throws `[core/no-app]` (confirmed on-device 2026-08-05). [PushRegistrar]
+  /// itself is still best-effort beyond this point.
+  Future<void> _registerAfterFirebaseReady(
+      PushRegistrar registrar, String id) async {
+    try {
+      await firebaseReady;
+      if (!mounted) return;
+      unawaited(registrar.register(id));
+    } catch (e) {
+      debugPrint('Rise: could not start push registration for $id: $e');
+    }
   }
 }
