@@ -62,7 +62,9 @@ dependencies:
   # permission + NSCameraUsageDescription). pedometer: step stream for the walk
   # mission (ACTIVITY_RECOGNITION permission + NSMotionUsageDescription).
   sensors_plus: ^6.1.1
-  mobile_scanner: ^5.2.3
+  # 7.x drops GoogleMLKit on iOS (Apple Vision) so it no longer conflicts
+  # with google_mlkit_face_detection's GoogleMLKit/MLKitCore 9.x pods.
+  mobile_scanner: ^7.4.0
   pedometer: ^4.0.2
   share_plus: ^12.0.2
 
