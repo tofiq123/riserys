@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -20,10 +22,37 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.rise.invite</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>rise</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAlarmKitUsageDescription</key>
+	<string>Rise uses alarms to wake you at the times you set, even when your phone is silent.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Rise uses the camera to scan your wake-up QR code.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Rise checks how far you are from home around wake-up to confirm you're really up. Your home location never leaves this device.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Rise uses the microphone to record short voice clips you send to wake up your crew.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Rise counts your steps to confirm you're up and moving.</string>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UIBackgroundModes</key>
+	<array/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -40,39 +69,6 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
-	<key>NSAlarmKitUsageDescription</key>
-	<string>Rise uses alarms to wake you at the times you set, even when your phone is silent.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Rise uses the camera to scan your wake-up QR code.</string>
-	<key>NSMotionUsageDescription</key>
-	<string>Rise counts your steps to confirm you're up and moving.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Rise uses the microphone to record short voice clips you send to wake up your crew.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Rise checks how far you are from home around wake-up to confirm you're really up. Your home location never leaves this device.</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>audio</string>
-	</array>
-	<!-- Group-invite deep links: rise://invite/<CODE>. app_links handles the
-	     open-URL callback at runtime (verify at the Mac pass). -->
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>com.rise.invite</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>rise</string>
-			</array>
-		</dict>
 	</array>
 </dict>
 </plist>

@@ -95,7 +95,7 @@ class _QrMissionState extends State<QrMission> {
               child: MobileScanner(
                 controller: _controller,
                 onDetect: _onDetect,
-                errorBuilder: (context, error, child) => Container(
+                errorBuilder: (context, error) => Container(
                   color: RiseColors.surface2,
                   alignment: Alignment.center,
                   padding: const EdgeInsets.all(16),
