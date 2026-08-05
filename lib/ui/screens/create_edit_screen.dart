@@ -224,6 +224,7 @@ class _CreateEditScreenState extends ConsumerState<CreateEditScreen> {
                 hour: Alarm.to24Hour(t.hour12, t.isAm),
                 minute: t.minute,
                 clearLastDismissedAt: true, // editing time clears a stale dismissal
+                clearSnoozedUntil: true, // and a stale snooze - the new time wins
               )),
             ),
           ),

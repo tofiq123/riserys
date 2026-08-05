@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/domain/alarm.dart';
 import 'package:rise/domain/rise_settings.dart';
+import 'package:rise/ui/components/time_dial.dart';
 import 'package:rise/ui/screens/create_edit_screen.dart';
 import 'package:rise/ui/state/alarm_providers.dart';
 import 'package:rise/ui/state/settings_providers.dart';
@@ -90,6 +91,32 @@ void main() {
     await t.pumpAndSettle();
     expect(m.saved.single.hour, 18); // stored 24-hour form is untouched
     expect(m.saved.single.minute, 30);
+  });
+
+  testWidgets(
+      'changing the time dial clears a stale snooze so the edit wins',
+      (t) async {
+    final m = _RecordingMutations();
+    final c = _container(m);
+    final snoozedUntil = DateTime.utc(2026, 1, 1, 7);
+    c.read(draftProvider.notifier).startEdit(Alarm(
+        id: 5, hour: 6, minute: 30, label: 'Run', snoozedUntil: snoozedUntil));
+    await _pump(t, _host(c));
+    await t.pump();
+
+    // TimeDial's drag competes with the screen's own ListView for vertical
+    // gestures (see interactions_test.dart, which only drag-tests it in
+    // isolation) — invoke the callback directly to exercise the screen's
+    // wiring without fighting that unrelated gesture-arena conflict.
+    t.widget<TimeDial>(find.byType(TimeDial)).onChanged(
+        (hour12: 9, minute: 30, isAm: true));
+    await t.pump();
+
+    await t.tap(find.text('Save alarm'));
+    await t.pumpAndSettle();
+
+    expect(m.saved.single.hour, 9);
+    expect(m.saved.single.snoozedUntil, isNull);
   });
 
   testWidgets('new mode shows "New alarm" and no delete button', (t) async {
