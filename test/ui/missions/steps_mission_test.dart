@@ -43,7 +43,10 @@ void main() {
       targetSteps: 10,
       stepCountStream: ctrl.stream,
       fallbackAfter: const Duration(hours: 1), // never fires in this test
+      requestPermission: () async => true,
     )));
+    await t.pump();
+    await t.pump(); // let the permission check resolve before subscribing
 
     ctrl.add(1000); // baseline anchor
     await t.pump();
@@ -65,7 +68,10 @@ void main() {
       targetSteps: 5,
       stepCountStream: ctrl.stream,
       fallbackAfter: const Duration(hours: 1),
+      requestPermission: () async => true,
     )));
+    await t.pump();
+    await t.pump(); // let the permission check resolve before subscribing
 
     ctrl.add(48210); // huge cumulative count -> baseline, not an instant solve
     await t.pump();
@@ -89,7 +95,10 @@ void main() {
       targetSteps: 10,
       stepCountStream: ctrl.stream,
       fallbackAfter: const Duration(hours: 1),
+      requestPermission: () async => true,
     )));
+    await t.pump();
+    await t.pump(); // let the permission check resolve before subscribing
 
     ctrl.add(1000);
     await t.pump();
@@ -111,9 +120,13 @@ void main() {
       targetSteps: 10,
       stepCountStream: ctrl.stream,
       fallbackAfter: const Duration(hours: 1),
+      requestPermission: () async => true,
     )));
+    await t.pump();
+    await t.pump(); // let the permission check resolve before subscribing
 
     ctrl.addError(Exception('no ACTIVITY_RECOGNITION permission'));
+    await t.pump();
     await t.pump();
     expect(find.byType(SlideToWake), findsOneWidget);
     expect(find.text("Can't count steps on this device"), findsOneWidget);
@@ -133,7 +146,10 @@ void main() {
       targetSteps: 10,
       stepCountStream: ctrl.stream,
       fallbackAfter: const Duration(milliseconds: 100),
+      requestPermission: () async => true,
     )));
+    await t.pump();
+    await t.pump(); // let the permission check resolve before subscribing
 
     // No step events arrive; the fallback timer fires.
     await t.pump(const Duration(milliseconds: 150));
@@ -141,6 +157,58 @@ void main() {
 
     // The escape actually dismisses — the user is never trapped.
     await t.drag(find.byType(SlideToWake), const Offset(600, 0));
+    await t.pump();
+    expect(solves, 1);
+  });
+
+  testWidgets(
+      'denied permission shows the fallback immediately, without waiting for the timeout',
+      (t) async {
+    var solves = 0;
+
+    // No stepCountStream: denied permission means the mission never
+    // subscribes at all (see _requestPermissionThenListen), so there is
+    // nothing for a stream to do here.
+    await t.pumpWidget(_wrap(StepsMission(
+      diff: 'easy',
+      onSolved: () => solves++,
+      targetSteps: 10,
+      fallbackAfter: const Duration(hours: 1), // must not need to wait for this
+      requestPermission: () async => false,
+    )));
+    await t.pump();
+    await t.pump();
+
+    expect(find.byType(SlideToWake), findsOneWidget);
+
+    // The escape still dismisses — anti-trap holds even on a denied permission.
+    await t.drag(find.byType(SlideToWake), const Offset(600, 0));
+    await t.pump();
+    expect(solves, 1);
+  });
+
+  testWidgets(
+      'a permission-check failure never blocks the mission — it just proceeds',
+      (t) async {
+    var solves = 0;
+    final ctrl = StreamController<int>();
+    addTearDown(ctrl.close);
+
+    await t.pumpWidget(_wrap(StepsMission(
+      diff: 'easy',
+      onSolved: () => solves++,
+      targetSteps: 10,
+      stepCountStream: ctrl.stream,
+      fallbackAfter: const Duration(hours: 1),
+      requestPermission: () async => throw StateError('plugin unavailable'),
+    )));
+    await t.pump();
+    await t.pump();
+
+    // Subscribed anyway (fail-open), so real step events still solve it.
+    ctrl.add(1000);
+    await t.pump();
+    ctrl.add(1010);
     await t.pump();
     expect(solves, 1);
   });
