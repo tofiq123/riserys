@@ -143,6 +143,22 @@ class _PhotoMissionState extends State<PhotoMission> {
     }
   }
 
+  /// Fits the live preview into its fixed-size box without distorting it —
+  /// see the identical helper on EyesMission for the full explanation of why
+  /// a raw `CameraPreview` inside a fixed box stretches the feed.
+  Widget _cameraPreview(CameraController controller) {
+    final previewSize = controller.value.previewSize;
+    if (previewSize == null) return CameraPreview(controller);
+    return FittedBox(
+      fit: BoxFit.cover,
+      child: SizedBox(
+        width: previewSize.height,
+        height: previewSize.width,
+        child: CameraPreview(controller),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_fallback) {
@@ -175,7 +191,7 @@ class _PhotoMissionState extends State<PhotoMission> {
               width: 240,
               height: 240,
               child: _ready && controller != null
-                  ? CameraPreview(controller)
+                  ? _cameraPreview(controller)
                   : Container(
                       color: RiseColors.surface2,
                       alignment: Alignment.center,
