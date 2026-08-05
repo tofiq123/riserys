@@ -209,6 +209,31 @@ class _EyesMissionState extends State<EyesMission> {
     );
   }
 
+  /// Fits the live preview into its fixed-size box without distorting it.
+  /// `CameraPreview` wraps its texture in its own `AspectRatio`, but that
+  /// widget silently collapses to whatever tight box it's handed (see
+  /// Flutter's `RenderAspectRatio._applyAspectRatio`) instead of honouring
+  /// the camera's real ratio — so naively placing it in a fixed 220x220 box
+  /// stretches the feed to fill a square. Giving it its own natural size
+  /// inside a `FittedBox` lets it size correctly, then scales/crops that
+  /// correctly-proportioned preview to fill the visible box, matching how
+  /// the QR mission's scanner (which does this internally) already looks.
+  Widget _cameraPreview(CameraController controller) {
+    final previewSize = controller.value.previewSize;
+    if (previewSize == null) return CameraPreview(controller);
+    return FittedBox(
+      fit: BoxFit.cover,
+      child: SizedBox(
+        // previewSize is reported in the camera sensor's own (landscape)
+        // orientation regardless of device orientation, so on a portrait
+        // phone its width/height are swapped relative to what's on screen.
+        width: previewSize.height,
+        height: previewSize.width,
+        child: CameraPreview(controller),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_fallback) {
@@ -241,7 +266,7 @@ class _EyesMissionState extends State<EyesMission> {
               width: 220,
               height: 220,
               child: _ready && controller != null
-                  ? CameraPreview(controller)
+                  ? _cameraPreview(controller)
                   : Container(
                       color: RiseColors.surface2,
                       alignment: Alignment.center,
