@@ -15,6 +15,7 @@ import 'l10n/app_localizations.dart';
 import 'data/alarm_sync_service.dart';
 import 'data/app_settings.dart';
 import 'data/auth/profile_cache.dart';
+import 'data/firebase_ready.dart';
 import 'data/iap/revenuecat_entitlement_service.dart';
 import 'data/invite_links.dart';
 import 'data/local/alarm_repository.dart';
@@ -123,6 +124,12 @@ Future<void> _deferredStartup() async {
     await Firebase.initializeApp();
   } catch (e) {
     debugPrint('Riserys: Firebase init skipped (push disabled): $e');
+  } finally {
+    // A signed-in account can render on the very first frame (see the auth
+    // priming in main() above), which can trigger push registration before
+    // this async init has had a chance to run at all — mark it settled
+    // (success or failure) so that code can wait for it instead of racing it.
+    markFirebaseReady();
   }
 
   if (RevenueCatConfig.isConfigured) {
