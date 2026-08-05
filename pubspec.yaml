@@ -66,6 +66,15 @@ dependencies:
   pedometer: ^4.0.2
   share_plus: ^12.0.2
 
+  # Runtime permission requests. The pedometer plugin declares
+  # ACTIVITY_RECOGNITION in the manifest but never requests it itself (that's
+  # the app's job on Android 10+) — the steps mission uses this to ask before
+  # it ever subscribes to the step stream. Pinned below 12.x: 13.x resolves
+  # permission_handler_android 14, whose build.gradle.kts uses a
+  # compilerOptions/jvmTarget Kotlin Gradle Plugin DSL this project's KGP
+  # setup doesn't support.
+  permission_handler: ^11.3.1
+
   # Camera-based dismiss missions (Phase camera-missions). camera: live preview
   # + still capture for the photo-match ("snap a spot") mission and the
   # eye-open mission's front-camera feed (CAMERA permission +

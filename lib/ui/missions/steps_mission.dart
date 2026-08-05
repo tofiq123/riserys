@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:pedometer/pedometer.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../components/slide_to_wake.dart';
 import '../theme/tokens.dart';
@@ -26,6 +27,14 @@ int stepTargetFor(String diff) {
 bool stepGoalReached(int baseline, int current, int target) =>
     current - baseline >= target;
 
+/// Requests the pedometer's runtime permission (ACTIVITY_RECOGNITION on
+/// Android 10+; Core Motion authorization on iOS, which the plugin doesn't
+/// request itself — the app must). Returns whether it's granted.
+Future<bool> defaultRequestActivityRecognition() async {
+  final status = await Permission.activityRecognition.request();
+  return status.isGranted;
+}
+
 /// A "walk it off" dismiss mission: the user must take [targetSteps] steps,
 /// measured by the platform pedometer. Difficulty scales the count.
 ///
@@ -46,6 +55,7 @@ class StepsMission extends StatefulWidget {
     this.targetSteps, // injectable for tests
     this.stepCountStream, // injectable cumulative step counts for tests
     this.fallbackAfter = const Duration(seconds: 30),
+    this.requestPermission = defaultRequestActivityRecognition,
   });
 
   final String diff;
@@ -53,6 +63,12 @@ class StepsMission extends StatefulWidget {
   final int? targetSteps;
   final Stream<int>? stepCountStream;
   final Duration fallbackAfter;
+
+  /// Requests the runtime permission BEFORE subscribing to the step stream —
+  /// see [_StepsMissionState._requestPermissionThenListen] for why that order
+  /// matters. Injectable for tests; defaults to
+  /// [defaultRequestActivityRecognition].
+  final Future<bool> Function() requestPermission;
 
   @override
   State<StepsMission> createState() => _StepsMissionState();
@@ -74,10 +90,35 @@ class _StepsMissionState extends State<StepsMission> {
   @override
   void initState() {
     super.initState();
+    _fallbackTimer = Timer(widget.fallbackAfter, _showFallback);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_requestPermissionThenListen());
+    });
+  }
+
+  /// Requests the permission BEFORE subscribing, not in parallel with it: the
+  /// pedometer plugin registers with the OS sensor at subscription time, and
+  /// that registration needs the permission already granted — subscribing
+  /// first and hoping the permission catches up moments later (once the user
+  /// answers the system dialog) would leave this subscription permanently
+  /// deaf even after they approve it. Deferred to after the first frame
+  /// (rather than fired straight from initState) matching this codebase's
+  /// established pattern for post-mount async work.
+  Future<void> _requestPermissionThenListen() async {
+    bool granted;
+    try {
+      granted = await widget.requestPermission();
+    } catch (_) {
+      granted = true; // never block the mission on a permission-check failure
+    }
+    if (!mounted) return;
+    if (!granted) {
+      _showFallback(); // known denied — no reason to wait for the timeout
+      return;
+    }
     final stream =
         widget.stepCountStream ?? Pedometer.stepCountStream.map((e) => e.steps);
     _sub = stream.listen(_onCount, onError: (_) => _showFallback());
-    _fallbackTimer = Timer(widget.fallbackAfter, _showFallback);
   }
 
   @override
