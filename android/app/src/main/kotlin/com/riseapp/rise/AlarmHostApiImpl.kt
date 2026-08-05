@@ -110,6 +110,10 @@ class AlarmHostApiImpl(
         return id.toLong()
     }
 
+    override fun removeQueuedAlarm(alarmId: Long) {
+        AlarmService.removeFromQueue(context, alarmId.toInt())
+    }
+
     override fun stopRinging(alarmId: Long) {
         // Stop only if this is still the alarm that's ringing. A second alarm can
         // take over the service between Dart deciding to dismiss and this call

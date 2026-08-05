@@ -516,6 +516,15 @@ interface AlarmHostApi {
    * Peeks like [getRingingAlarmId] — does not clear state, poll it.
    */
   fun getQueuedAlarmId(): Long?
+  /**
+   * Removes any queued entry for [alarmId] — used when an alarm is deleted
+   * or disabled while it is waiting behind another ringing alarm.
+   * `reconcile`'s cancellation only reaches AlarmManager's future schedule,
+   * not an alarm that already fired and is sitting in the ring queue, so
+   * this is the only way to stop it from ringing anyway. Safe to call
+   * whether or not the id is actually queued.
+   */
+  fun removeQueuedAlarm(alarmId: Long)
   fun stopRinging(alarmId: Long)
   /**
    * Signals that a headless reconcile (boot, app update, clock change) has
@@ -714,6 +723,24 @@ interface AlarmHostApi {
           channel.setMessageHandler { _, reply ->
             val wrapped: List<Any?> = try {
               listOf(api.getQueuedAlarmId())
+            } catch (exception: Throwable) {
+              AlarmApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.rise.AlarmHostApi.removeQueuedAlarm$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val alarmIdArg = args[0] as Long
+            val wrapped: List<Any?> = try {
+              api.removeQueuedAlarm(alarmIdArg)
+              listOf(null)
             } catch (exception: Throwable) {
               AlarmApiPigeonUtils.wrapError(exception)
             }

@@ -485,6 +485,13 @@ protocol AlarmHostApi {
   /// The next alarm waiting behind the one currently ringing, or null.
   /// Peeks like [getRingingAlarmId] — does not clear state, poll it.
   func getQueuedAlarmId() throws -> Int64?
+  /// Removes any queued entry for [alarmId] — used when an alarm is deleted
+  /// or disabled while it is waiting behind another ringing alarm.
+  /// `reconcile`'s cancellation only reaches AlarmManager's future schedule,
+  /// not an alarm that already fired and is sitting in the ring queue, so
+  /// this is the only way to stop it from ringing anyway. Safe to call
+  /// whether or not the id is actually queued.
+  func removeQueuedAlarm(alarmId: Int64) throws
   func stopRinging(alarmId: Int64) throws
   /// Signals that a headless reconcile (boot, app update, clock change) has
   /// finished, so the platform can tear down the engine that ran it.
@@ -671,6 +678,27 @@ class AlarmHostApiSetup {
       }
     } else {
       getQueuedAlarmIdChannel.setMessageHandler(nil)
+    }
+    /// Removes any queued entry for [alarmId] — used when an alarm is deleted
+    /// or disabled while it is waiting behind another ringing alarm.
+    /// `reconcile`'s cancellation only reaches AlarmManager's future schedule,
+    /// not an alarm that already fired and is sitting in the ring queue, so
+    /// this is the only way to stop it from ringing anyway. Safe to call
+    /// whether or not the id is actually queued.
+    let removeQueuedAlarmChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.removeQueuedAlarm\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      removeQueuedAlarmChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let alarmIdArg = args[0] as! Int64
+        do {
+          try api.removeQueuedAlarm(alarmId: alarmIdArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      removeQueuedAlarmChannel.setMessageHandler(nil)
     }
     let stopRingingChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.rise.AlarmHostApi.stopRinging\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

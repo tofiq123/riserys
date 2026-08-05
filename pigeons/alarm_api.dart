@@ -131,6 +131,14 @@ abstract class AlarmHostApi {
   /// Peeks like [getRingingAlarmId] — does not clear state, poll it.
   int? getQueuedAlarmId();
 
+  /// Removes any queued entry for [alarmId] — used when an alarm is deleted
+  /// or disabled while it is waiting behind another ringing alarm.
+  /// `reconcile`'s cancellation only reaches AlarmManager's future schedule,
+  /// not an alarm that already fired and is sitting in the ring queue, so
+  /// this is the only way to stop it from ringing anyway. Safe to call
+  /// whether or not the id is actually queued.
+  void removeQueuedAlarm(int alarmId);
+
   void stopRinging(int alarmId);
 
   /// Signals that a headless reconcile (boot, app update, clock change) has

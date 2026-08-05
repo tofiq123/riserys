@@ -145,6 +145,20 @@ class AlarmService : Service() {
             }
         }
 
+        /**
+         * Removes any queued entry for [alarmId] — the alarm was deleted or
+         * disabled while it was waiting behind another ringing alarm.
+         * [reconcile]'s cancellation only reaches AlarmManager's future
+         * schedule, not an alarm that already fired and is sitting in this
+         * queue, so this is the only way to stop it from ringing anyway.
+         * Safe to call whether or not the id is actually queued.
+         */
+        fun removeFromQueue(context: Context, alarmId: Int) {
+            if (ringQueue.removeAll { it.id == alarmId }) {
+                saveQueue(context)
+            }
+        }
+
         private fun saveQueue(context: Context) {
             val array = JSONArray()
             ringQueue.forEach { array.put(RingRequest.toJson(it)) }

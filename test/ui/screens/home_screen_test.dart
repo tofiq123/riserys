@@ -23,6 +23,8 @@ class _RecordingMutations implements AlarmMutations {
   Future<void> delete(int id) async {}
   @override
   Future<void> Function(int alarmId) get cancelWakeCheck => (_) async {};
+  @override
+  Future<void> Function(int alarmId) get removeQueuedAlarm => (_) async {};
 }
 
 Widget _host({

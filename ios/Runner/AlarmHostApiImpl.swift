@@ -211,6 +211,9 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
     return nil
   }
 
+  // No ring queue to remove from (see getQueuedAlarmId). No-op.
+  func removeQueuedAlarm(alarmId: Int64) throws {}
+
   func stopRinging(alarmId: Int64) throws {
     if ringingAlarmId == alarmId {
       ringingAlarmId = nil

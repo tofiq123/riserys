@@ -34,6 +34,8 @@ class _RecordingMutations implements AlarmMutations {
   Future<void> setEnabled(int id, bool enabled) async {}
   @override
   Future<void> Function(int alarmId) get cancelWakeCheck => (_) async {};
+  @override
+  Future<void> Function(int alarmId) get removeQueuedAlarm => (_) async {};
 }
 
 Future<(FakeVoiceClipService, FakeVoicePlayer)> _pump(

@@ -615,6 +615,30 @@ class AlarmHostApi {
     return pigeonVar_replyValue as int?;
   }
 
+  /// Removes any queued entry for [alarmId] — used when an alarm is deleted
+  /// or disabled while it is waiting behind another ringing alarm.
+  /// `reconcile`'s cancellation only reaches AlarmManager's future schedule,
+  /// not an alarm that already fired and is sitting in the ring queue, so
+  /// this is the only way to stop it from ringing anyway. Safe to call
+  /// whether or not the id is actually queued.
+  Future<void> removeQueuedAlarm(int alarmId) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.removeQueuedAlarm$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[alarmId]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
   Future<void> stopRinging(int alarmId) async {
     final pigeonVar_channelName = 'dev.flutter.pigeon.rise.AlarmHostApi.stopRinging$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(

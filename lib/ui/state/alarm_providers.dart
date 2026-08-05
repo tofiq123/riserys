@@ -27,11 +27,16 @@ final alarmsProvider = StreamProvider<List<Alarm>>((ref) {
 Future<void> defaultCancelWakeCheck(int alarmId) =>
     AlarmHostApi().cancelWakeCheck(alarmId);
 
+/// Removes any queued entry for [alarmId] from the native ring queue.
+Future<void> defaultRemoveQueuedAlarm(int alarmId) =>
+    AlarmHostApi().removeQueuedAlarm(alarmId);
+
 /// Every alarm write persists locally AND re-arms the platform scheduler, so
 /// the OS never drifts out of sync with the database (the source of truth).
 class AlarmMutations {
   AlarmMutations(this._repo, this._sync,
-      {this.cancelWakeCheck = defaultCancelWakeCheck});
+      {this.cancelWakeCheck = defaultCancelWakeCheck,
+      this.removeQueuedAlarm = defaultRemoveQueuedAlarm});
 
   final AlarmRepository _repo;
   final AlarmSyncService _sync;
@@ -44,6 +49,13 @@ class AlarmMutations {
   /// to [defaultCancelWakeCheck].
   final Future<void> Function(int alarmId) cancelWakeCheck;
 
+  /// Removes a deleted/disabled alarm from the native ring queue — an alarm
+  /// that already fired and is waiting behind another ringing alarm is not
+  /// covered by `reconcileNow` (that only reaches the future AlarmManager
+  /// schedule), so without this it would still ring once its turn comes.
+  /// Injectable for tests; defaults to [defaultRemoveQueuedAlarm].
+  final Future<void> Function(int alarmId) removeQueuedAlarm;
+
   Future<void> save(Alarm alarm) async {
     await _repo.upsert(alarm);
     await _sync.reconcileNow();
@@ -52,12 +64,16 @@ class AlarmMutations {
   Future<void> delete(int id) async {
     await _repo.delete(id);
     await _cancelWakeCheckBestEffort(id);
+    await _removeQueuedAlarmBestEffort(id);
     await _sync.reconcileNow();
   }
 
   Future<void> setEnabled(int id, bool enabled) async {
     await _repo.setEnabled(id, enabled);
-    if (!enabled) await _cancelWakeCheckBestEffort(id);
+    if (!enabled) {
+      await _cancelWakeCheckBestEffort(id);
+      await _removeQueuedAlarmBestEffort(id);
+    }
     await _sync.reconcileNow();
   }
 
@@ -69,6 +85,15 @@ class AlarmMutations {
       await cancelWakeCheck(id);
     } catch (e) {
       debugPrint('Rise: could not cancel wake-check for alarm $id: $e');
+    }
+  }
+
+  /// Best-effort, same reasoning as [_cancelWakeCheckBestEffort].
+  Future<void> _removeQueuedAlarmBestEffort(int id) async {
+    try {
+      await removeQueuedAlarm(id);
+    } catch (e) {
+      debugPrint('Rise: could not remove queued alarm $id: $e');
     }
   }
 }

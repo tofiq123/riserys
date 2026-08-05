@@ -191,7 +191,80 @@ void main() {
     expect(cancelled, [id]); // re-enabling must not cancel anything new
   });
 
-  test('a failing wake-check cancel never blocks delete or setEnabled',
+  test('delete removes any queued entry for that alarm from the ring queue',
+      () async {
+    final db = RiseDatabase(NativeDatabase.memory());
+    final platform = _FakePlatform();
+    final service = AlarmSyncService(
+      repository: AlarmRepository(db),
+      platform: platform,
+      location: tz.getLocation('America/New_York'),
+    );
+    addTearDown(db.close);
+    final removed = <int>[];
+    final c = ProviderContainer(overrides: [
+      alarmSyncServiceProvider.overrideWithValue(service),
+      alarmMutationsProvider.overrideWith((ref) => AlarmMutations(
+            ref.watch(alarmRepositoryProvider),
+            ref.watch(alarmSyncServiceProvider),
+            removeQueuedAlarm: (id) async => removed.add(id),
+          )),
+    ]);
+    addTearDown(c.dispose);
+
+    final sub = c.listen(alarmsProvider, (_, __) {});
+    addTearDown(sub.close);
+
+    await c
+        .read(alarmMutationsProvider)
+        .save(const Alarm(id: 0, hour: 6, minute: 30, label: 'Run'));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final id = (c.read(alarmsProvider).value ?? const []).single.id;
+
+    await c.read(alarmMutationsProvider).delete(id);
+
+    expect(removed, [id]);
+  });
+
+  test(
+      'disabling an alarm removes it from the ring queue; enabling one does not',
+      () async {
+    final db = RiseDatabase(NativeDatabase.memory());
+    final platform = _FakePlatform();
+    final service = AlarmSyncService(
+      repository: AlarmRepository(db),
+      platform: platform,
+      location: tz.getLocation('America/New_York'),
+    );
+    addTearDown(db.close);
+    final removed = <int>[];
+    final c = ProviderContainer(overrides: [
+      alarmSyncServiceProvider.overrideWithValue(service),
+      alarmMutationsProvider.overrideWith((ref) => AlarmMutations(
+            ref.watch(alarmRepositoryProvider),
+            ref.watch(alarmSyncServiceProvider),
+            removeQueuedAlarm: (id) async => removed.add(id),
+          )),
+    ]);
+    addTearDown(c.dispose);
+
+    final sub = c.listen(alarmsProvider, (_, __) {});
+    addTearDown(sub.close);
+
+    await c.read(alarmMutationsProvider).save(
+        const Alarm(id: 0, hour: 6, minute: 30, label: 'Run', enabled: true));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final id = (c.read(alarmsProvider).value ?? const []).single.id;
+
+    await c.read(alarmMutationsProvider).setEnabled(id, false);
+    expect(removed, [id]);
+
+    await c.read(alarmMutationsProvider).setEnabled(id, true);
+    expect(removed, [id]); // re-enabling must not remove anything new
+  });
+
+  test(
+      'a failing wake-check cancel or queue removal never blocks delete or setEnabled',
       () async {
     final db = RiseDatabase(NativeDatabase.memory());
     final platform = _FakePlatform();
@@ -207,6 +280,7 @@ void main() {
             ref.watch(alarmRepositoryProvider),
             ref.watch(alarmSyncServiceProvider),
             cancelWakeCheck: (_) async => throw StateError('channel down'),
+            removeQueuedAlarm: (_) async => throw StateError('channel down'),
           )),
     ]);
     addTearDown(c.dispose);
