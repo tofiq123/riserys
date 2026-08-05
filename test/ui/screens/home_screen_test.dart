@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/data/app_settings.dart';
 import 'package:rise/domain/alarm.dart';
+import 'package:rise/domain/clock_format.dart';
 import 'package:rise/domain/scheduled_occurrence.dart';
 import 'package:rise/ui/components/rise_switch.dart';
 import 'package:rise/ui/screens/home_screen.dart';
@@ -98,9 +99,13 @@ void main() {
   });
 
   testWidgets('hero shows the occurrence time even when its alarm is not in the list', (t) async {
+    // hour/minute deliberately differ from fireAt: they carry the alarm's
+    // plain schedule (for iOS recurrence — see ScheduledOccurrence), not the
+    // resolved next-fire time, and must NOT be what the hero displays.
+    final fireAt = DateTime.now().toUtc().add(const Duration(hours: 2));
     final occ = ScheduledOccurrence(
       alarmId: 999, // deliberately absent from the alarms list
-      fireAt: DateTime.now().toUtc().add(const Duration(hours: 2)),
+      fireAt: fireAt,
       label: 'Gym',
       soundAsset: '',
       vibrate: true,
@@ -120,8 +125,10 @@ void main() {
     ));
     await t.pump(); // resolve the FutureProvider
     await t.pump();
-    expect(find.text('2:05'), findsOneWidget); // 14:05 → 2:05 PM
-    expect(find.text('PM'), findsOneWidget);
+    final local = fireAt.toLocal();
+    final parts = formatClockParts(local.hour, local.minute);
+    expect(find.text('${parts.hour}:${parts.minute}'), findsOneWidget);
+    expect(find.text(parts.period), findsOneWidget);
   });
 
   testWidgets('the streak pill shows the current streak', (t) async {

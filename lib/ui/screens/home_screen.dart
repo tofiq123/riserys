@@ -233,7 +233,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     final use24h =
         ref.watch(currentSettingsProvider.select((s) => s.use24HourTime));
-    final parts = formatClockParts(next.hour, next.minute, use24h: use24h);
+    // next.hour/next.minute are the alarm's plain schedule (kept for iOS
+    // recurrence — see ScheduledOccurrence), not the resolved next-fire
+    // time: during an active snooze they'd disagree with the fireAt-driven
+    // countdown right below them. Deriving from fireAt keeps both in sync.
+    final localFireAt = next.fireAt.toLocal();
+    final parts = formatClockParts(localFireAt.hour, localFireAt.minute,
+        use24h: use24h);
 
     return RiseCard(
       padding: const EdgeInsets.all(RiseSpacing.screen),
