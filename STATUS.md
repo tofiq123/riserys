@@ -36,6 +36,55 @@ rather than trusting the OS.
 `alarmsProvider` — the rethrow-on-error pattern CLAUDE.md warns about, on the one
 screen where an exception means an alarm cannot be dismissed. Now `valueOrNull`.
 
+## Shipped 2026-08-24 — AlarmKit, the real iOS alarm (iOS 26+)
+
+The sound fixes above make the notification path work as well as a notification
+path *can*. They do not make it an alarm: a notification obeys the mute switch,
+stops after ~30 s, and cannot draw a full-screen ring. AlarmKit does all three,
+and it is what iOS 26 added for exactly this.
+
+Plan 2 specified it (`docs/superpowers/plans/2026-07-16-ios-alarm-engine.md`,
+Task 8) and it was deferred. It is now built, and the seam it needed was already
+in place — `NativeAlarm` has carried `hour`/`minute`/`weekdays` from the start
+for no other purpose, and `reconcile(alarms:)` existed as a documented no-op
+waiting for this.
+
+- **`ios/Runner/AlarmKitEngine.swift`** — schedules real system alarms that
+  **break silent mode and Focus/DND**, are drawn full-screen by the system, and
+  survive force-quit and reboot.
+- **Recurrence belongs to the OS here.** iOS has no boot-receiver, so nothing
+  re-arms a fired alarm; a repeating alarm is scheduled as
+  `.relative(.weekly([…]))` and the system owns the repeat. This is the one
+  documented exception to "Dart owns all scheduling," and Android is unaffected.
+- **`capabilities()` now reports `supportsSystemAlarms: true` on iOS 26+**, so
+  Dart routes itself to `reconcile()` with no Dart-side change at all. iOS 16–25
+  keeps the notification burst.
+- **Upgrade safety:** the first AlarmKit reconcile clears any leftover pending
+  burst notifications, or an upgrading user would get every wake-up twice.
+- **Authorization is separate.** AlarmKit has its own, and on 26+ it — not the
+  notification switch — is what decides whether an alarm fires, so
+  `getPermissions()` reports both and the Guardian can no longer show a green
+  tick while alarms are blocked.
+
+No entitlement is needed — only the `NSAlarmKitUsageDescription` string that was
+already in `Info.plist`. Do **not** add `com.apple.developer.alarmkit`; it does
+not exist and breaks signing.
+
+### Needs a human — AlarmKit
+
+- **The build machine needs Xcode 26 / the iOS 26 SDK.** `import AlarmKit` will
+  not compile on anything older. Deployment target stays 16.0 — every AlarmKit
+  symbol is behind `@available(iOS 26.0, *)` — so older iPhones still build and
+  run the notification path. There is no `codemagic.yaml` in the repo, so
+  whatever builds this has to be pointed at Xcode 26 by hand.
+- **Three points marked `⚠️ VERIFY AT BUILD`** in `AlarmKitEngine.swift`, taken
+  from the research doc's own confidence markers: the `Alarm` "alerting" state
+  case name (matched on its description so it compiles either way), the
+  non-deprecated `AlarmPresentation.Alert` initializer, and whether `.named`
+  reliably plays a `.caf` on device. The compiler and the device are the
+  authority on all three, not the code as written.
+- Still never compiled — written on Windows, like the rest of the iOS engine.
+
 ### Needs a human — iOS
 
 - **The alarm still shows nothing at all on the lock screen.** The sound fixes
@@ -51,9 +100,10 @@ screen where an exception means an alarm cannot be dismissed. Now `valueOrNull`.
   pending-notification count after it, and any `center.add` failure — errors that
   were previously discarded because `add` was called without a completion handler.
   Filter the Console on `Rise[alarm]`.
-- **A muted iPhone that never opens the app cannot be woken by this design.**
-  Notification sounds obey the mute switch; only AlarmKit (iOS 26+) escapes that.
-  Worth deciding on before iOS is called shippable.
+- **A muted iPhone that never opens the app cannot be woken by the notification
+  path.** Sounds there obey the mute switch. This is now only the iOS 16–25
+  story — on 26+ AlarmKit escapes it (see above). Whether iOS below 26 is
+  shippable at all is a product decision, not a bug left to fix.
 - None of this is compiled — still written on Windows. Expect a first-compile
   pass on the `.caf` bundling and the new Swift.
 

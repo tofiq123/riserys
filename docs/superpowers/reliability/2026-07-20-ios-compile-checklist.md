@@ -24,6 +24,19 @@ What is now in place:
 
 **Still true and not fixable here:** a notification sound obeys the ringer volume and the hardware mute switch. A muted iPhone stays quiet unless the app is open (see `lib/data/ring_audio.dart`, which uses an AVAudioSession `playback` category to sound through the mute switch in the foreground). A muted phone that never opens the app needs AlarmKit on iOS 26+.
 
+## 2b. ⭐ AlarmKit (added 2026-08-24) — the iOS 26+ path is now the primary one
+
+`ios/Runner/AlarmKitEngine.swift` is in the Runner target and `capabilities()` reports `supportsSystemAlarms: true` on iOS 26+, so **Dart now takes `reconcile()` rather than the notification burst on any iOS 26 device.** Sections 3–4 below describe the fallback, which still runs on iOS 16–25.
+
+- **The build machine must use Xcode 26 / the iOS 26 SDK.** `import AlarmKit` fails to compile on anything older. Deployment target stays 16.0; every symbol is behind `@available(iOS 26.0, *)`.
+- **No entitlement.** Only `NSAlarmKitUsageDescription` (already in `Info.plist`). Adding `com.apple.developer.alarmkit` breaks signing — it does not exist.
+- **No widget extension** — Rise schedules alert-only alarms (no `countdownDuration`), so the system renders the alert and the target count stays at one.
+- **Three `⚠️ VERIFY AT BUILD` markers in the engine**, each from the research doc's own confidence levels:
+  1. The `Alarm` "alerting" state case name — currently matched on the value's description so it compiles whatever the case is called. If the compiler exposes a real case, compare to it and delete the string match.
+  2. `AlarmPresentation.Alert(title:secondaryButton:secondaryButtonBehavior:)` — the non-deprecated form; the `stopButton:` one is deprecated (the system supplies Stop).
+  3. `.named` sound playback on device — reported quirky across `.caf`/`.m4a`/`.mp3`, and custom sounds are flaky on Simulator. **Test the tone on physical hardware.**
+- **Device checks specific to this path:** an alarm fires with the phone on **silent** and in a **Sleep Focus**; it survives **force-quit** and **reboot**; a repeating alarm fires on a **second** day (that is the one that proves OS-owned recurrence works — a one-shot bug looks identical on day one); and upgrading an install that had burst notifications pending does **not** produce two alarms.
+
 ## 3. ⭐ Wire the Time-Sensitive Notifications entitlement (matters for waking during sleep)
 `content.interruptionLevel = .timeSensitive` + requesting the `.timeSensitive` auth option let alarms **pierce a Sleep/Do-Not-Disturb Focus** — the exact scenario an alarm app needs. Without the entitlement iOS silently downgrades the level, so an alarm can be suppressed while the user sleeps.
 - The entitlements file already exists: **`ios/Runner/Runner.entitlements`** (key `com.apple.developer.usernotifications.time-sensitive`).

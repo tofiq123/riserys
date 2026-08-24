@@ -57,8 +57,19 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
   static let bedtimeCategoryId = "RISE_BEDTIME"
   static let imUpActionId = "RISE_IM_UP"
 
+  /// The iOS 26+ AlarmKit engine, or nil on older systems. Held as `Any?`
+  /// because a stored property cannot carry an `@available`-gated type on a
+  /// class that must still exist on iOS 16; `alarmKit` casts it back.
+  private var alarmKitStorage: Any?
+
+  @available(iOS 26.0, *)
+  private var alarmKit: AlarmKitEngine? { alarmKitStorage as? AlarmKitEngine }
+
   override init() {
     super.init()
+    if #available(iOS 26.0, *) {
+      alarmKitStorage = AlarmKitEngine()
+    }
     refreshAuthorization()
   }
 
@@ -82,6 +93,11 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
       // Confine the cache write to main — the callback runs on a background
       // queue and getPermissions() reads it on the platform thread.
       DispatchQueue.main.async { self?.notificationsAuthorized = ok }
+    }
+    // AlarmKit's own authorization is what actually gates alarms on 26+, so it
+    // is the more important of the two to see when nothing fires.
+    if #available(iOS 26.0, *), let alarmKit = alarmKit {
+      NSLog("Rise[alarmkit]: authorization=\(alarmKit.authorizationDescription)")
     }
   }
 
@@ -167,8 +183,14 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
   // MARK: - AlarmHostApi
 
   func capabilities() throws -> PlatformCapabilities {
-    // iOS 16–25 has no system-alarm API — always use the notification path.
-    // (AlarmKit on iOS 26+ is a future upgrade.)
+    // iOS 26+ has AlarmKit — a real system alarm that breaks silent mode and
+    // Focus. Below that there is no system-alarm API at all, so the
+    // notification burst is the only option. Dart reads this and routes itself
+    // to reconcile() or reconcileNotifications() accordingly; nothing else in
+    // the app needs to know which platform it is on.
+    if #available(iOS 26.0, *), alarmKit != nil {
+      return PlatformCapabilities(supportsSystemAlarms: true)
+    }
     return PlatformCapabilities(supportsSystemAlarms: false)
   }
 
@@ -206,15 +228,39 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
     }
   }
 
-  /// Never called on iOS (capabilities().supportsSystemAlarms == false), so the
-  /// sync service uses reconcileNotifications instead. Kept as a safe no-op.
-  func reconcile(alarms: [NativeAlarm]) throws {}
+  /// The iOS 26+ ring path: hand the whole alarm set to AlarmKit and let the OS
+  /// own recurrence. Only reached when `capabilities()` reported system alarms,
+  /// so on iOS 16–25 this stays the no-op it always was.
+  func reconcile(alarms: [NativeAlarm]) throws {
+    guard #available(iOS 26.0, *) else { return }
+    guard let alarmKit = alarmKit else { return }
+
+    // An install that previously ran the notification burst still has those
+    // pending — iOS keeps them across app updates. Left alone they would fire
+    // alongside the AlarmKit alarms and the user would get every wake-up twice.
+    // Wake-check and bedtime notifications use different prefixes and stay.
+    center.getPendingNotificationRequests { [weak self] pending in
+      let stale = pending.map { $0.identifier }
+        .filter { $0.hasPrefix(AlarmHostApiImpl.alarmPrefix) }
+      guard !stale.isEmpty else { return }
+      NSLog("Rise[alarmkit]: clearing \(stale.count) leftover burst notification(s)")
+      self?.center.removePendingNotificationRequests(withIdentifiers: stale)
+    }
+
+    alarmKit.reconcile(alarms)
+  }
 
   /// Missed-alarm recovery: fire one alarm notification immediately. Also mark
   /// it ringing so a foreground / cold-start resume-poll of getRingingAlarmId()
   /// shows the ring screen, matching Android's ringNow -> RingActivity.
   func ringNow(alarm: NativeAlarm) throws {
     ringingAlarmId = alarm.id
+    if #available(iOS 26.0, *), let alarmKit = alarmKit {
+      // A real system alarm, so recovery is as loud as the original — the whole
+      // point of the recovery path.
+      alarmKit.ringNow(alarm)
+      return
+    }
     let content = alarmContent(label: alarm.label, soundAsset: alarm.soundAsset)
     content.userInfo = ["alarmId": alarm.id]
     let id = "\(AlarmHostApiImpl.alarmPrefix)\(alarm.id).0"
@@ -224,14 +270,24 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
   func cancelAll() throws {
     center.removeAllPendingNotificationRequests()
     center.removeAllDeliveredNotifications()
+    if #available(iOS 26.0, *) { alarmKit?.cancelAll() }
     ringingAlarmId = nil
   }
 
   func getPermissions() throws -> AlarmPermissions {
     // Only `notifications` is meaningful on iOS. The Android-only fields report
     // satisfied so the Setup Guardian never surfaces them here.
+    //
+    // On iOS 26+ the permission that actually decides whether an alarm fires is
+    // AlarmKit's, not the notification switch — so report that one, or the
+    // Guardian would show a reassuring tick while alarms were blocked.
+    // Both must hold: notifications still carry wake-checks and bedtime.
+    var granted = notificationsAuthorized
+    if #available(iOS 26.0, *), let alarmKit = alarmKit {
+      granted = granted && alarmKit.isAuthorized
+    }
     return AlarmPermissions(
-      notifications: notificationsAuthorized,
+      notifications: granted,
       exactAlarm: true,
       fullScreenIntent: true,
       batteryUnrestricted: true
@@ -239,6 +295,11 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
   }
 
   func requestNotificationPermission() throws {
+    // AlarmKit authorization is separate and is what gates alarms on iOS 26+.
+    // It is requested alongside, not instead: the app still needs notification
+    // permission for wake-checks and the bedtime reminder.
+    if #available(iOS 26.0, *) { alarmKit?.requestAuthorization() }
+
     var options: UNAuthorizationOptions = [.alert, .sound, .badge]
     if #available(iOS 15.0, *) {
       // Ignored unless the Time-Sensitive Notifications entitlement is present
@@ -265,6 +326,13 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
   }
 
   func getRingingAlarmId() throws -> Int64? {
+    // AlarmKit does not wake the app when an alarm fires — the system draws the
+    // alert — so asking it what is currently alerting is the only way to know.
+    // It wins over the stored id, which on this path only records a
+    // notification tap (a wake-check re-ring, say).
+    if #available(iOS 26.0, *), let alerting = alarmKit?.ringingAlarmId() {
+      return alerting
+    }
     return ringingAlarmId
   }
 
@@ -282,6 +350,10 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
     if ringingAlarmId == alarmId {
       ringingAlarmId = nil
     }
+    // Silence the system alarm first and unconditionally — same reason
+    // dismissRingingAlarm calls this before any database write: a user who has
+    // dismissed must get silence immediately.
+    if #available(iOS 26.0, *) { alarmKit?.stopRinging(alarmId) }
     // Cancel this alarm's remaining burst (pending + already delivered).
     let prefix = "\(AlarmHostApiImpl.alarmPrefix)\(alarmId)."
     center.getPendingNotificationRequests { [weak self] pending in
