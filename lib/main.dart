@@ -196,7 +196,32 @@ class _RiseAppState extends ConsumerState<RiseApp> with WidgetsBindingObserver {
     // Ring first, invite links second: if the app was launched BY a link while
     // an alarm rings (or vice versa), the handler's ring guard must already
     // know about the ring before the initial link is processed.
-    unawaited(_checkColdStartRing().then((_) => _startInviteLinks()));
+    unawaited(_checkColdStartRing().then((_) {
+      _startInviteLinks();
+      unawaited(_recheckColdStartRing());
+    }));
+  }
+
+  /// Re-asks the platform a few times whether an alarm is ringing.
+  ///
+  /// On iOS 26 the AlarmKit Stop button launches the app from cold and records
+  /// the ringing alarm as its intent runs — which can land either side of the
+  /// first poll above. Asking once and concluding "nothing is ringing" would
+  /// silently skip the mission, so ask again over the next few seconds. Stops
+  /// as soon as a ring screen is up, and a null answer here never pops anything
+  /// (see the early return in [_reconcileRingScreen]).
+  Future<void> _recheckColdStartRing() async {
+    const retries = [
+      Duration(milliseconds: 400),
+      Duration(milliseconds: 1200),
+      Duration(milliseconds: 2500),
+    ];
+    for (final delay in retries) {
+      if (_shownRingId != null) return;
+      await Future<void>.delayed(delay);
+      if (!mounted) return;
+      await _checkColdStartRing();
+    }
   }
 
   @override

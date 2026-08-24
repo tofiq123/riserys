@@ -70,6 +70,28 @@ No entitlement is needed — only the `NSAlarmKitUsageDescription` string that w
 already in `Info.plist`. Do **not** add `com.apple.developer.alarmkit`; it does
 not exist and breaks signing.
 
+### Fixed same day — the mission was skippable from the lock screen
+
+Reported after the first AlarmKit build: with the screen locked, a missioned
+alarm offered only Stop, no mission — and even unlocked, reaching the mission
+meant tapping the app icon by hand.
+
+Cause: `stopIntent: nil`. The plan shipped Stop-only and deferred the intent to
+Plan 4, so the system silenced the alarm and never launched Rise. The mission
+code was fine and never ran. AlarmKit gives no way to *prevent* Stop, so the
+answer is to make Stop **open the app** — the research doc's "dismiss-mission
+pattern": `RiseStopIntent` with `openAppWhenRun = true`, which foregrounds Rise
+even from a cold launch on a locked phone.
+
+Stopping the AlarmKit alert is now explicitly **not** dismissing the Rise alarm.
+The intent records the alarm id before stopping (once stopped it is no longer
+*alerting*, so polling would answer nil at exactly the wrong moment), the in-app
+player keeps the tone going through the mute switch, and only completing the
+mission calls `stopRinging` and clears the record. Dart re-polls at 0.4/1.2/2.5 s
+after launch, since the intent can run either side of the first poll on cold
+start. A stale record self-heals: the ring screen degrades to a generic
+dismissible screen and dismissing clears it.
+
 ### Needs a human — AlarmKit
 
 - **The build machine needs Xcode 26 / the iOS 26 SDK.** `import AlarmKit` will

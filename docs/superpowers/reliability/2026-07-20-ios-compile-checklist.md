@@ -35,7 +35,19 @@ What is now in place:
   1. The `Alarm` "alerting" state case name — currently matched on the value's description so it compiles whatever the case is called. If the compiler exposes a real case, compare to it and delete the string match.
   2. `AlarmPresentation.Alert(title:secondaryButton:secondaryButtonBehavior:)` — the non-deprecated form; the `stopButton:` one is deprecated (the system supplies Stop).
   3. `.named` sound playback on device — reported quirky across `.caf`/`.m4a`/`.mp3`, and custom sounds are flaky on Simulator. **Test the tone on physical hardware.**
+### The Stop button must carry an intent (fixed 2026-08-24, second device round)
+
+Shipping `stopIntent: nil` meant the system silenced the alarm and never launched Rise — so **a missioned alarm could be dismissed from the lock screen without doing the mission**, and even unlocked the user had to tap the app icon by hand to reach it. `AlarmPresentation` has no way to *prevent* Stop; the answer is to make Stop open the app.
+
+`RiseAlarmIntent.swift` is the plan's Task 9, now built:
+- `RiseStopIntent: LiveActivityIntent` with **`openAppWhenRun = true`** — the documented "dismiss-mission pattern", which foregrounds the app even from a cold launch on a locked phone.
+- It records the alarm id in `RiseRingingAlarmStore` (UserDefaults) **before** stopping, because once stopped the alarm is no longer *alerting* and polling `AlarmManager.alarms` would answer nil — exactly when the mission needs to appear.
+- Stopping the AlarmKit alert is **not** dismissing the Rise alarm: the id stays stored, `lib/data/ring_audio.dart` keeps the tone going through the mute switch, and only completing the mission calls `stopRinging`, which clears it.
+- Dart re-polls `getRingingAlarmId()` at 0.4 s / 1.2 s / 2.5 s after launch (`_recheckColdStartRing` in `main.dart`), because the intent can run either side of the first poll on a cold start.
+- ⚠️ VERIFY AT BUILD: `LiveActivityIntent` + `openAppWhenRun` is the documented shape, but launch-from-cold-on-locked-phone needs confirming on hardware. Also confirm the intent is discoverable from the app target (there is no widget extension to host it).
+
 - **Device checks specific to this path:** an alarm fires with the phone on **silent** and in a **Sleep Focus**; it survives **force-quit** and **reboot**; a repeating alarm fires on a **second** day (that is the one that proves OS-owned recurrence works — a one-shot bug looks identical on day one); and upgrading an install that had burst notifications pending does **not** produce two alarms.
+- **The mission check, on a LOCKED phone** (this is the one that regressed): set an alarm with a mission, lock the screen, let it fire, tap **Stop**. Rise must come to the foreground on its own and show the ring screen **with the mission** — not the slide-to-wake — and the tone must keep sounding until the mission is solved. Then confirm solving it actually ends everything: no ring screen on the next app resume.
 
 ## 3. ⭐ Wire the Time-Sensitive Notifications entitlement (matters for waking during sleep)
 `content.interruptionLevel = .timeSensitive` + requesting the `.timeSensitive` auth option let alarms **pierce a Sleep/Do-Not-Disturb Focus** — the exact scenario an alarm app needs. Without the entitlement iOS silently downgrades the level, so an alarm can be suppressed while the user sleeps.
