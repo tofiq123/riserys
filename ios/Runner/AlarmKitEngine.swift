@@ -81,8 +81,9 @@ final class AlarmKitEngine {
   /// reconcile: whatever Dart passes becomes the complete truth.
   func reconcile(_ alarms: [NativeAlarm]) {
     Task {
-      for existing in manager.alarms {
-        try? await manager.cancel(id: existing.id)
+      // `alarms` is a throwing getter; cancel/stop are synchronous throws.
+      for existing in (try? manager.alarms) ?? [] {
+        try? manager.cancel(id: existing.id)
       }
       var scheduled = 0
       for alarm in alarms {
@@ -112,10 +113,8 @@ final class AlarmKitEngine {
   }
 
   func cancelAll() {
-    Task {
-      for alarm in manager.alarms {
-        try? await manager.cancel(id: alarm.id)
-      }
+    for alarm in (try? manager.alarms) ?? [] {
+      try? manager.cancel(id: alarm.id)
     }
   }
 
@@ -123,10 +122,9 @@ final class AlarmKitEngine {
     // Stop both the scheduled alarm and any immediate recovery ring for it —
     // a dismissal must not leave the recovery copy sounding.
     let targets = [uuid(for: alarmId), uuid(for: alarmId &+ Self.ringNowOffset)]
-    Task {
-      for target in targets where manager.alarms.contains(where: { $0.id == target }) {
-        try? await manager.stop(id: target)
-      }
+    let existing = (try? manager.alarms) ?? []
+    for target in targets where existing.contains(where: { $0.id == target }) {
+      try? manager.stop(id: target)
     }
   }
 
@@ -136,7 +134,8 @@ final class AlarmKitEngine {
   /// so the app learns what is ringing by polling this, exactly as the Android
   /// RingActivity path does.
   func ringingAlarmId() -> Int64? {
-    for alarm in manager.alarms where isAlerting(alarm) {
+    guard let alarms = try? manager.alarms else { return nil }
+    for alarm in alarms where alarm.state == .alerting {
       guard let raw = id(from: alarm.id) else { continue }
       // Normalize a recovery ring back to the real alarm id so the ring screen
       // opens the right record.
@@ -159,15 +158,26 @@ final class AlarmKitEngine {
       schedule = .relative(.init(time: time, repeats: .weekly(days)))
     }
 
-    // ⚠️ VERIFY AT BUILD: the non-deprecated initializer is
-    // `init(title:secondaryButton:secondaryButtonBehavior:)` — the system
-    // supplies the Stop button now. If the compiler asks for `stopButton:`,
-    // that is the deprecated form; prefer this one.
-    let alert = AlarmPresentation.Alert(
-      title: LocalizedStringResource(stringLiteral: a.label.isEmpty ? "Rise" : a.label),
-      secondaryButton: nil,
-      secondaryButtonBehavior: nil
-    )
+    // iOS 26.1+ drops `stopButton` (system supplies Stop). On 26.0 the
+    // stopButton-bearing initializer is still required.
+    let title = LocalizedStringResource(stringLiteral: a.label.isEmpty ? "Rise" : a.label)
+    let alert: AlarmPresentation.Alert
+    if #available(iOS 26.1, *) {
+      alert = AlarmPresentation.Alert(
+        title: title,
+        secondaryButton: nil,
+        secondaryButtonBehavior: nil
+      )
+    } else {
+      alert = AlarmPresentation.Alert(
+        title: title,
+        stopButton: AlarmButton(
+          text: "Stop",
+          textColor: .white,
+          systemImageName: "stop.circle"
+        )
+      )
+    }
     let attributes = AlarmAttributes(
       presentation: AlarmPresentation(alert: alert),
       metadata: RiseAlarmMetadata(),
@@ -210,12 +220,4 @@ final class AlarmKitEngine {
     }
   }
 
-  /// ⚠️ VERIFY AT BUILD: `Alarm` carries state, but the exact enum case for
-  /// "alerting" could not be pinned from documentation. Matching on the
-  /// description keeps this compiling whatever the case is named; if the
-  /// compiler exposes a real case (e.g. `.alerting`), prefer comparing to it
-  /// directly and delete this.
-  private func isAlerting(_ alarm: Alarm) -> Bool {
-    "\(alarm.state)".lowercased().contains("alert")
-  }
 }
