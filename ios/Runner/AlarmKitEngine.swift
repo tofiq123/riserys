@@ -35,20 +35,13 @@ final class AlarmKitEngine {
 
   private let manager = AlarmManager.shared
 
-  /// Alarm ids are small autoincrement Int64s; AlarmKit keys on UUID. Map them
-  /// deterministically so a reconcile can cancel and replace exactly the alarms
-  /// we own, across process restarts.
-  private func uuid(for id: Int64) -> UUID {
-    UUID(uuidString: String(format: "00000000-0000-0000-0000-%012llx", id))!
-  }
+  /// Alarm ids are small autoincrement Int64s; AlarmKit keys on UUID. The
+  /// mapping lives in `RiseAlarmIdentity` because the Stop intent needs the
+  /// same one — if the two ever disagreed, Stop would open the ring screen on
+  /// the wrong alarm.
+  private func uuid(for id: Int64) -> UUID { RiseAlarmIdentity.uuid(for: id) }
 
-  private func id(from uuid: UUID) -> Int64? {
-    let hex = uuid.uuidString.replacingOccurrences(of: "-", with: "").suffix(12)
-    return Int64(hex, radix: 16)
-  }
-
-  /// Keeps the immediate recovery ring's UUID clear of any real alarm's.
-  private static let ringNowOffset: Int64 = 0x1000_0000_0000
+  private static var ringNowOffset: Int64 { RiseAlarmIdentity.ringNowOffset }
 
   // MARK: - Authorization
 
@@ -112,6 +105,7 @@ final class AlarmKitEngine {
   }
 
   func cancelAll() {
+    RiseRingingAlarmStore.clear()
     Task {
       for alarm in manager.alarms {
         try? await manager.cancel(id: alarm.id)
@@ -120,6 +114,10 @@ final class AlarmKitEngine {
   }
 
   func stopRinging(_ alarmId: Int64) {
+    // The mission is done (or there was none), so the alarm is no longer owed —
+    // clear the store, or getRingingAlarmId() would keep re-opening the ring
+    // screen every time the app resumed.
+    if RiseRingingAlarmStore.get() == alarmId { RiseRingingAlarmStore.clear() }
     // Stop both the scheduled alarm and any immediate recovery ring for it —
     // a dismissal must not leave the recovery copy sounding.
     let targets = [uuid(for: alarmId), uuid(for: alarmId &+ Self.ringNowOffset)]
@@ -130,17 +128,23 @@ final class AlarmKitEngine {
     }
   }
 
-  /// The id of the alarm currently alerting, if any.
+  /// The id of the alarm awaiting dismissal, if any.
   ///
   /// AlarmKit does not wake the app at fire time — the system draws the alert —
   /// so the app learns what is ringing by polling this, exactly as the Android
   /// RingActivity path does.
+  ///
+  /// The store is checked FIRST and it is the load-bearing half: by the time the
+  /// app is foregrounded the user has tapped Stop, so the alarm is no longer
+  /// alerting and the live poll below would answer nil. That is precisely the
+  /// window in which the mission has to appear. The live poll still covers the
+  /// case where the app is already open when an alarm fires.
   func ringingAlarmId() -> Int64? {
+    if let stored = RiseRingingAlarmStore.get() { return stored }
     for alarm in manager.alarms where isAlerting(alarm) {
-      guard let raw = id(from: alarm.id) else { continue }
-      // Normalize a recovery ring back to the real alarm id so the ring screen
-      // opens the right record.
-      return raw >= Self.ringNowOffset ? raw &- Self.ringNowOffset : raw
+      if let raw = RiseAlarmIdentity.riseId(fromUUIDString: alarm.id.uuidString) {
+        return raw
+      }
     }
     return nil
   }
@@ -186,11 +190,16 @@ final class AlarmKitEngine {
       sound = .default
     }
 
+    // The Stop button MUST carry an intent. With `stopIntent: nil` the system
+    // just silences the alarm and Rise is never launched — which let a missioned
+    // alarm be dismissed from the lock screen without doing the mission at all.
+    // `RiseStopIntent.openAppWhenRun` is what brings the app up so the ring
+    // screen (and the mission) is actually shown. See RiseAlarmIntent.swift.
     let config = AlarmManager.AlarmConfiguration(
       countdownDuration: nil,
       schedule: schedule,
       attributes: attributes,
-      stopIntent: nil,
+      stopIntent: RiseStopIntent(alarmID: alarmId.uuidString),
       secondaryIntent: nil,
       sound: sound
     )

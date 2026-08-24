@@ -79,6 +79,7 @@
 		4F52B301BD9997351FC4C263 /* rise_westminster.caf in Resources */ = {isa = PBXBuildFile; fileRef = 831D343F13DD322D0CEED032 /* rise_westminster.caf */; };
 		71C428F06F278C5905DB0B57 /* AlarmKitEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 816B188F6FF0D58942A498EC /* AlarmKitEngine.swift */; };
 		EBC8E2822BA1CA1D8E0C6D6C /* RiseSound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FAC09145C7D136241102D55 /* RiseSound.swift */; };
+		9C9F3DB278FB65589D085EF8 /* RiseAlarmIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FB4EBD5C6ADA1EF5871DC53 /* RiseAlarmIntent.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -191,6 +192,7 @@
 		831D343F13DD322D0CEED032 /* rise_westminster.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_westminster.caf"; sourceTree = "<group>"; };
 		816B188F6FF0D58942A498EC /* AlarmKitEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmKitEngine.swift; sourceTree = "<group>"; };
 		8FAC09145C7D136241102D55 /* RiseSound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiseSound.swift; sourceTree = "<group>"; };
+		5FB4EBD5C6ADA1EF5871DC53 /* RiseAlarmIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiseAlarmIntent.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -276,6 +278,7 @@
 				1B9B5CF33023AED700B3CC20 /* AlarmHostApiImpl.swift */,
 				8FAC09145C7D136241102D55 /* RiseSound.swift */,
 				816B188F6FF0D58942A498EC /* AlarmKitEngine.swift */,
+				5FB4EBD5C6ADA1EF5871DC53 /* RiseAlarmIntent.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				B1C6C94144878F3232FA56C1 /* Sounds */,
 			);
@@ -655,6 +658,7 @@
 				1B9B5CF53023AED700B3CC20 /* AlarmHostApiImpl.swift in Sources */,
 				EBC8E2822BA1CA1D8E0C6D6C /* RiseSound.swift in Sources */,
 				71C428F06F278C5905DB0B57 /* AlarmKitEngine.swift in Sources */,
+				9C9F3DB278FB65589D085EF8 /* RiseAlarmIntent.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
