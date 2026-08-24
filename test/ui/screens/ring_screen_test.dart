@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rise/data/ring_audio.dart';
 import 'package:rise/data/screen_brightness_controller.dart';
 import 'package:rise/data/wake_recorder.dart';
 import 'package:rise/domain/alarm.dart';
@@ -49,6 +50,7 @@ Widget _host({
   StayUpDecider? stayUpDecision,
   BrightnessController? brightness,
   Future<int?> Function()? getQueuedAlarmId,
+  RingAudio? ringAudio,
 }) {
   return ProviderScope(
     overrides: [
@@ -70,6 +72,7 @@ Widget _host({
         stayUpDecision: stayUpDecision ?? defaultStayUpDecision,
         brightness: brightness ?? const NoopBrightnessController(),
         getQueuedAlarmId: getQueuedAlarmId ?? () async => null,
+        ringAudio: ringAudio ?? const SilentRingAudio(),
       ),
     ),
   );
@@ -114,6 +117,79 @@ class _ThrowingRecorder implements WakeRecorder {
 }
 
 void main() {
+  group('in-app ring audio', () {
+    // iOS has no native ring service: without this player the ring screen is
+    // silent even with the app open, which is exactly how the alarm shipped
+    // broken. These pin the start/stop contract.
+    testWidgets('starts the alarm\'s own tone once the record loads',
+        (t) async {
+      final audio = FakeRingAudio();
+      await t.pumpWidget(_host(
+        alarms: const [
+          Alarm(id: 5, hour: 6, minute: 30, soundAsset: 'sounds/rise_klaxon.ogg')
+        ],
+        alarmId: 5,
+        ringAudio: audio,
+      ));
+      expect(audio.started, isEmpty, reason: 'no tone before the record loads');
+      await t.pump(); // alarmsProvider emits
+      expect(audio.started, ['sounds/rise_klaxon.ogg']);
+    });
+
+    testWidgets('starts the tone exactly once across rebuilds', (t) async {
+      final audio = FakeRingAudio();
+      await t.pumpWidget(_host(
+        alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+        alarmId: 5,
+        ringAudio: audio,
+      ));
+      await t.pump();
+      await t.pump(const Duration(seconds: 1)); // the 1s clock rebuilds
+      await t.pump(const Duration(seconds: 1));
+      expect(audio.started, hasLength(1));
+    });
+
+    testWidgets('dismissing stops the tone', (t) async {
+      final audio = FakeRingAudio();
+      await t.pumpWidget(_host(
+        alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+        alarmId: 5,
+        ringAudio: audio,
+      ));
+      await t.pump();
+      await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 20));
+      expect(audio.stopCount, greaterThan(0));
+    });
+
+    testWidgets('a failed dismissal restarts the tone — the alarm is still on',
+        (t) async {
+      final audio = FakeRingAudio();
+      await t.pumpWidget(_host(
+        alarms: const [Alarm(id: 5, hour: 6, minute: 30)],
+        alarmId: 5,
+        dismissAlarm: (_) async => throw StateError('platform down'),
+        ringAudio: audio,
+      ));
+      await t.pump();
+      expect(audio.started, hasLength(1));
+      await t.drag(find.byType(SlideToWake), const Offset(1000, 0));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 20));
+      expect(audio.stopCount, greaterThan(0));
+      expect(audio.started, hasLength(2),
+          reason: 'the alarm was never dismissed, so it must ring again');
+    });
+
+    test('iOS tones resolve to the .m4a beside the .ogg Android plays', () {
+      expect(IosRingAudio.iosAssetFor('sounds/rise_klaxon.ogg'),
+          'assets/sounds/rise_klaxon.m4a');
+      expect(IosRingAudio.iosAssetFor('sounds/default_alarm.mp3'),
+          'assets/sounds/default_alarm.m4a');
+    });
+  });
+
   testWidgets('shows a queued-alarm chip when another alarm is waiting',
       (t) async {
     await t.pumpWidget(_host(

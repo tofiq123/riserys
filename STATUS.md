@@ -1,10 +1,67 @@
-# Rise — Status (round-3 structural redesign, 2026-07-26)
+# Rise — Status (iOS: sound fixed + AlarmKit, 2026-08-24)
 
-**Verified:** 1222 tests passing (was 1106) · `flutter analyze` clean · Android
-debug APK builds (with `--dart-define-from-file=rise.env.json` — required for
-every device build, else sign-in is hidden by design).
+**Verified:** 1247 tests passing (was 1240) · `flutter analyze` clean.
+Android is untouched by this round — deliberately, and checked rather than
+assumed. iOS is **not** compiled or device-verified; see "needs a human" below.
+
+Two rounds today, both iOS-only: the alarm was made *audible* (it never had been),
+and then made a *real alarm* on iOS 26+ via AlarmKit.
+
+## Shipped 2026-08-24 — the iOS alarm made a sound for the first time
+
+Reported from a real iPhone: the alarm never fired, and even with the app open
+there was no sound. Three separate defects, all on the iOS side only:
+
+1. **No tone was ever in the app bundle.** `Copy Bundle Resources` held four
+   files — the storyboards, the asset catalog, a plist. `ios/Runner/Sounds/`
+   was loose on disk and unknown to Xcode, so every `UNNotificationSound(named:)`
+   named a file that did not exist. iOS delivers such a notification **silently**;
+   it does not fall back to the default chime, though a comment in the source and
+   step 2 of the compile checklist both claimed it did. That wrong belief is why
+   this shipped.
+2. **56 of the 57 tones had no iOS file at all.** The library is `.ogg`, which
+   iOS cannot decode for a notification sound. The whole catalog is now mirrored
+   as IMA4 `.caf` (5.1 MB, all under Apple's 30 s ceiling) and is in the target.
+3. **The ring screen played nothing.** `just_audio` was wired only to the sound
+   picker and voice clips. Android's `AlarmService` owns the noise there; iOS had
+   no equivalent, so an open app was silent by construction. `lib/data/ring_audio.dart`
+   is that player, on an AVAudioSession `playback` category — the one route a
+   non-system app has to be heard **through the hardware mute switch**.
+
+A regression test now fails if a tone is ever added without its `.caf`/`.m4a`
+twins, and `sound(for:)` resolves against the bundle and falls back explicitly
+rather than trusting the OS.
+
+**Also fixed in passing:** the ring screen read `AsyncValue.value` on
+`alarmsProvider` — the rethrow-on-error pattern CLAUDE.md warns about, on the one
+screen where an exception means an alarm cannot be dismissed. Now `valueOrNull`.
+
+### Needs a human — iOS
+
+- **The alarm still shows nothing at all on the lock screen.** The sound fixes
+  above do not explain that; a notification with a bad sound still *appears*. The
+  likeliest cause is that notification permission was never granted. **Check
+  Settings → Riserys → Notifications first.** If "Allow Notifications" is off,
+  that is the whole bug — the Grant button in onboarding never reports success
+  because `requestNotificationPermission` returns before iOS answers, so it is
+  easy to have skipped.
+- Instrumentation was added for exactly this: the device log now prints the
+  authorization state (`notDetermined` / `denied` / `authorized`, plus alert and
+  sound settings), `requested=N scheduled=M cleared=S` on every reconcile, the
+  pending-notification count after it, and any `center.add` failure — errors that
+  were previously discarded because `add` was called without a completion handler.
+  Filter the Console on `Rise[alarm]`.
+- **A muted iPhone that never opens the app cannot be woken by this design.**
+  Notification sounds obey the mute switch; only AlarmKit (iOS 26+) escapes that.
+  Worth deciding on before iOS is called shippable.
+- None of this is compiled — still written on Windows. Expect a first-compile
+  pass on the `.caf` bundling and the new Swift.
 
 ## Shipped 2026-07-26, round 3 — the structural redesign (`feat/round3-redesign`)
+
+(Previously: 1222 tests passing · `flutter analyze` clean · Android debug APK
+builds with `--dart-define-from-file=rise.env.json` — required for every device
+build, else sign-in is hidden by design.)
 
 Rounds 1 and 2 changed states and top cards; the screen *bodies* were untouched,
 which is why neither read as a redesign. This round changes the bodies. Mockups

@@ -96,6 +96,12 @@ dependencies:
   record: ^6.2.1
   just_audio: ^0.10.6
 
+  # Already pulled in transitively by just_audio, but depended on directly
+  # because lib/data/ring_audio.dart needs the iOS AVAudioSession `playback`
+  # category by name — that is what lets the alarm tone sound through the
+  # hardware mute switch, which a notification sound cannot do.
+  audio_session: ^0.2.4
+
   # Pure-Dart image decode/resize/grayscale for the photo-match mission's
   # perceptual (average) hash — see lib/domain/photo_match.dart. Also used
   # dev-only by tool/gen_icon.dart to draw the source launcher icon.

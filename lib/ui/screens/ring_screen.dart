@@ -8,6 +8,7 @@ import '../../data/alarm_sync_service.dart';
 import '../../data/motion_sensor.dart';
 import '../../data/native/alarm_api.g.dart';
 import '../../data/nudge/nudge_service.dart';
+import '../../data/ring_audio.dart';
 import '../../data/screen_brightness_controller.dart';
 import '../../data/snooze.dart';
 import '../../domain/adaptive_difficulty.dart';
@@ -163,6 +164,7 @@ class RingScreen extends ConsumerStatefulWidget {
     this.stayUpDecision = defaultStayUpDecision,
     this.brightness = const ScreenBrightnessController(),
     this.getQueuedAlarmId = defaultGetQueuedAlarmId,
+    this.ringAudio,
   });
 
   final int alarmId;
@@ -212,6 +214,12 @@ class RingScreen extends ConsumerStatefulWidget {
   /// Pigeon doc comment on `getQueuedAlarmId`.
   final Future<int?> Function() getQueuedAlarmId;
 
+  /// Plays the alarm tone from inside the app. Null (the default) resolves to
+  /// [defaultRingAudio] — a real player on iOS, a no-op on Android, where the
+  /// native `AlarmService` is already making the noise. Tests pass a
+  /// [FakeRingAudio] so no widget test opens an audio device.
+  final RingAudio? ringAudio;
+
   @override
   ConsumerState<RingScreen> createState() => _RingScreenState();
 }
@@ -247,6 +255,13 @@ class _RingScreenState extends ConsumerState<RingScreen>
 
   /// The alarm queued behind this one, if any — polled, not pushed.
   int? _queuedAlarmId;
+
+  /// The in-app tone player (iOS; a no-op on Android — see [RingAudio]).
+  late final RingAudio _ringAudio = widget.ringAudio ?? defaultRingAudio();
+
+  /// One-shot guard: the tone starts the first build in which the alarm has
+  /// actually loaded, since its chosen sound is only known from the record.
+  bool _audioStarted = false;
 
   @override
   void initState() {
@@ -331,6 +346,9 @@ class _RingScreenState extends ConsumerState<RingScreen>
   @override
   void dispose() {
     _clock?.cancel();
+    // Backstop: dismiss/snooze already stop the tone up front so silence is
+    // immediate. This covers the screen going away by any other route.
+    unawaited(_ringAudio.stop());
     _pulse.dispose();
     if (_sunriseActive) {
       // Undo the ramp: restore the system brightness on dismiss/snooze/dispose.
@@ -385,6 +403,10 @@ class _RingScreenState extends ConsumerState<RingScreen>
   Future<void> _dismiss(String method) async {
     if (_dismissing) return; // guard double-taps / repeated slide fires
     setState(() => _dismissing = true);
+    // Silence first, for the same reason stopRinging runs first inside
+    // dismissAlarm: someone who has done the work to dismiss must not keep
+    // hearing the alarm while a database write finishes.
+    unawaited(_ringAudio.stop());
     try {
       await widget.dismissAlarm(widget.alarmId);
     } catch (e) {
@@ -393,6 +415,9 @@ class _RingScreenState extends ConsumerState<RingScreen>
         setState(() {
           _dismissing = false;
           _attempt++; // fresh key resets the slide-to-wake so it can fire again
+          // The alarm was NOT dismissed, so it must go back to ringing rather
+          // than sit silently on a screen the user thinks they've dealt with.
+          _audioStarted = false; // the next build restarts the tone
         });
       }
       return;
@@ -489,6 +514,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
   Future<void> _snooze(Duration d) async {
     if (_dismissing) return; // shares the dismiss guard
     setState(() => _dismissing = true);
+    unawaited(_ringAudio.stop()); // silence now; see _dismiss
     try {
       await widget.snooze(widget.alarmId, d);
     } catch (e) {
@@ -497,6 +523,7 @@ class _RingScreenState extends ConsumerState<RingScreen>
         setState(() {
           _dismissing = false;
           _attempt++;
+          _audioStarted = false; // snooze failed — keep ringing
         });
       }
       return;
@@ -595,8 +622,17 @@ class _RingScreenState extends ConsumerState<RingScreen>
   Widget build(BuildContext context) {
     final alarm = ref
         .watch(alarmsProvider)
-        .value
+        .valueOrNull
         ?.firstWhereOrNull((a) => a.id == widget.alarmId);
+
+    // The tone can only start once the record has loaded, because the record is
+    // what names it. Guarded to fire once; scheduling async work is safe here
+    // (no setState), and RingAudio.start never throws.
+    if (alarm != null && !_audioStarted) {
+      _audioStarted = true;
+      unawaited(_ringAudio.start(alarm.soundAsset));
+    }
+
     final settings = ref.watch(currentSettingsProvider);
     final crew = ref.watch(crewProvider).value;
     final showSos = settings.crewSosEnabled &&

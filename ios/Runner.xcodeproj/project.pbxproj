@@ -18,6 +18,66 @@
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		F692F0C0F9BF0B76C53F7579 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5D1B97622AA73460C216E10B /* Pods_RunnerTests.framework */; };
+		F493C1B379BC45F3CA4A9A0A /* default_alarm.caf in Resources */ = {isa = PBXBuildFile; fileRef = 23F6F1A3526A1D9EE5A7B6E6 /* default_alarm.caf */; };
+		4FA1B75569370672C0C9A77A /* rise_airraid.caf in Resources */ = {isa = PBXBuildFile; fileRef = 5605672423784C8FD620E023 /* rise_airraid.caf */; };
+		F726C19733EAEF25FC659577 /* rise_ascend.caf in Resources */ = {isa = PBXBuildFile; fileRef = F044EBB44531636A33521705 /* rise_ascend.caf */; };
+		D0D0CE0D2F2366D58530F953 /* rise_aurora.caf in Resources */ = {isa = PBXBuildFile; fileRef = 6D07684CD872114A764B9379 /* rise_aurora.caf */; };
+		F4C9A51AB082C18B37300E04 /* rise_banshee.caf in Resources */ = {isa = PBXBuildFile; fileRef = 15F385E54A503F4502F5EAA8 /* rise_banshee.caf */; };
+		E270AAA0C8D6335954B741F8 /* rise_beacon.caf in Resources */ = {isa = PBXBuildFile; fileRef = 78CA014C9BE26CADE7919BD9 /* rise_beacon.caf */; };
+		C42586FE397B1B6967B5125F /* rise_belltower.caf in Resources */ = {isa = PBXBuildFile; fileRef = 7C3C617185E51057353D2DFB /* rise_belltower.caf */; };
+		392FE64BA1A5D915E76BA97E /* rise_birdsong.caf in Resources */ = {isa = PBXBuildFile; fileRef = 838AB091E10F894F9A5134F3 /* rise_birdsong.caf */; };
+		70CF17CEFBD0306C8A339024 /* rise_blitz.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1B304A3C9D6ED4559983D1F7 /* rise_blitz.caf */; };
+		E77EFC560572513726A0CBEA /* rise_bounce.caf in Resources */ = {isa = PBXBuildFile; fileRef = F44B40A9B6293FAE6B37A0D5 /* rise_bounce.caf */; };
+		6F281401B802F6084BCCAB66 /* rise_brook.caf in Resources */ = {isa = PBXBuildFile; fileRef = B665575B89160C66D50EA3BE /* rise_brook.caf */; };
+		E235E65C40D13C89A4E80FA3 /* rise_buzzsaw.caf in Resources */ = {isa = PBXBuildFile; fileRef = AF456F572403C7ED55BAE312 /* rise_buzzsaw.caf */; };
+		4ACAE077C43C4F1313AA70F7 /* rise_carousel.caf in Resources */ = {isa = PBXBuildFile; fileRef = 038CDA7C8881786DF1752C48 /* rise_carousel.caf */; };
+		6D762DE0754F932B387BB334 /* rise_crickets.caf in Resources */ = {isa = PBXBuildFile; fileRef = 80629ECB985B64E1A9A4C80D /* rise_crickets.caf */; };
+		365149966A57401549AAD8FE /* rise_daybreak.caf in Resources */ = {isa = PBXBuildFile; fileRef = 17184BA347394A0C9560A586 /* rise_daybreak.caf */; };
+		9D36EEF4FCD1EBFDB9C98530 /* rise_dewdrop.caf in Resources */ = {isa = PBXBuildFile; fileRef = CBBF033D47184CCFFBF4ADA1 /* rise_dewdrop.caf */; };
+		8C781A0619E93881E7BBDA9A /* rise_disco.caf in Resources */ = {isa = PBXBuildFile; fileRef = 381A3572A5E39BCF39E5557F /* rise_disco.caf */; };
+		E21828E8A201CE8F15E63134 /* rise_dissonance.caf in Resources */ = {isa = PBXBuildFile; fileRef = 0A9F1C8E246F8F24B1F75A83 /* rise_dissonance.caf */; };
+		985B9F87B5CB5E64907C9F6E /* rise_driftwood.caf in Resources */ = {isa = PBXBuildFile; fileRef = A080A2997BB25574D34DFADB /* rise_driftwood.caf */; };
+		AE6EDDC7628053A02CAE9523 /* rise_emergency.caf in Resources */ = {isa = PBXBuildFile; fileRef = 5F889A01D607945D7DAC02DA /* rise_emergency.caf */; };
+		85E1A27794A18EF7A0DA17F1 /* rise_firebell.caf in Resources */ = {isa = PBXBuildFile; fileRef = F10E9CE5FF0DB0E3276F8DE1 /* rise_firebell.caf */; };
+		30DC01790B4BD3D2F41547FA /* rise_foghorn.caf in Resources */ = {isa = PBXBuildFile; fileRef = 6158F4D9F4F5704AA897D2BA /* rise_foghorn.caf */; };
+		467F1CD2F3EF149081DB4158 /* rise_forest.caf in Resources */ = {isa = PBXBuildFile; fileRef = AF32DF24FED99A728D1D541F /* rise_forest.caf */; };
+		C225080B3E91CA2A6B3187B9 /* rise_harp.caf in Resources */ = {isa = PBXBuildFile; fileRef = AC6D069558BC02AA409FE314 /* rise_harp.caf */; };
+		BAEA3CA686DA143592B8FB7A /* rise_inferno.caf in Resources */ = {isa = PBXBuildFile; fileRef = B1E590ABEDC9A29B3769029A /* rise_inferno.caf */; };
+		1A47A3DAF57A3AF2535ECECA /* rise_jackhammer.caf in Resources */ = {isa = PBXBuildFile; fileRef = 3F2EC08CE460F5E8FEFE3F3B /* rise_jackhammer.caf */; };
+		012F7436CDF2B573A20D7ED2 /* rise_kalimba.caf in Resources */ = {isa = PBXBuildFile; fileRef = A4E38E747F77BF3CD3BEB9E4 /* rise_kalimba.caf */; };
+		C439F59114EE55074AA6473A /* rise_klaxon.caf in Resources */ = {isa = PBXBuildFile; fileRef = 950F458DD43770D0F9B26F23 /* rise_klaxon.caf */; };
+		DB54D6763474011F01AD44CC /* rise_lullaby.caf in Resources */ = {isa = PBXBuildFile; fileRef = B0DBE28AF6844F87DFED5FD0 /* rise_lullaby.caf */; };
+		769EF9C2CCBAC2BD24281A94 /* rise_marimba.caf in Resources */ = {isa = PBXBuildFile; fileRef = 4F9D3468F939E93B799C7BD1 /* rise_marimba.caf */; };
+		EF1D667D80A7D6BB8F36182E /* rise_meadow.caf in Resources */ = {isa = PBXBuildFile; fileRef = 6F297B98BF5C7D2B1AD711B2 /* rise_meadow.caf */; };
+		9C587947285A9440A51D5E4B /* rise_meltdown.caf in Resources */ = {isa = PBXBuildFile; fileRef = 3FA675824F83C8B6562D1B02 /* rise_meltdown.caf */; };
+		80ADFF667D126754BB86671F /* rise_momentum.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1E6811A131BED6E81E328315 /* rise_momentum.caf */; };
+		1E5FA849F74889A90931757A /* rise_musicbox.caf in Resources */ = {isa = PBXBuildFile; fileRef = 6AB02FB60B5B960FFC4B26DE /* rise_musicbox.caf */; };
+		B917168DC6FC5B1B5DAC61C2 /* rise_ocean.caf in Resources */ = {isa = PBXBuildFile; fileRef = 9DBF1C2A853B2900BDEA0653 /* rise_ocean.caf */; };
+		DE91CAA7673EA52A9A6F710A /* rise_overdrive.caf in Resources */ = {isa = PBXBuildFile; fileRef = 992A18CF5173CB59850D041E /* rise_overdrive.caf */; };
+		9B6199C734A4DF9A17D95F82 /* rise_pulse.caf in Resources */ = {isa = PBXBuildFile; fileRef = EEC81FD7B3BF4DAE49A1E306 /* rise_pulse.caf */; };
+		618D923F4877BB54EEB012B6 /* rise_radar.caf in Resources */ = {isa = PBXBuildFile; fileRef = 0FB68C62D25314A795279095 /* rise_radar.caf */; };
+		0CD475AFD8A8618A495368F9 /* rise_rainfall.caf in Resources */ = {isa = PBXBuildFile; fileRef = 9C785A8D1769EB1A9A350186 /* rise_rainfall.caf */; };
+		3C22B54240FF7A64B06D4298 /* rise_rally.caf in Resources */ = {isa = PBXBuildFile; fileRef = BF5D97884D171029C06FE773 /* rise_rally.caf */; };
+		B40D848C05E8C8C6D7083D46 /* rise_redalert.caf in Resources */ = {isa = PBXBuildFile; fileRef = 0F8474F4B7923C41B073DC3A /* rise_redalert.caf */; };
+		E1E9677697A6E4902280E7BA /* rise_retro.caf in Resources */ = {isa = PBXBuildFile; fileRef = 29271C37215F27A3E2A7A525 /* rise_retro.caf */; };
+		3660B393E35DD4732B90BBB2 /* rise_reverie.caf in Resources */ = {isa = PBXBuildFile; fileRef = 162E1210849A31681A0F7DAD /* rise_reverie.caf */; };
+		70ABE033307D7A30A8D9E86F /* rise_signal.caf in Resources */ = {isa = PBXBuildFile; fileRef = 5FA2E244E05A6273128F03F7 /* rise_signal.caf */; };
+		11F79A9B2D0A3D32F59F6037 /* rise_siren.caf in Resources */ = {isa = PBXBuildFile; fileRef = 5C6088390FD6ED69476AE84B /* rise_siren.caf */; };
+		E45FA274E35752948373A71D /* rise_sonnet.caf in Resources */ = {isa = PBXBuildFile; fileRef = 2F8726A6A62705D6C811C539 /* rise_sonnet.caf */; };
+		0374D617F3F4850BC324894B /* rise_sprint.caf in Resources */ = {isa = PBXBuildFile; fileRef = 442C50519F923D3B72F728BC /* rise_sprint.caf */; };
+		5AB9B5376DB09CA46D69420B /* rise_stampede.caf in Resources */ = {isa = PBXBuildFile; fileRef = 21C3306771E8BEDDB0968005 /* rise_stampede.caf */; };
+		06CD446D92FECA7578CDF272 /* rise_storm.caf in Resources */ = {isa = PBXBuildFile; fileRef = 6F705EF34E7F4B22CC93DF70 /* rise_storm.caf */; };
+		43385E13E7A52DEE852FDE72 /* rise_sunbeam.caf in Resources */ = {isa = PBXBuildFile; fileRef = 7ABD323B1CAC83732D10813D /* rise_sunbeam.caf */; };
+		DCC9E5C34346DADB8406ACE5 /* rise_sunrise.caf in Resources */ = {isa = PBXBuildFile; fileRef = B06D073D77FAB876C23B5E72 /* rise_sunrise.caf */; };
+		B34ACDC6E9773415F7EEE0B1 /* rise_telegraph.caf in Resources */ = {isa = PBXBuildFile; fileRef = A7A53BC1B29466058E7EF179 /* rise_telegraph.caf */; };
+		647DC82DCE769C965199A20A /* rise_tide.caf in Resources */ = {isa = PBXBuildFile; fileRef = F015D063FCA53FFF2DB23F40 /* rise_tide.caf */; };
+		9ED4FF4A280DD0C7C98C8F2E /* rise_uplift.caf in Resources */ = {isa = PBXBuildFile; fileRef = DE63B6F109FADD888C59539A /* rise_uplift.caf */; };
+		ED6DB58FC8AAE4CA19B2AF86 /* rise_waltz.caf in Resources */ = {isa = PBXBuildFile; fileRef = 07B2BB3EA55E5888C10E731B /* rise_waltz.caf */; };
+		5FBF19C624D7E680E032D3F2 /* rise_wanderer.caf in Resources */ = {isa = PBXBuildFile; fileRef = B95721C20B3D091576B6BB4E /* rise_wanderer.caf */; };
+		3110E0F5DC5A5E09985FECE0 /* rise_warble.caf in Resources */ = {isa = PBXBuildFile; fileRef = B839D05EDFCCC443B27A0597 /* rise_warble.caf */; };
+		B3DD5E1A7A6BBB3681286F69 /* rise_warfare.caf in Resources */ = {isa = PBXBuildFile; fileRef = 92BD2073ED4CA99A235C7518 /* rise_warfare.caf */; };
+		4F52B301BD9997351FC4C263 /* rise_westminster.caf in Resources */ = {isa = PBXBuildFile; fileRef = 831D343F13DD322D0CEED032 /* rise_westminster.caf */; };
+		EBC8E2822BA1CA1D8E0C6D6C /* RiseSound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FAC09145C7D136241102D55 /* RiseSound.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +129,66 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AD372B51D55CB2B07D004CE1 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
+		23F6F1A3526A1D9EE5A7B6E6 /* default_alarm.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "default_alarm.caf"; sourceTree = "<group>"; };
+		5605672423784C8FD620E023 /* rise_airraid.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_airraid.caf"; sourceTree = "<group>"; };
+		F044EBB44531636A33521705 /* rise_ascend.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_ascend.caf"; sourceTree = "<group>"; };
+		6D07684CD872114A764B9379 /* rise_aurora.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_aurora.caf"; sourceTree = "<group>"; };
+		15F385E54A503F4502F5EAA8 /* rise_banshee.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_banshee.caf"; sourceTree = "<group>"; };
+		78CA014C9BE26CADE7919BD9 /* rise_beacon.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_beacon.caf"; sourceTree = "<group>"; };
+		7C3C617185E51057353D2DFB /* rise_belltower.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_belltower.caf"; sourceTree = "<group>"; };
+		838AB091E10F894F9A5134F3 /* rise_birdsong.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_birdsong.caf"; sourceTree = "<group>"; };
+		1B304A3C9D6ED4559983D1F7 /* rise_blitz.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_blitz.caf"; sourceTree = "<group>"; };
+		F44B40A9B6293FAE6B37A0D5 /* rise_bounce.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_bounce.caf"; sourceTree = "<group>"; };
+		B665575B89160C66D50EA3BE /* rise_brook.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_brook.caf"; sourceTree = "<group>"; };
+		AF456F572403C7ED55BAE312 /* rise_buzzsaw.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_buzzsaw.caf"; sourceTree = "<group>"; };
+		038CDA7C8881786DF1752C48 /* rise_carousel.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_carousel.caf"; sourceTree = "<group>"; };
+		80629ECB985B64E1A9A4C80D /* rise_crickets.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_crickets.caf"; sourceTree = "<group>"; };
+		17184BA347394A0C9560A586 /* rise_daybreak.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_daybreak.caf"; sourceTree = "<group>"; };
+		CBBF033D47184CCFFBF4ADA1 /* rise_dewdrop.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_dewdrop.caf"; sourceTree = "<group>"; };
+		381A3572A5E39BCF39E5557F /* rise_disco.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_disco.caf"; sourceTree = "<group>"; };
+		0A9F1C8E246F8F24B1F75A83 /* rise_dissonance.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_dissonance.caf"; sourceTree = "<group>"; };
+		A080A2997BB25574D34DFADB /* rise_driftwood.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_driftwood.caf"; sourceTree = "<group>"; };
+		5F889A01D607945D7DAC02DA /* rise_emergency.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_emergency.caf"; sourceTree = "<group>"; };
+		F10E9CE5FF0DB0E3276F8DE1 /* rise_firebell.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_firebell.caf"; sourceTree = "<group>"; };
+		6158F4D9F4F5704AA897D2BA /* rise_foghorn.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_foghorn.caf"; sourceTree = "<group>"; };
+		AF32DF24FED99A728D1D541F /* rise_forest.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_forest.caf"; sourceTree = "<group>"; };
+		AC6D069558BC02AA409FE314 /* rise_harp.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_harp.caf"; sourceTree = "<group>"; };
+		B1E590ABEDC9A29B3769029A /* rise_inferno.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_inferno.caf"; sourceTree = "<group>"; };
+		3F2EC08CE460F5E8FEFE3F3B /* rise_jackhammer.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_jackhammer.caf"; sourceTree = "<group>"; };
+		A4E38E747F77BF3CD3BEB9E4 /* rise_kalimba.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_kalimba.caf"; sourceTree = "<group>"; };
+		950F458DD43770D0F9B26F23 /* rise_klaxon.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_klaxon.caf"; sourceTree = "<group>"; };
+		B0DBE28AF6844F87DFED5FD0 /* rise_lullaby.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_lullaby.caf"; sourceTree = "<group>"; };
+		4F9D3468F939E93B799C7BD1 /* rise_marimba.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_marimba.caf"; sourceTree = "<group>"; };
+		6F297B98BF5C7D2B1AD711B2 /* rise_meadow.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_meadow.caf"; sourceTree = "<group>"; };
+		3FA675824F83C8B6562D1B02 /* rise_meltdown.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_meltdown.caf"; sourceTree = "<group>"; };
+		1E6811A131BED6E81E328315 /* rise_momentum.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_momentum.caf"; sourceTree = "<group>"; };
+		6AB02FB60B5B960FFC4B26DE /* rise_musicbox.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_musicbox.caf"; sourceTree = "<group>"; };
+		9DBF1C2A853B2900BDEA0653 /* rise_ocean.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_ocean.caf"; sourceTree = "<group>"; };
+		992A18CF5173CB59850D041E /* rise_overdrive.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_overdrive.caf"; sourceTree = "<group>"; };
+		EEC81FD7B3BF4DAE49A1E306 /* rise_pulse.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_pulse.caf"; sourceTree = "<group>"; };
+		0FB68C62D25314A795279095 /* rise_radar.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_radar.caf"; sourceTree = "<group>"; };
+		9C785A8D1769EB1A9A350186 /* rise_rainfall.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_rainfall.caf"; sourceTree = "<group>"; };
+		BF5D97884D171029C06FE773 /* rise_rally.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_rally.caf"; sourceTree = "<group>"; };
+		0F8474F4B7923C41B073DC3A /* rise_redalert.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_redalert.caf"; sourceTree = "<group>"; };
+		29271C37215F27A3E2A7A525 /* rise_retro.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_retro.caf"; sourceTree = "<group>"; };
+		162E1210849A31681A0F7DAD /* rise_reverie.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_reverie.caf"; sourceTree = "<group>"; };
+		5FA2E244E05A6273128F03F7 /* rise_signal.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_signal.caf"; sourceTree = "<group>"; };
+		5C6088390FD6ED69476AE84B /* rise_siren.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_siren.caf"; sourceTree = "<group>"; };
+		2F8726A6A62705D6C811C539 /* rise_sonnet.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_sonnet.caf"; sourceTree = "<group>"; };
+		442C50519F923D3B72F728BC /* rise_sprint.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_sprint.caf"; sourceTree = "<group>"; };
+		21C3306771E8BEDDB0968005 /* rise_stampede.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_stampede.caf"; sourceTree = "<group>"; };
+		6F705EF34E7F4B22CC93DF70 /* rise_storm.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_storm.caf"; sourceTree = "<group>"; };
+		7ABD323B1CAC83732D10813D /* rise_sunbeam.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_sunbeam.caf"; sourceTree = "<group>"; };
+		B06D073D77FAB876C23B5E72 /* rise_sunrise.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_sunrise.caf"; sourceTree = "<group>"; };
+		A7A53BC1B29466058E7EF179 /* rise_telegraph.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_telegraph.caf"; sourceTree = "<group>"; };
+		F015D063FCA53FFF2DB23F40 /* rise_tide.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_tide.caf"; sourceTree = "<group>"; };
+		DE63B6F109FADD888C59539A /* rise_uplift.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_uplift.caf"; sourceTree = "<group>"; };
+		07B2BB3EA55E5888C10E731B /* rise_waltz.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_waltz.caf"; sourceTree = "<group>"; };
+		B95721C20B3D091576B6BB4E /* rise_wanderer.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_wanderer.caf"; sourceTree = "<group>"; };
+		B839D05EDFCCC443B27A0597 /* rise_warble.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_warble.caf"; sourceTree = "<group>"; };
+		92BD2073ED4CA99A235C7518 /* rise_warfare.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_warfare.caf"; sourceTree = "<group>"; };
+		831D343F13DD322D0CEED032 /* rise_westminster.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rise_westminster.caf"; sourceTree = "<group>"; };
+		8FAC09145C7D136241102D55 /* RiseSound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiseSound.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -152,7 +272,9 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				1B9B5CF23023AED700B3CC20 /* AlarmApi.g.swift */,
 				1B9B5CF33023AED700B3CC20 /* AlarmHostApiImpl.swift */,
+				8FAC09145C7D136241102D55 /* RiseSound.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
+				B1C6C94144878F3232FA56C1 /* Sounds */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -168,6 +290,72 @@
 				AD372B51D55CB2B07D004CE1 /* Pods-RunnerTests.profile.xcconfig */,
 			);
 			path = Pods;
+			sourceTree = "<group>";
+		};
+		B1C6C94144878F3232FA56C1 /* Sounds */ = {
+			isa = PBXGroup;
+			children = (
+				23F6F1A3526A1D9EE5A7B6E6 /* default_alarm.caf */,
+				5605672423784C8FD620E023 /* rise_airraid.caf */,
+				F044EBB44531636A33521705 /* rise_ascend.caf */,
+				6D07684CD872114A764B9379 /* rise_aurora.caf */,
+				15F385E54A503F4502F5EAA8 /* rise_banshee.caf */,
+				78CA014C9BE26CADE7919BD9 /* rise_beacon.caf */,
+				7C3C617185E51057353D2DFB /* rise_belltower.caf */,
+				838AB091E10F894F9A5134F3 /* rise_birdsong.caf */,
+				1B304A3C9D6ED4559983D1F7 /* rise_blitz.caf */,
+				F44B40A9B6293FAE6B37A0D5 /* rise_bounce.caf */,
+				B665575B89160C66D50EA3BE /* rise_brook.caf */,
+				AF456F572403C7ED55BAE312 /* rise_buzzsaw.caf */,
+				038CDA7C8881786DF1752C48 /* rise_carousel.caf */,
+				80629ECB985B64E1A9A4C80D /* rise_crickets.caf */,
+				17184BA347394A0C9560A586 /* rise_daybreak.caf */,
+				CBBF033D47184CCFFBF4ADA1 /* rise_dewdrop.caf */,
+				381A3572A5E39BCF39E5557F /* rise_disco.caf */,
+				0A9F1C8E246F8F24B1F75A83 /* rise_dissonance.caf */,
+				A080A2997BB25574D34DFADB /* rise_driftwood.caf */,
+				5F889A01D607945D7DAC02DA /* rise_emergency.caf */,
+				F10E9CE5FF0DB0E3276F8DE1 /* rise_firebell.caf */,
+				6158F4D9F4F5704AA897D2BA /* rise_foghorn.caf */,
+				AF32DF24FED99A728D1D541F /* rise_forest.caf */,
+				AC6D069558BC02AA409FE314 /* rise_harp.caf */,
+				B1E590ABEDC9A29B3769029A /* rise_inferno.caf */,
+				3F2EC08CE460F5E8FEFE3F3B /* rise_jackhammer.caf */,
+				A4E38E747F77BF3CD3BEB9E4 /* rise_kalimba.caf */,
+				950F458DD43770D0F9B26F23 /* rise_klaxon.caf */,
+				B0DBE28AF6844F87DFED5FD0 /* rise_lullaby.caf */,
+				4F9D3468F939E93B799C7BD1 /* rise_marimba.caf */,
+				6F297B98BF5C7D2B1AD711B2 /* rise_meadow.caf */,
+				3FA675824F83C8B6562D1B02 /* rise_meltdown.caf */,
+				1E6811A131BED6E81E328315 /* rise_momentum.caf */,
+				6AB02FB60B5B960FFC4B26DE /* rise_musicbox.caf */,
+				9DBF1C2A853B2900BDEA0653 /* rise_ocean.caf */,
+				992A18CF5173CB59850D041E /* rise_overdrive.caf */,
+				EEC81FD7B3BF4DAE49A1E306 /* rise_pulse.caf */,
+				0FB68C62D25314A795279095 /* rise_radar.caf */,
+				9C785A8D1769EB1A9A350186 /* rise_rainfall.caf */,
+				BF5D97884D171029C06FE773 /* rise_rally.caf */,
+				0F8474F4B7923C41B073DC3A /* rise_redalert.caf */,
+				29271C37215F27A3E2A7A525 /* rise_retro.caf */,
+				162E1210849A31681A0F7DAD /* rise_reverie.caf */,
+				5FA2E244E05A6273128F03F7 /* rise_signal.caf */,
+				5C6088390FD6ED69476AE84B /* rise_siren.caf */,
+				2F8726A6A62705D6C811C539 /* rise_sonnet.caf */,
+				442C50519F923D3B72F728BC /* rise_sprint.caf */,
+				21C3306771E8BEDDB0968005 /* rise_stampede.caf */,
+				6F705EF34E7F4B22CC93DF70 /* rise_storm.caf */,
+				7ABD323B1CAC83732D10813D /* rise_sunbeam.caf */,
+				B06D073D77FAB876C23B5E72 /* rise_sunrise.caf */,
+				A7A53BC1B29466058E7EF179 /* rise_telegraph.caf */,
+				F015D063FCA53FFF2DB23F40 /* rise_tide.caf */,
+				DE63B6F109FADD888C59539A /* rise_uplift.caf */,
+				07B2BB3EA55E5888C10E731B /* rise_waltz.caf */,
+				B95721C20B3D091576B6BB4E /* rise_wanderer.caf */,
+				B839D05EDFCCC443B27A0597 /* rise_warble.caf */,
+				92BD2073ED4CA99A235C7518 /* rise_warfare.caf */,
+				831D343F13DD322D0CEED032 /* rise_westminster.caf */,
+			);
+			path = Sounds;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -270,6 +458,65 @@
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
+				F493C1B379BC45F3CA4A9A0A /* default_alarm.caf in Resources */,
+				4FA1B75569370672C0C9A77A /* rise_airraid.caf in Resources */,
+				F726C19733EAEF25FC659577 /* rise_ascend.caf in Resources */,
+				D0D0CE0D2F2366D58530F953 /* rise_aurora.caf in Resources */,
+				F4C9A51AB082C18B37300E04 /* rise_banshee.caf in Resources */,
+				E270AAA0C8D6335954B741F8 /* rise_beacon.caf in Resources */,
+				C42586FE397B1B6967B5125F /* rise_belltower.caf in Resources */,
+				392FE64BA1A5D915E76BA97E /* rise_birdsong.caf in Resources */,
+				70CF17CEFBD0306C8A339024 /* rise_blitz.caf in Resources */,
+				E77EFC560572513726A0CBEA /* rise_bounce.caf in Resources */,
+				6F281401B802F6084BCCAB66 /* rise_brook.caf in Resources */,
+				E235E65C40D13C89A4E80FA3 /* rise_buzzsaw.caf in Resources */,
+				4ACAE077C43C4F1313AA70F7 /* rise_carousel.caf in Resources */,
+				6D762DE0754F932B387BB334 /* rise_crickets.caf in Resources */,
+				365149966A57401549AAD8FE /* rise_daybreak.caf in Resources */,
+				9D36EEF4FCD1EBFDB9C98530 /* rise_dewdrop.caf in Resources */,
+				8C781A0619E93881E7BBDA9A /* rise_disco.caf in Resources */,
+				E21828E8A201CE8F15E63134 /* rise_dissonance.caf in Resources */,
+				985B9F87B5CB5E64907C9F6E /* rise_driftwood.caf in Resources */,
+				AE6EDDC7628053A02CAE9523 /* rise_emergency.caf in Resources */,
+				85E1A27794A18EF7A0DA17F1 /* rise_firebell.caf in Resources */,
+				30DC01790B4BD3D2F41547FA /* rise_foghorn.caf in Resources */,
+				467F1CD2F3EF149081DB4158 /* rise_forest.caf in Resources */,
+				C225080B3E91CA2A6B3187B9 /* rise_harp.caf in Resources */,
+				BAEA3CA686DA143592B8FB7A /* rise_inferno.caf in Resources */,
+				1A47A3DAF57A3AF2535ECECA /* rise_jackhammer.caf in Resources */,
+				012F7436CDF2B573A20D7ED2 /* rise_kalimba.caf in Resources */,
+				C439F59114EE55074AA6473A /* rise_klaxon.caf in Resources */,
+				DB54D6763474011F01AD44CC /* rise_lullaby.caf in Resources */,
+				769EF9C2CCBAC2BD24281A94 /* rise_marimba.caf in Resources */,
+				EF1D667D80A7D6BB8F36182E /* rise_meadow.caf in Resources */,
+				9C587947285A9440A51D5E4B /* rise_meltdown.caf in Resources */,
+				80ADFF667D126754BB86671F /* rise_momentum.caf in Resources */,
+				1E5FA849F74889A90931757A /* rise_musicbox.caf in Resources */,
+				B917168DC6FC5B1B5DAC61C2 /* rise_ocean.caf in Resources */,
+				DE91CAA7673EA52A9A6F710A /* rise_overdrive.caf in Resources */,
+				9B6199C734A4DF9A17D95F82 /* rise_pulse.caf in Resources */,
+				618D923F4877BB54EEB012B6 /* rise_radar.caf in Resources */,
+				0CD475AFD8A8618A495368F9 /* rise_rainfall.caf in Resources */,
+				3C22B54240FF7A64B06D4298 /* rise_rally.caf in Resources */,
+				B40D848C05E8C8C6D7083D46 /* rise_redalert.caf in Resources */,
+				E1E9677697A6E4902280E7BA /* rise_retro.caf in Resources */,
+				3660B393E35DD4732B90BBB2 /* rise_reverie.caf in Resources */,
+				70ABE033307D7A30A8D9E86F /* rise_signal.caf in Resources */,
+				11F79A9B2D0A3D32F59F6037 /* rise_siren.caf in Resources */,
+				E45FA274E35752948373A71D /* rise_sonnet.caf in Resources */,
+				0374D617F3F4850BC324894B /* rise_sprint.caf in Resources */,
+				5AB9B5376DB09CA46D69420B /* rise_stampede.caf in Resources */,
+				06CD446D92FECA7578CDF272 /* rise_storm.caf in Resources */,
+				43385E13E7A52DEE852FDE72 /* rise_sunbeam.caf in Resources */,
+				DCC9E5C34346DADB8406ACE5 /* rise_sunrise.caf in Resources */,
+				B34ACDC6E9773415F7EEE0B1 /* rise_telegraph.caf in Resources */,
+				647DC82DCE769C965199A20A /* rise_tide.caf in Resources */,
+				9ED4FF4A280DD0C7C98C8F2E /* rise_uplift.caf in Resources */,
+				ED6DB58FC8AAE4CA19B2AF86 /* rise_waltz.caf in Resources */,
+				5FBF19C624D7E680E032D3F2 /* rise_wanderer.caf in Resources */,
+				3110E0F5DC5A5E09985FECE0 /* rise_warble.caf in Resources */,
+				B3DD5E1A7A6BBB3681286F69 /* rise_warfare.caf in Resources */,
+				4F52B301BD9997351FC4C263 /* rise_westminster.caf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -403,6 +650,7 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1B9B5CF43023AED700B3CC20 /* AlarmApi.g.swift in Sources */,
 				1B9B5CF53023AED700B3CC20 /* AlarmHostApiImpl.swift in Sources */,
+				EBC8E2822BA1CA1D8E0C6D6C /* RiseSound.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -1,7 +1,41 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rise/domain/alarm_sounds.dart';
 
 void main() {
+  // The iOS alarm shipped silent because the tone library existed only in the
+  // Android formats: iOS cannot decode .ogg for a notification sound, and a
+  // notification whose sound name does not resolve to a bundled file is
+  // delivered with NO sound at all. Every catalog tone therefore needs an iOS
+  // twin in both formats, and a tone added to the catalog without one puts the
+  // bug straight back. These two tests are that guard.
+  group('every catalog tone has its iOS counterparts', () {
+    String stem(AlarmSound s) {
+      final base = s.asset.split('/').last;
+      final dot = base.lastIndexOf('.');
+      return dot == -1 ? base : base.substring(0, dot);
+    }
+
+    test('a bundled .caf exists for the notification sound', () {
+      final missing = kAlarmSounds
+          .where((s) => !File('ios/Runner/Sounds/${stem(s)}.caf').existsSync())
+          .map(stem)
+          .toList();
+      expect(missing, isEmpty,
+          reason: 'these tones would ring silently on iOS: $missing');
+    });
+
+    test('a Flutter .m4a exists for the in-app ring player', () {
+      final missing = kAlarmSounds
+          .where((s) => !File('assets/sounds/${stem(s)}.m4a').existsSync())
+          .map(stem)
+          .toList();
+      expect(missing, isEmpty,
+          reason: 'the iOS ring screen could not play these: $missing');
+    });
+  });
+
   test('catalog is Default-first and Default maps to the entity default asset',
       () {
     expect(kAlarmSounds, isNotEmpty);

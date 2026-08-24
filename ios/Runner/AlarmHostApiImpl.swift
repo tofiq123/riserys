@@ -12,10 +12,23 @@ import UserNotifications
 /// Dart's resume-poll of `getRingingAlarmId()` shows the ring screen — the exact
 /// same poll the Android RingActivity relies on.
 ///
-/// NOTE (Windows-authored): this file is written against the generated
-/// `AlarmApi.g.swift` protocol + Apple's UserNotifications API but has NOT been
-/// compiled. It needs one compile-and-fix pass on a Mac / Codemagic — see
-/// docs/superpowers/reliability/2026-07-20-ios-compile-checklist.md.
+/// SOUND (learned on device, 2026-08-24): the first build on a real iPhone was
+/// completely silent. Two causes, both fixed here and worth not re-introducing:
+///
+///  1. The tone files were never in "Copy Bundle Resources", so every
+///     `UNNotificationSound(named:)` named a file that did not exist. iOS then
+///     delivers the notification with NO sound — it does NOT fall back to the
+///     default chime, which is what the old comment here claimed. The whole
+///     library now ships as `.caf` under `ios/Runner/Sounds/` and is covered by
+///     a test (see `test/domain/alarm_sounds_test.dart`).
+///  2. Even correctly bundled, a notification sound obeys the ringer volume and
+///     the hardware mute switch, and stops after ~30 s. It cannot carry an
+///     alarm on its own. The in-app player in `lib/data/ring_audio.dart` covers
+///     the foreground case with an AVAudioSession `playback` category, which is
+///     the only route a non-system app has to be heard on a silenced phone.
+///
+/// A phone that is muted and never opens the app still will not make noise.
+/// Closing that gap needs AlarmKit (iOS 26+), not more work in this file.
 final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDelegate {
 
   private let center = UNUserNotificationCenter.current()
@@ -56,31 +69,74 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
       let ok = settings.authorizationStatus == .authorized
         || settings.authorizationStatus == .provisional
         || settings.authorizationStatus == .ephemeral
+      // An alarm that is authorized but has alerts or sound switched off in
+      // Settings looks identical to a working one from Dart's side, so name the
+      // exact state here — this is the first thing to read when "the alarm
+      // never fired" and nothing at all appeared on the lock screen.
+      NSLog("""
+        Rise[alarm]: authorization=\(Self.describe(settings.authorizationStatus)) \
+        alert=\(settings.alertSetting == .enabled) \
+        sound=\(settings.soundSetting == .enabled) \
+        lockScreen=\(settings.lockScreenSetting == .enabled)
+        """)
       // Confine the cache write to main — the callback runs on a background
       // queue and getPermissions() reads it on the platform thread.
       DispatchQueue.main.async { self?.notificationsAuthorized = ok }
     }
   }
 
+  private static func describe(_ status: UNAuthorizationStatus) -> String {
+    switch status {
+    case .notDetermined: return "notDetermined (the system prompt has never been shown)"
+    case .denied: return "denied (the user must re-enable it in Settings)"
+    case .authorized: return "authorized"
+    case .provisional: return "provisional"
+    case .ephemeral: return "ephemeral"
+    @unknown default: return "unknown"
+    }
+  }
+
+  /// `UNUserNotificationCenter.add` without a completion handler silently
+  /// discards its error, so a request rejected by the OS (unresolvable sound,
+  /// bad trigger, past the 64-notification cap) looked exactly like a scheduled
+  /// one. Every add goes through here so a failure is at least visible in the
+  /// device log.
+  private func add(_ request: UNNotificationRequest) {
+    center.add(request) { error in
+      if let error = error {
+        NSLog("Rise[alarm]: FAILED to schedule '\(request.identifier)': \(error.localizedDescription)")
+      }
+    }
+  }
+
   // MARK: - Notification content
 
-  /// Maps the app's Flutter sound asset (e.g. "sounds/rise_sunrise.wav") to a
-  /// bundled iOS notification sound of the same base name (rise_sunrise.wav).
-  /// The ringtone library is: default_alarm, rise_sunrise, rise_aurora,
-  /// rise_tide, rise_ascend, rise_kalimba, rise_pulse.
+  /// Maps the app's Flutter sound asset (e.g. "sounds/rise_sunrise.ogg") to the
+  /// bundled iOS notification sound of the same base name (rise_sunrise.caf).
   ///
-  /// MAC PASS TODO: these .wav files must be added to the iOS app bundle
-  /// (Runner target, "Copy Bundle Resources") for a non-default tone to sound;
-  /// until then any selection rings the system default, which is acceptable.
+  /// The whole tone library is mirrored into the app bundle as IMA4 `.caf`
+  /// (see `ios/Runner/Sounds/`, generated from `assets/sounds/*.ogg`). iOS only
+  /// accepts Linear PCM / IMA4 / µ-law / a-law under 30 s for a notification
+  /// sound — it cannot decode the `.ogg` Flutter assets Android plays, which is
+  /// why a parallel `.caf` set exists at all.
+  ///
+  /// A name that does NOT resolve to a bundled file makes iOS deliver the
+  /// notification **silently** — it does not fall back to the default chime.
+  /// That is what shipped before these files were added to Copy Bundle
+  /// Resources, and it is why no alarm ever made a sound. So resolve the name
+  /// against the bundle here and fall back to `.default` explicitly rather than
+  /// trusting the OS to do it.
+  ///
   /// A voice-clip sound is an absolute file path (starts with "/"); notification
   /// sounds must be app-bundled, so a voice path can't resolve here and falls
-  /// back to the default — the iOS voice-as-alarm path is deferred to the
-  /// in-app ring flow (see report / compile checklist).
+  /// back to the default — the iOS voice-as-alarm path is served by the in-app
+  /// ring player instead.
   private func sound(for asset: String) -> UNNotificationSound {
-    let base = (asset as NSString).lastPathComponent
-    let name = ((base as NSString).deletingPathExtension) + ".wav"
-    // If the file isn't bundled/resolvable, iOS falls back to the default sound.
-    return UNNotificationSound(named: UNNotificationSoundName(rawValue: name))
+    guard let stem = RiseSound.bundledStem(for: asset) else {
+      NSLog("Rise[alarm]: no bundled sound for '\(asset)' — using the default chime")
+      return .default
+    }
+    return UNNotificationSound(named: UNNotificationSoundName(rawValue: stem + ".caf"))
   }
 
   // NOTE (per-alarm vibration patterns): `NativeAlarm.vibrationPattern`
@@ -127,6 +183,7 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
       if !staleAlarmIds.isEmpty {
         self.center.removePendingNotificationRequests(withIdentifiers: staleAlarmIds)
       }
+      var scheduled = 0
       for req in requests {
         let seconds = self.triggerSeconds(fireAtEpochMs: req.fireAtEpochMs)
         // A request already in the past (allocator edge / clock skew) is skipped.
@@ -137,7 +194,14 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
         content.userInfo = ["alarmId": req.alarmId]
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
         let id = "\(AlarmHostApiImpl.alarmPrefix)\(req.alarmId).\(req.burstIndex)"
-        self.center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+        self.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+        scheduled += 1
+      }
+      // "Asked for N, scheduled M, cleared S" is the one line that separates a
+      // Dart-side scheduling bug from an iOS-side delivery one.
+      NSLog("Rise[alarm]: reconcile — requested=\(requests.count) scheduled=\(scheduled) cleared=\(staleAlarmIds.count)")
+      self.center.getPendingNotificationRequests { pending in
+        NSLog("Rise[alarm]: pending after reconcile = \(pending.count)")
       }
     }
   }
@@ -154,7 +218,7 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
     let content = alarmContent(label: alarm.label, soundAsset: alarm.soundAsset)
     content.userInfo = ["alarmId": alarm.id]
     let id = "\(AlarmHostApiImpl.alarmPrefix)\(alarm.id).0"
-    center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+    add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
   }
 
   func cancelAll() throws {
@@ -249,7 +313,7 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
     if #available(iOS 15.0, *) { promptContent.interruptionLevel = .timeSensitive }
     let promptTrigger = UNTimeIntervalNotificationTrigger(
       timeInterval: triggerSeconds(fireAtEpochMs: checkAtEpochMs), repeats: false)
-    center.add(UNNotificationRequest(
+    add(UNNotificationRequest(
       identifier: "\(AlarmHostApiImpl.wakeCheckPrefix)\(alarm.id)",
       content: promptContent, trigger: promptTrigger))
 
@@ -258,7 +322,7 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
     refireContent.userInfo = ["alarmId": alarm.id]
     let refireTrigger = UNTimeIntervalNotificationTrigger(
       timeInterval: triggerSeconds(fireAtEpochMs: checkAtEpochMs + 100_000), repeats: false)
-    center.add(UNNotificationRequest(
+    add(UNNotificationRequest(
       identifier: "\(AlarmHostApiImpl.wakeCheckRefirePrefix)\(alarm.id)",
       content: refireContent, trigger: refireTrigger))
   }
@@ -292,7 +356,7 @@ final class AlarmHostApiImpl: NSObject, AlarmHostApi, UNUserNotificationCenterDe
     // device restarts until the app next runs — acceptable for a reminder).
     let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
 
-    center.add(UNNotificationRequest(
+    add(UNNotificationRequest(
       identifier: AlarmHostApiImpl.bedtimeIdentifier,
       content: content,
       trigger: trigger))

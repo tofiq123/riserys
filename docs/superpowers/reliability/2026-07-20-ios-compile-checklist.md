@@ -10,10 +10,19 @@ The iOS alarm engine (`ios/Runner/AlarmHostApiImpl.swift` + `AppDelegate.swift`)
 `AlarmHostApiImpl.swift` was created on disk but is **not yet referenced by `Runner.xcodeproj`** (editing the `.pbxproj` blind from Windows is unsafe). Until it's in the target it won't compile — the app will fail to link `AlarmHostApiSetup`.
 - In Xcode: **File → Add Files to "Runner"…** → select `ios/Runner/AlarmHostApiImpl.swift` → ensure **"Runner" target is checked** → Add. (Or drag it into the Runner group in the Project Navigator and tick the Runner target.)
 
-## 2. Confirm the alarm sound is a resolvable bundle resource
-`UNNotificationSound(named: "default_alarm.wav")` resolves the file from the app bundle root (or `Library/Sounds/`).
-- Select `ios/Runner/Sounds/default_alarm.wav` in Xcode → File Inspector → confirm **Target Membership: Runner** is checked (so it's in "Copy Bundle Resources").
-- If it's inside a **folder reference** (blue folder) the runtime name would be `Sounds/default_alarm.wav`; simplest is to have it copy to the bundle root so `"default_alarm.wav"` resolves. If the sound doesn't play, this is the first thing to check (iOS silently falls back to the default sound when the name doesn't resolve).
+## 2. ~~Confirm the alarm sound is a resolvable bundle resource~~ — DONE 2026-08-24
+
+**This step was skipped, and it is what made the first device build silent.** Kept here because the reasoning was wrong in a way worth remembering.
+
+The original note claimed "iOS silently falls back to the default sound when the name doesn't resolve." That is false. A `UNNotificationSound(named:)` whose file is not in the bundle makes iOS deliver the notification with **no sound at all**. Nothing in the app or the logs said so — it simply never made a noise.
+
+What is now in place:
+- The whole tone library is converted to IMA4 `.caf` (mono, 22.05 kHz, all under Apple's 30 s ceiling) in `ios/Runner/Sounds/`, generated from `assets/sounds/*.ogg` — iOS cannot decode `.ogg` for a notification sound, which is why a parallel set has to exist.
+- All 59 files are in the Runner target's **Copy Bundle Resources** phase, copied to the bundle root so a bare `"rise_klaxon.caf"` resolves.
+- `sound(for:)` now checks `Bundle.main.url(forResource:withExtension:)` and falls back to `.default` *explicitly* rather than trusting the OS to.
+- `test/domain/alarm_sounds_test.dart` fails if a catalog tone ever ships without its `.caf` and `.m4a` twins.
+
+**Still true and not fixable here:** a notification sound obeys the ringer volume and the hardware mute switch. A muted iPhone stays quiet unless the app is open (see `lib/data/ring_audio.dart`, which uses an AVAudioSession `playback` category to sound through the mute switch in the foreground). A muted phone that never opens the app needs AlarmKit on iOS 26+.
 
 ## 3. ⭐ Wire the Time-Sensitive Notifications entitlement (matters for waking during sleep)
 `content.interruptionLevel = .timeSensitive` + requesting the `.timeSensitive` auth option let alarms **pierce a Sleep/Do-Not-Disturb Focus** — the exact scenario an alarm app needs. Without the entitlement iOS silently downgrades the level, so an alarm can be suppressed while the user sleeps.
